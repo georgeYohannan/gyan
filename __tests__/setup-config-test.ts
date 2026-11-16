@@ -21,6 +21,12 @@ describe('project setup', () => {
     expect(() => require.resolve('react-native-reanimated')).not.toThrow();
   });
 
+  test('app is dark only, with the navy splash color', () => {
+    const expo = JSON.parse(read('app.json')).expo;
+    expect(expo.userInterfaceStyle).toBe('dark');
+    expect(JSON.stringify(expo.plugins)).toContain('"backgroundColor":"#0B1220"');
+  });
+
   test('web uses the Metro bundler (needed by NativeWind)', () => {
     expect(JSON.parse(read('app.json')).expo.web.bundler).toBe('metro');
   });
