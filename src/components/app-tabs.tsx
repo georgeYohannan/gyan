@@ -25,14 +25,6 @@ export default function AppTabs() {
           renderingMode="template"
         />
       </NativeTabs.Trigger>
-
-      {/* Builders-only page. Shows only while developing (__DEV__), never in a store build. */}
-      {__DEV__ ? (
-        <NativeTabs.Trigger name="design">
-          <NativeTabs.Trigger.Label>Design</NativeTabs.Trigger.Label>
-          <NativeTabs.Trigger.Icon sf="paintpalette" md="palette" />
-        </NativeTabs.Trigger>
-      ) : null}
     </NativeTabs>
   );
 }

@@ -6,14 +6,14 @@ import {
   IBMPlexSans_600SemiBold,
 } from '@expo-google-fonts/ibm-plex-sans';
 import { SchibstedGrotesk_700Bold } from '@expo-google-fonts/schibsted-grotesk';
-import { DarkTheme, ThemeProvider, type Theme } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider, type Theme } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
 import { Colors, FontFamily } from '@/constants/theme';
+import { AuthProvider, useAuth } from '@/lib/auth';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -48,7 +48,27 @@ export default function TabLayout() {
     <ThemeProvider value={GyanTheme}>
       <StatusBar style="light" />
       <AnimatedSplashOverlay />
-      <AppTabs />
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
     </ThemeProvider>
+  );
+}
+
+/** Logged-out people only reach the (auth) screens. Logged-in people only reach (app). */
+function RootNavigator() {
+  const { session, isLoading } = useAuth();
+  // Wait until we know if the person is already logged in, so there is no flash of the wrong screen.
+  if (isLoading) return null;
+
+  return (
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.background } }}>
+      <Stack.Protected guard={!!session}>
+        <Stack.Screen name="(app)" />
+      </Stack.Protected>
+      <Stack.Protected guard={!session}>
+        <Stack.Screen name="(auth)" />
+      </Stack.Protected>
+    </Stack>
   );
 }

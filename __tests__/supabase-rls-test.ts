@@ -1,0 +1,160 @@
+/** @jest-environment node */
+/**
+ * Talks to the real Supabase TEST project (never the live one).
+ * It proves one person cannot read or change another person's rows, and that the
+ * sign up trigger made a profile, a Free account, and an owner row.
+ *
+ * Needs 2 fake test users, made by hand in the Supabase dashboard (see docs/testing/prompt-3.md).
+ * Put their details in .env.local as TEST_USER_A_EMAIL, TEST_USER_A_PASSWORD,
+ * TEST_USER_B_EMAIL, TEST_USER_B_PASSWORD. Without them these tests are skipped.
+ */
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import fs from 'fs';
+import https from 'https';
+import path from 'path';
+
+/**
+ * The Expo test setup replaces the global fetch with a stand-in that does no network calls.
+ * This test must really talk to Supabase, so it uses this small fetch built on Node's https.
+ */
+const realFetch: typeof fetch = (input, init) =>
+  new Promise((resolve, reject) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+    const headers: Record<string, string> = {};
+    new Headers(init?.headers).forEach((value, name) => (headers[name] = value));
+    const req = https.request(url, { method: init?.method ?? 'GET', headers }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const responseHeaders = new Headers();
+        for (const [k, v] of Object.entries(res.headers)) if (v !== undefined) responseHeaders.set(k, String(v));
+        const status = res.statusCode ?? 0;
+        const noBody = status === 204 || status === 304;
+        resolve(new Response(noBody ? null : Buffer.concat(chunks), { status, headers: responseHeaders }));
+      });
+    });
+    req.on('error', reject);
+    if (init?.body) req.write(init.body as string);
+    req.end();
+  });
+
+function readEnv(): Record<string, string | undefined> {
+  const values: Record<string, string | undefined> = { ...process.env };
+  const file = path.join(__dirname, '..', '.env.local');
+  if (fs.existsSync(file)) {
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+      if (m && values[m[1]] === undefined) values[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  }
+  return values;
+}
+
+const env = readEnv();
+const url = env.EXPO_PUBLIC_SUPABASE_URL;
+const key = env.EXPO_PUBLIC_SUPABASE_KEY;
+const a = { email: env.TEST_USER_A_EMAIL, password: env.TEST_USER_A_PASSWORD };
+const b = { email: env.TEST_USER_B_EMAIL, password: env.TEST_USER_B_PASSWORD };
+const ready = !!(url && key && a.email && a.password && b.email && b.password);
+
+if (!ready) {
+  // eslint-disable-next-line no-console
+  console.warn('Skipping Supabase isolation tests: add TEST_USER_A_* and TEST_USER_B_* to .env.local.');
+}
+const maybe = ready ? describe : describe.skip;
+
+async function login(creds: { email?: string; password?: string }) {
+  const client: SupabaseClient = createClient(url!, key!, { global: { fetch: realFetch }, auth: { persistSession: false, autoRefreshToken: false } });
+  const { data, error } = await client.auth.signInWithPassword({ email: creds.email!, password: creds.password! });
+  if (error) throw new Error(`Test user could not log in: ${error.message}`);
+  return { client, userId: data.user.id };
+}
+
+maybe('Supabase test project: privacy between users', () => {
+  let A: Awaited<ReturnType<typeof login>>;
+  let B: Awaited<ReturnType<typeof login>>;
+  let accountA: string;
+
+  beforeAll(async () => {
+    expect(url).toContain('ofnspnobzesxmyqjxzad'); // only ever the TEST project
+    A = await login(a);
+    B = await login(b);
+    const { data } = await A.client.from('accounts').select('id').eq('owner_id', A.userId).single();
+    accountA = data!.id;
+  });
+
+  test('sign up trigger: user A has a profile, a Free account, and an owner row', async () => {
+    const profile = await A.client.from('profiles').select('id, is_admin').eq('id', A.userId).single();
+    expect(profile.data).toEqual({ id: A.userId, is_admin: false });
+
+    const account = await A.client.from('accounts').select('id, plans(name, meetings_per_month)').eq('id', accountA).single();
+    expect(account.data).toMatchObject({ plans: { name: 'Free', meetings_per_month: 5 } });
+
+    const member = await A.client.from('account_members').select('role').eq('account_id', accountA).eq('user_id', A.userId).single();
+    expect(member.data).toEqual({ role: 'owner' });
+  });
+
+  test('user B cannot read user A\'s profile', async () => {
+    const { data } = await B.client.from('profiles').select('id').eq('id', A.userId);
+    expect(data).toEqual([]);
+  });
+
+  test('user B only ever sees their own profile', async () => {
+    const { data } = await B.client.from('profiles').select('id');
+    expect(data).toEqual([{ id: B.userId }]);
+  });
+
+  test('user B cannot read user A\'s account or member list', async () => {
+    const accounts = await B.client.from('accounts').select('id').eq('id', accountA);
+    expect(accounts.data).toEqual([]);
+    const members = await B.client.from('account_members').select('user_id').eq('account_id', accountA);
+    expect(members.data).toEqual([]);
+  });
+
+  test('user B cannot read A\'s invites, usage, notes, chats, integrations, or ai cost', async () => {
+    for (const table of ['invites', 'usage', 'meetings', 'chat_threads', 'integrations', 'ai_usage']) {
+      const { data, error } = await B.client.from(table).select('*').eq('account_id', accountA);
+      expect({ table, error: error?.message, rows: data }).toEqual({ table, error: undefined, rows: [] });
+    }
+  });
+
+  test('user B cannot change user A\'s profile', async () => {
+    const { data } = await B.client.from('profiles').update({ display_name: 'hacked' }).eq('id', A.userId).select();
+    expect(data).toEqual([]);
+    const check = await A.client.from('profiles').select('display_name').eq('id', A.userId).single();
+    expect(check.data?.display_name).not.toBe('hacked');
+  });
+
+  test('nobody can make themselves an admin', async () => {
+    const { error } = await B.client.from('profiles').update({ is_admin: true }).eq('id', B.userId);
+    expect(error).not.toBeNull();
+    const { data } = await B.client.from('profiles').select('is_admin').eq('id', B.userId).single();
+    expect(data?.is_admin).toBe(false);
+  });
+
+  test('user B cannot add themselves to A\'s account', async () => {
+    const { error } = await B.client.from('account_members').insert({ account_id: accountA, user_id: B.userId, role: 'member' });
+    expect(error).not.toBeNull();
+  });
+
+  test('signed in people can read plans but not change them', async () => {
+    const read = await B.client.from('plans').select('name, meetings_per_month').eq('name', 'Free').single();
+    expect(read.data).toEqual({ name: 'Free', meetings_per_month: 5 });
+
+    const write = await B.client.from('plans').update({ meetings_per_month: 999 }).eq('name', 'Free').select();
+    expect(write.error ?? write.data).toBeTruthy();
+    expect(write.data ?? []).toEqual([]);
+    const insert = await B.client.from('plans').insert({ name: 'Hack', meetings_per_month: 999 });
+    expect(insert.error).not.toBeNull();
+    const after = await A.client.from('plans').select('meetings_per_month').eq('name', 'Free').single();
+    expect(after.data?.meetings_per_month).toBe(5);
+  });
+
+  test('signed out visitors cannot read anything', async () => {
+    const anon = createClient(url!, key!, { global: { fetch: realFetch }, auth: { persistSession: false } });
+    const plans = await anon.from('plans').select('id');
+    expect(plans.error ?? plans.data?.length === 0).toBeTruthy();
+    const profiles = await anon.from('profiles').select('id');
+    expect(profiles.error ?? profiles.data?.length === 0).toBeTruthy();
+  });
+});
