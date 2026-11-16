@@ -49,3 +49,4 @@ example
 supabase/.env
 supabase/.temp/
 .claude/settings.local.json
+.playwright-mcp/

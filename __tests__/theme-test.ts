@@ -83,6 +83,8 @@ describe('Tailwind config stays in sync with the tokens', () => {
     expect(tw.colors.brand).toBe(Colors.brand);
     expect(tw.colors.link).toBe(Colors.link);
     expect(tw.colors.record).toBe(Colors.record);
+    expect(tw.colors.success).toBe(Colors.success);
+    expect(tw.colors.danger).toBe(Colors.danger);
   });
 
   test('fonts, pill radius, and motion match', () => {
@@ -91,5 +93,16 @@ describe('Tailwind config stays in sync with the tokens', () => {
     expect(tw.borderRadius.pill).toBe(`${Radius.pill}px`);
     expect(tw.transitionDuration.ui).toBe(`${Motion.uiMs}ms`);
     expect(tw.transitionDuration.reveal).toBe(`${Motion.revealMs}ms`);
+  });
+});
+
+describe('Status and button text colors', () => {
+  test.each([
+    ['success on navy', Colors.success, Colors.background],
+    ['danger on navy', Colors.danger, Colors.background],
+    ['white on record orange', Colors.onRecord, Colors.record],
+    ['white on brand blue', Colors.heading, Colors.brand],
+  ])('%s has at least 4.5:1 contrast', (_n, fg, bg) => {
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
   });
 });

@@ -23,6 +23,8 @@ module.exports = {
         brand: '#0066FF',
         link: '#99CBFF',
         record: '#C2410C',
+        success: '#86EFAC',
+        danger: '#FCA5A5',
       },
       fontFamily: {
         heading: ['SchibstedGrotesk_700Bold'],

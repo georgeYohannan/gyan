@@ -31,6 +31,19 @@ export const Colors = {
   link: '#99CBFF',
   /** Record button and highlights. Fill only. */
   record: '#C2410C',
+  /** Text on the record button (white on #C2410C passes 4.5:1). */
+  onRecord: '#FFFFFF',
+  /** Status text. Not in CLAUDE.md; see docs/decisions.md. Both pass 4.5:1 on navy. */
+  success: '#86EFAC',
+  danger: '#FCA5A5',
+  /** Soft tinted fills behind status text and error borders. */
+  successFill: 'rgba(134,239,172,0.12)',
+  dangerFill: 'rgba(252,165,165,0.12)',
+  dangerBorder: 'rgba(252,165,165,0.55)',
+  /** Skeleton block fill. */
+  skeleton: 'rgba(255,255,255,0.08)',
+  /** Blue glow color (brand blue at 55%). Used for shadows only. */
+  glow: 'rgba(0,102,255,0.55)',
 } as const;
 
 export type ThemeColor = keyof typeof Colors;
@@ -78,6 +91,8 @@ export const Spacing = {
 /** Pill buttons are fully rounded. */
 export const Radius = {
   pill: 999,
+  /** Glass panels and text fields. */
+  panel: 20,
 } as const;
 
 /** Animation timing. UI changes take 0.2 seconds. Reveals take 0.32 seconds. */
@@ -93,3 +108,6 @@ export const MinTouchTarget = 44;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+
+/** Breakpoint (in points) where the help panel becomes a side panel on wide web screens. */
+export const WideBreakpoint = 768;

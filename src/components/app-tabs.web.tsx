@@ -28,6 +28,8 @@ export default function AppTabs() {
           <TabTrigger name="explore" href="/explore" asChild>
             <TabButton>Explore</TabButton>
           </TabTrigger>
+          {/* Builders-only page at /design. It has a route but no button in the bar. */}
+          <TabTrigger name="design" href="/design" style={{ display: 'none' }} />
         </CustomTabList>
       </TabList>
     </Tabs>
