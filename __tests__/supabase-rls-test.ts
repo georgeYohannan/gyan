@@ -1,3 +1,4 @@
+/** @jest-environment node */
 /**
  * Talks to the real Supabase TEST project (never the live one).
  * It proves one person cannot read or change another person's rows, and that the
@@ -9,7 +10,33 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import fs from 'fs';
+import https from 'https';
 import path from 'path';
+
+/**
+ * The Expo test setup replaces the global fetch with a stand-in that does no network calls.
+ * This test must really talk to Supabase, so it uses this small fetch built on Node's https.
+ */
+const realFetch: typeof fetch = (input, init) =>
+  new Promise((resolve, reject) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+    const headers: Record<string, string> = {};
+    new Headers(init?.headers).forEach((value, name) => (headers[name] = value));
+    const req = https.request(url, { method: init?.method ?? 'GET', headers }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const responseHeaders = new Headers();
+        for (const [k, v] of Object.entries(res.headers)) if (v !== undefined) responseHeaders.set(k, String(v));
+        const status = res.statusCode ?? 0;
+        const noBody = status === 204 || status === 304;
+        resolve(new Response(noBody ? null : Buffer.concat(chunks), { status, headers: responseHeaders }));
+      });
+    });
+    req.on('error', reject);
+    if (init?.body) req.write(init.body as string);
+    req.end();
+  });
 
 function readEnv(): Record<string, string | undefined> {
   const values: Record<string, string | undefined> = { ...process.env };
@@ -37,7 +64,7 @@ if (!ready) {
 const maybe = ready ? describe : describe.skip;
 
 async function login(creds: { email?: string; password?: string }) {
-  const client: SupabaseClient = createClient(url!, key!, { auth: { persistSession: false, autoRefreshToken: false } });
+  const client: SupabaseClient = createClient(url!, key!, { global: { fetch: realFetch }, auth: { persistSession: false, autoRefreshToken: false } });
   const { data, error } = await client.auth.signInWithPassword({ email: creds.email!, password: creds.password! });
   if (error) throw new Error(`Test user could not log in: ${error.message}`);
   return { client, userId: data.user.id };
@@ -124,7 +151,7 @@ maybe('Supabase test project: privacy between users', () => {
   });
 
   test('signed out visitors cannot read anything', async () => {
-    const anon = createClient(url!, key!, { auth: { persistSession: false } });
+    const anon = createClient(url!, key!, { global: { fetch: realFetch }, auth: { persistSession: false } });
     const plans = await anon.from('plans').select('id');
     expect(plans.error ?? plans.data?.length === 0).toBeTruthy();
     const profiles = await anon.from('profiles').select('id');
