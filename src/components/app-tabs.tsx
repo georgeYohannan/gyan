@@ -18,6 +18,9 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
+      {/* New note is opened from Home, so it has no button in the tab bar. */}
+      <NativeTabs.Trigger name="new-note" hidden />
+
       <NativeTabs.Trigger name="explore">
         <NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon

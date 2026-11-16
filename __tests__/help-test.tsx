@@ -26,6 +26,17 @@ describe('help content file', () => {
     for (const img of entry.images) expect(img.alt.length).toBeGreaterThan(0);
   });
 
+  test('"home" and "newNote" explain statuses, the monthly limit, and file sizes', () => {
+    const words = (id: string) =>
+      [...HELP[id].sentences, ...(HELP[id].lists ?? []).flatMap((l) => [l.heading, ...l.items])].join(' ');
+    for (const status of ['Uploading', 'Queued', 'Transcribing', 'Summarizing', 'Ready', 'Failed']) {
+      expect(words('home')).toContain(status);
+    }
+    expect(words('home')).toMatch(/monthly limit/i);
+    expect(words('newNote')).toContain('50 MB');
+    expect(words('newNote')).toMatch(/MP3/);
+  });
+
   test('the design entry is marked for builders only', () => {
     expect(HELP.design.builderOnly).toBe(true);
   });

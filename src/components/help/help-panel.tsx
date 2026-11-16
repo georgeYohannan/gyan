@@ -92,6 +92,14 @@ export function HelpPanel({ entry, visible, onClose }: HelpPanelProps) {
             {entry.sentences.map((s) => (
               <Body key={s}>{s}</Body>
             ))}
+            {entry.lists?.map((list) => (
+              <View key={list.heading} style={{ gap: Spacing.one }}>
+                <Heading level={3}>{list.heading}</Heading>
+                {list.items.map((item) => (
+                  <Body key={item}>{`\u2022 ${item}`}</Body>
+                ))}
+              </View>
+            ))}
             {entry.images.map((img, i) => (
               <Image
                 key={i}
