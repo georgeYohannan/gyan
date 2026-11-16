@@ -12,3 +12,4 @@
 - 2026-11-16: Row Level Security: the app can read only; server functions write. Members can read invites. Only owners read integrations (they may hold tokens). The app can change only display_name and preferred_language on a profile, so is_admin can never be changed from the app.
 - 2026-11-16: Sign up trigger (public.handle_new_user) makes the profile, a Free-plan account, and the owner row in one step, and looks the plan up by name from the plans table. Passwords need at least 8 characters.
 - 2026-11-16: The first-sign-in consent note is remembered per person on that device (not in the database). The wording needs a lawyer's review before public launch.
+- 2026-11-16: The Design tab is removed from phones. The /design page still exists as a builders-only page you can open by typing its address on web. This replaces the earlier decision to show a Design tab in development builds.
