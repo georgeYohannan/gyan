@@ -28,11 +28,24 @@ A non-technical founder who has never built a mobile app. Explain what you are d
 - Start the web version: npx expo start --web
 - Build for stores: eas build
 - Submit to stores: eas submit
-- Run tests: FILL IN after Phase 1
-- Format and type check: FILL IN after Phase 1
+- Run tests: npm test (Jest with jest-expo). Watch mode: npm run test:watch
+- Type check: npm run typecheck
+- Run type check and tests together: npm run check. Run it before saying work is done
+- Lint: npm run lint (the Expo starter code has known lint warnings that are not fixed yet)
 
 ## Folder map
-FILL IN after Phase 1. List the main folders and what each one holds.
+- src/app: screens. Each file is a route (Expo Router). _layout.tsx is the outer frame
+- src/components: reusable pieces of screens
+- src/constants: design tokens (colors, spacing, fonts) in theme.ts
+- src/hooks: small shared helpers, such as the color scheme
+- src/global.css: Tailwind styles for NativeWind (use className on components)
+- assets: images and icons
+- __tests__: all tests. Name files like feature-test.tsx
+- __mocks__ and jest-setup.js: test helpers. Jest settings are in jest.config.js
+- docs: product spec, data model, decisions, progress
+- scripts: helper scripts (reset-project.js is from the Expo starter)
+- Config files at the top: app.json (app settings), babel.config.js, metro.config.js, tailwind.config.js (NativeWind), tsconfig.json
+- .env.example: shows which env settings exist, with no real values. Real .env files are never committed
 
 ## Hard rules
 1. Secret keys live only in Supabase server functions or in env files that are never committed. Never put a key in app code.
