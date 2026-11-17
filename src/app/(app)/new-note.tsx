@@ -5,6 +5,7 @@ import { View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
 import { ChoiceCard } from '@/components/notes/choice-card';
+import { FilePickButton } from '@/components/notes/file-pick-button';
 import { UsagePanel } from '@/components/notes/usage-panel';
 import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
@@ -73,14 +74,20 @@ export default function NewNoteScreen() {
     setAttempt(undefined);
   }
 
+  /** Phones: open the phone's file picker, then handle the file. */
   async function pickFile() {
     if (!usage || busy) return;
     setFieldError(undefined);
     const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, base64: false });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
-    const picked: PickedFile = { name: asset.name, size: asset.size ?? 0, mimeType: asset.mimeType, uri: asset.uri, file: asset.file };
+    await handlePicked({ name: asset.name, size: asset.size ?? 0, mimeType: asset.mimeType, uri: asset.uri, file: asset.file });
+  }
 
+  /** A file was chosen (on any platform). Check it, take the sound out of videos, and send it. */
+  async function handlePicked(picked: PickedFile) {
+    if (!usage || busy) return;
+    setFieldError(undefined);
     const kind = classifyFile(picked.name, picked.mimeType);
     if (!kind) return fail('bad_type');
 
@@ -177,7 +184,7 @@ export default function NewNoteScreen() {
       {mode === 'upload' && !limitReached ? (
         <GlassPanel style={{ gap: Spacing.three }}>
           <Body color="textSecondary">{ACCEPTED_TYPES_TEXT}. Up to 50 MB.</Body>
-          <Button label="Choose a file" variant="secondary" disabled={busy} onPress={pickFile} />
+          <FilePickButton disabled={busy} onPressNative={pickFile} onFile={handlePicked} />
         </GlassPanel>
       ) : null}
 
