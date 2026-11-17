@@ -22,16 +22,12 @@ export default function AppTabs() {
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <CustomTabList>
-          <TabTrigger name="home" href="/" asChild>
+          <TabTrigger name="(home)" href="/" asChild>
             <TabButton>Home</TabButton>
           </TabTrigger>
           <TabTrigger name="explore" href="/explore" asChild>
             <TabButton>Explore</TabButton>
           </TabTrigger>
-          {/* Opened from Home. Has a route but no button in the bar. */}
-          <TabTrigger name="new-note" href="/new-note" style={{ display: 'none' }} />
-          {/* Opened by tapping a note in the Home list. */}
-          <TabTrigger name="note" href="/note/open" style={{ display: 'none' }} />
           {/* Builders-only page at /design. It has a route but no button in the bar. */}
           <TabTrigger name="design" href="/design" style={{ display: 'none' }} />
         </CustomTabList>

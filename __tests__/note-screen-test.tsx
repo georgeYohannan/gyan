@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import NoteDetailScreen from '@/app/(app)/note/[id]';
+import NoteDetailScreen from '@/app/(app)/(home)/note/[id]';
 import { HELP } from '@/content/help';
 
 const mockReplace = jest.fn();

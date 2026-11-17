@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import HomeScreen from '@/app/(app)/index';
+import HomeScreen from '@/app/(app)/(home)/index';
 import { HELP } from '@/content/help';
 
 const mockSignOut = jest.fn();
