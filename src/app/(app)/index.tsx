@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
@@ -15,6 +15,9 @@ import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { getUsage, listNotes, type NoteRow as Note, type Usage } from '@/lib/notes';
 
+const BUSY = ['Uploading', 'Queued', 'Transcribing', 'Summarizing'];
+const POLL_MS = 3000;
+
 type Load = { state: 'loading' } | { state: 'error' } | { state: 'ready'; notes: Note[]; usage?: Usage };
 
 /** Home: the list of notes, newest first, and how many meetings are used this month. */
@@ -25,16 +28,25 @@ export default function HomeScreen() {
   const [busy, setBusy] = useState(false);
   const [logOutError, setLogOutError] = useState<string>();
 
-  const refresh = useCallback(() => {
-    setLoad({ state: 'loading' });
+  const refresh = useCallback((quiet = false) => {
+    if (!quiet) setLoad({ state: 'loading' });
     // The list is the main thing. If only the usage fails, still show the list.
     Promise.all([listNotes(), getUsage().catch(() => undefined)])
       .then(([notes, usage]) => setLoad({ state: 'ready', notes, usage }))
-      .catch(() => setLoad({ state: 'error' }));
+      // A failed background check keeps what is on screen.
+      .catch(() => !quiet && setLoad({ state: 'error' }));
   }, []);
 
   // Load again every time the person comes back to Home (for example after adding a note).
   useFocusEffect(refresh);
+
+  // While any note is still being made, check again every few seconds so statuses update by themselves.
+  const anyBusy = load.state === 'ready' && load.notes.some((n) => BUSY.includes(n.status));
+  useEffect(() => {
+    if (!anyBusy) return;
+    const t = setInterval(() => refresh(true), POLL_MS);
+    return () => clearInterval(t);
+  }, [anyBusy, refresh]);
 
   async function logOut() {
     setBusy(true);
@@ -70,7 +82,7 @@ export default function HomeScreen() {
           <Body color="danger" accessibilityRole="alert">
             We could not load your notes. Check your internet and try again.
           </Body>
-          <Button label="Retry" variant="secondary" onPress={refresh} />
+          <Button label="Retry" variant="secondary" onPress={() => refresh()} />
         </GlassPanel>
       ) : load.notes.length === 0 ? (
         <GlassPanel>
