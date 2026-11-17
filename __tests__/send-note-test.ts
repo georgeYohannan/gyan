@@ -2,7 +2,10 @@ import { NoteError, prepareAttempt, sendAttempt } from '@/lib/notes';
 
 const mockRpc = jest.fn();
 const mockUpload = jest.fn();
-jest.mock('@/lib/supabase', () => ({ getSupabase: () => ({ rpc: (...a: unknown[]) => mockRpc(...a) }) }));
+const mockInvoke = jest.fn();
+jest.mock('@/lib/supabase', () => ({
+  getSupabase: () => ({ rpc: (...a: unknown[]) => mockRpc(...a), functions: { invoke: (...a: unknown[]) => mockInvoke(...a) } }),
+}));
 jest.mock('@/lib/upload', () => ({ uploadFile: (...a: unknown[]) => mockUpload(...a) }));
 
 const make = () => prepareAttempt('acc-1', { kind: 'file', title: 'Call', name: 'call.m4a', contentType: 'audio/mp4', body: new Blob(['x']) });
@@ -12,6 +15,7 @@ describe('sending a note', () => {
   beforeEach(() => {
     mockRpc.mockReset().mockResolvedValue({ error: null });
     mockUpload.mockReset().mockResolvedValue(undefined);
+    mockInvoke.mockReset().mockResolvedValue({ data: {}, error: null });
   });
 
   test('makes the note (Uploading), sends the file, then sets Queued', async () => {
@@ -46,5 +50,28 @@ describe('sending a note', () => {
   test('a file that is too big for storage becomes too_big', async () => {
     mockUpload.mockRejectedValue(new Error('too_big'));
     await expect(sendAttempt(make())).rejects.toMatchObject({ code: 'too_big' });
+  });
+
+  test('after Queued, the server is asked to make the transcript', async () => {
+    const a = make();
+    await sendAttempt(a);
+    expect(mockInvoke).toHaveBeenCalledWith('transcribe', { body: { meeting_id: a.meetingId } });
+  });
+
+  test('if the server cannot be reached, the note stays Queued and no error is shown', async () => {
+    mockInvoke.mockResolvedValue({ data: null, error: { message: 'offline' } });
+    await expect(sendAttempt(make())).resolves.toBeUndefined();
+    expect(calls()).toEqual(['create_note', 'mark_note_queued']);
+  });
+
+  test('pasted text has no audio, so no transcript is requested', async () => {
+    await sendAttempt(prepareAttempt('acc-1', { kind: 'text', title: 'Notes', text: 'hello' }));
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  test('a failed upload does not ask for a transcript', async () => {
+    mockUpload.mockRejectedValue(new Error('network'));
+    await expect(sendAttempt(make())).rejects.toBeInstanceOf(NoteError);
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 });

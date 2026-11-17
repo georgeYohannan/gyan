@@ -139,6 +139,76 @@ export const HELP: Record<string, HelpEntry> = {
       },
     ],
   },
+  note: {
+    id: 'note',
+    title: 'Your note',
+    sentences: [
+      'This page shows one note. The Transcript tab shows what people said, line by line.',
+      'Each line has who spoke, the time in the recording, and the words.',
+      'The label under the title tells you where the note is right now.',
+    ],
+    lists: [
+      {
+        heading: 'What each status means',
+        items: [
+          'Uploading: your file is on its way.',
+          'Queued: your note is waiting for its turn.',
+          'Transcribing: Gyan is turning the talking into text. This page updates by itself.',
+          'Summarizing: Gyan is writing the short summary and the to-do list.',
+          'Ready: your note is done and the transcript is here.',
+          'Failed: something went wrong. A message tells you what.',
+        ],
+      },
+      {
+        heading: 'What the speaker labels mean',
+        items: [
+          'Speaker 1, Speaker 2, and so on are different voices that Gyan heard.',
+          'Gyan does not know real names. It only tells voices apart.',
+          'The time is how far into the recording the line starts.',
+        ],
+      },
+      {
+        heading: 'Why a speaker can be wrong',
+        items: [
+          'Gyan guesses who is talking from the sound of each voice.',
+          'It can mix up two people who sound alike, or people who talk at the same time.',
+          'Noise, an echo, a far-away microphone, or a very short sentence also cause mistakes.',
+          'The words are usually right even when the speaker is wrong.',
+        ],
+      },
+      {
+        heading: 'If your note says Failed',
+        items: [
+          'Read the message on the note. It says what went wrong.',
+          'Tap Retry to try again. A Failed note does not use up one of your meetings.',
+          'If the message says the file could not be read, upload a different file.',
+          'If it keeps failing, ask the Gyan team for help.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-transcript-390.png'),
+        alt: 'A note on a phone-sized window. The title and a green Ready label are at the top, then a Transcript tab, then lines from Speaker 1 and Speaker 2 with the time of each line.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-transcript-1280.png'),
+        alt: 'The same note on a wide web window, with the transcript lines laid out wider.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-failed-390.png'),
+        alt: 'A Failed note on a phone-sized window. A red Failed label sits under the title, and a panel explains what went wrong and has a Retry button.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-failed-1280.png'),
+        alt: 'A Failed note on a wide web window with the same message and Retry button.',
+      },
+    ],
+  },
   signUp: {
     id: 'signUp',
     title: 'Sign up',

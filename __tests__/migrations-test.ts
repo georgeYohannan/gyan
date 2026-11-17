@@ -62,6 +62,53 @@ describe('database migration files', () => {
   });
 
   test('no secret keys are written in the migrations', () => {
-    expect(sql).not.toMatch(/service_role|eyJ[A-Za-z0-9_-]{20,}|sb_secret/);
+    // (The words service_role appear only as the name of the server's permission level, never as a key.)
+    expect(sql).not.toMatch(/eyJ[A-Za-z0-9_-]{20,}|sb_secret/);
+  });
+});
+
+describe('transcription migration', () => {
+  const file = fs.readdirSync(dir).find((f) => f.includes('transcription'))!;
+  const t = fs.readFileSync(path.join(dir, file), 'utf8');
+
+  test('it only adds things. It deletes no table, column, or row of data', () => {
+    expect(t).not.toMatch(/drop (table|column|schema|function)/i);
+    expect(t).not.toMatch(/truncate/i);
+    // The only delete is clearing old lines of the SAME note before saving new ones (a retry).
+    expect(t.match(/delete from/gi)).toHaveLength(1);
+    expect(t).toContain('delete from public.transcript_segments s where s.meeting_id = p_meeting_id');
+  });
+
+  test.each([
+    'claim_transcription(uuid, uuid)',
+    'finish_transcription(uuid, text, numeric, numeric, jsonb)',
+    'fail_transcription(uuid, text)',
+  ])('only the server can run %s', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon, authenticated`);
+    expect(t).toContain(`grant execute on function public.${fn} to service_role`);
+    expect(t).not.toMatch(new RegExp(`grant execute on function public\\.${fn.replace(/[()]/g, '\\$&')} to (anon|authenticated)`));
+  });
+
+  test('finishing makes the note Ready, adds 1 to usage, and logs the Deepgram cost', () => {
+    expect(t).toContain("set status = 'ready'");
+    expect(t).toMatch(/insert into public\.usage[\s\S]*meetings_used \+ 1/);
+    expect(t).toMatch(/insert into public\.ai_usage[\s\S]*'deepgram'/);
+  });
+
+  test('failing never touches usage or ai_usage', () => {
+    const fail = t.slice(t.indexOf('create function public.fail_transcription'));
+    expect(fail).not.toMatch(/usage/);
+    expect(fail).toContain("set status = 'failed'");
+  });
+
+  test('starting checks the plan limit from the plans table and moves only Queued or Failed notes', () => {
+    expect(t).toContain('private.assert_under_limit');
+    expect(t).toContain("m.status in ('queued', 'failed')");
+    expect(t).toContain("set status = 'transcribing'");
+  });
+
+  test('every new function pins the search path', () => {
+    expect(t.match(/security definer/g)).toHaveLength(3);
+    expect(t.match(/set search_path = ''/g)).toHaveLength(3);
   });
 });
