@@ -21,7 +21,7 @@ Plan limits live in a database table. The numbers below are proposed rules to co
 
 | Rule | Proposed | Status |
 | --- | --- | --- |
-| What counts as 1 meeting | Each uploaded recording, phone recording, or bot meeting counts as 1. Pasted text does not | Confirm |
+| What counts as 1 meeting | Each uploaded recording, phone recording, or bot meeting counts as 1. Pasted text and text files never count, and still work at the limit. A meeting counts only when the note reaches Ready | Set |
 | Free plan limit | 5 meetings per month, resets on the 1st | Set |
 | Max length of 1 meeting | To be decided | Open |
 | Paid plan limits and seat price | To be decided | Open |
@@ -33,7 +33,7 @@ Plan limits live in a database table. The numbers below are proposed rules to co
 | Sign up and log in | Create an account and enter | Email and password, sign in with Google | Show a short note about recording consent on first sign in |
 | Home | See all notes | Note list, search bar, big New note button, meetings used this month | Newest first. Each note shows its status |
 | New note | Add a conversation | 4 choices: Record, Upload, Paste text, Meeting link | Block with a friendly message when the monthly limit is reached |
-| Note detail | Read and work with 1 note | Tabs for Summary, Transcript, Mind map, and Action items. Side chat panel | On web the chat is a side panel. On a phone it opens as a bottom sheet |
+| Note detail | Read and work with 1 note | Tabs for Summary and Transcript (Mind map comes later). The Summary tab has the overview, key points, decisions, open questions, and the action items as a checklist, with Copy and Regenerate. Side chat panel | On web the chat is a side panel. On a phone it opens as a bottom sheet. Regenerate asks for confirmation first, because it costs money |
 | Search | Find words and topics across all notes | Search box, results with matching line and time | Tapping a result opens the note at that moment |
 | Settings | Account and preferences | Preferred language, name, email, delete account | Delete account removes all notes |
 | Plan and billing | See plan and upgrade | Current plan, meetings used, upgrade button | Payments go through RevenueCat. Web uses Stripe |
@@ -55,8 +55,8 @@ Every screen has 4 states: empty, loading, error, and success. See the Design pr
 | 7 | Search | Find words and topics across all notes, including topics that use different words. Results show the matching line and time | Searching a topic finds notes that never use that exact word |
 | 8 | Preferred language | Set in Settings and during first sign in. Summaries, action items, chat answers, and recap emails use it | Switching to Hindi shows the same answer in Hindi |
 | 9 | Translate on request | A Translate button on any transcript, summary, or chat answer. Pick any language. The result is saved | A second request for the same language loads at once and costs nothing |
-| 10 | Meeting bot | Paste a Zoom, Meet, or Teams link. The bot joins with a clear name, announces that it is recording, and sends notes when the call ends | The bot joins a real call on each of the 3 platforms and the notes arrive |
-| 11 | Share out | Email a recap to attendees. Post to a Slack or Teams channel | A test recap arrives by email and in a Slack channel |
+| 10 | Meeting bot | Paste a Zoom, Meet, or Teams link. The bot joins with a clear name, announces that it is recording, and sends notes when the call ends. Built behind a feature switch that stays OFF until a lawyer has reviewed the consent wording | The bot joins a real call on each of the 3 platforms and the notes arrive, and the switch is off until the wording is signed off |
+| 11 | Share out | Email a recap to attendees. Post to a Slack or Teams channel. The account owner chooses who gets recap emails: the owner only, the team members, or both. The default is the owner only | A test recap arrives by email and in a Slack channel, and only to the people the owner chose |
 | 12 | Free and paid plans | Check the limit before processing. Show an upgrade screen when it is reached. An admin changes limits without new code | Changing the free limit from 5 to 3 in the admin page takes effect right away |
 | 13 | Team seats | The owner invites teammates by email. Members use the owner's plan | A teammate accepts an invite and sees shared notes |
 
@@ -84,6 +84,7 @@ Every note moves through these statuses. The app shows the current one with a pr
 ## Recording consent rules
 
 - The meeting bot has a clear name, and it announces that it is recording when it joins.
+- The meeting bot sits behind a feature switch that stays off until a lawyer has reviewed the consent wording. Nobody can send a bot to a call before then.
 - Before a phone recording starts, show a short reminder to tell everyone that they are being recorded. Some US states require everyone to agree.
 - First sign in includes a short note on consent.
 - A lawyer reviews the consent wording before public launch.
@@ -96,6 +97,6 @@ Calendar auto-join, live notes during a call, CRM and task tool links, phone cal
 
 - [ ] Max length of 1 meeting on the free plan.
 - [ ] Paid plan limits and seat price.
-- [ ] Confirm what counts as 1 meeting.
+- [x] Confirm what counts as 1 meeting. Decided 2026-11-18: see the limits table above and docs/decisions.md.
 - [ ] Which languages to test translation with first, for example Spanish and Hindi.
 - [ ] Audio extraction on the phone, or a bigger Supabase plan, for large video files.

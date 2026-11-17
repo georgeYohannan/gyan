@@ -22,12 +22,18 @@ export type PipelineOptions = {
   bucket: string;
   signedLinkSeconds: number;
   fetcher?: typeof fetch;
+  /**
+   * Hands the note on to the summarize function. index.ts passes the real one in.
+   * Left out in tests, and in that case the note simply waits on Summarizing.
+   */
+  startSummary?: () => Promise<void>;
 };
 
 /**
- * Makes the transcript. On success the note becomes Ready (+1 usage, ai_usage row, in one database step).
+ * Makes the transcript. On success the note becomes Summarizing and the summary step is asked to
+ * carry on (the meeting is counted at the very end, when it becomes Ready).
  * On any problem the note becomes Failed with a plain message and nothing is counted.
- * Returns true when it worked.
+ * Returns true when the transcript was made.
  */
 export async function runTranscription(o: PipelineOptions): Promise<boolean> {
   try {
@@ -43,6 +49,17 @@ export async function runTranscription(o: PipelineOptions): Promise<boolean> {
       p_segments: result.segments,
     });
     if (error) throw new Error('finish_failed');
+
+    // The transcript is saved and the note now says Summarizing. Ask the summary step to carry on.
+    // If that call does not get through, the note waits on Summarizing and the note page can start
+    // it again, so this must never turn a good transcript into a Failed note.
+    if (o.startSummary) {
+      try {
+        await o.startSummary();
+      } catch {
+        /* the note waits on Summarizing */
+      }
+    }
     return true;
   } catch (e) {
     const message = e instanceof TranscribeError ? e.message : MESSAGES.unknown;

@@ -33,4 +33,38 @@ describe('secrets safety', () => {
     expect(fn).toContain("Deno.env.get('DEEPGRAM_API_KEY')");
     expect(fn).not.toMatch(/Token [A-Za-z0-9]{20,}/);
   });
+
+  test('.env.example has no Anthropic key value', () => {
+    const example = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
+    expect(example).toMatch(/^EXPO_ANTHROPIC_KEY=$/m);
+  });
+
+  test('the Anthropic key never appears in app code, and the app never reads it', () => {
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+    for (const file of walk(path.join(root, 'src')).filter((f) => /\.(ts|tsx|js)$/.test(f))) {
+      expect(fs.readFileSync(file, 'utf8')).not.toMatch(/anthropic_api_key|api\.anthropic\.com/i);
+    }
+  });
+
+  test('the summary server function reads its key from a server secret', () => {
+    const fn = fs.readFileSync(path.join(root, 'supabase/functions/summarize/index.ts'), 'utf8');
+    expect(fn).toContain("Deno.env.get('ANTHROPIC_API_KEY')");
+  });
+
+  test('no real key is written anywhere that gets committed', () => {
+    const skip = new Set(['node_modules', '.git', '.expo', 'dist', '.playwright-mcp', 'example', 'test-results', 'playwright-report']);
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        if (skip.has(e.name) || e.name.startsWith('.env')) return [];
+        const full = path.join(dir, e.name);
+        return e.isDirectory() ? walk(full) : [full];
+      });
+    for (const file of walk(root).filter((f) => /\.(ts|tsx|js|json|md|sql|yml)$/.test(f))) {
+      const text = fs.readFileSync(file, 'utf8');
+      // A real Anthropic key starts with sk-ant- and is long. Short things like the "sk-ant-..."
+      // placeholder in the test checklist are fine; a real key could never be that short.
+      expect(text).not.toMatch(/sk-ant-[A-Za-z0-9_-]{30,}/);
+    }
+  });
 });

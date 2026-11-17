@@ -73,6 +73,7 @@ Deno.serve(async (req) => {
   }
 
   // 3. Do the slow work in the background, so the app does not have to wait.
+  const noteId = meetingId;
   const work = runTranscription({
     admin,
     meetingId,
@@ -82,6 +83,14 @@ Deno.serve(async (req) => {
     usdPerMinute: DEEPGRAM_USD_PER_MINUTE,
     bucket: BUCKET,
     signedLinkSeconds: SIGNED_LINK_SECONDS,
+    // When the transcript is done, the summary step carries on by itself, using the same login.
+    startSummary: async () => {
+      await fetch(`${url}/functions/v1/summarize`, {
+        method: 'POST',
+        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meeting_id: noteId }),
+      });
+    },
   });
   EdgeRuntime.waitUntil(work);
 

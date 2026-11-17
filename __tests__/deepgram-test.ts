@@ -146,6 +146,30 @@ describe('making a transcript end to end (fake Deepgram, fake database)', () => 
     expect(calls[1].args.p_message).toBe(MESSAGES.unknown);
   });
 
+  test('once the transcript is saved, the summary step is asked to carry on', async () => {
+    const { admin, calls } = fakeAdmin();
+    const startSummary = jest.fn().mockResolvedValue(undefined);
+    const ok = await runTranscription({ ...base, admin, startSummary, fetcher: jest.fn().mockResolvedValue(okResponse(twoPeople)) });
+    expect(ok).toBe(true);
+    expect(calls.map((c) => c.name)).toEqual(['finish_transcription']);
+    expect(startSummary).toHaveBeenCalledTimes(1);
+  });
+
+  test('a good transcript is never turned into a Failed note just because the next step did not start', async () => {
+    const { admin, calls } = fakeAdmin();
+    const startSummary = jest.fn().mockRejectedValue(new Error('offline'));
+    const ok = await runTranscription({ ...base, admin, startSummary, fetcher: jest.fn().mockResolvedValue(okResponse(twoPeople)) });
+    expect(ok).toBe(true);
+    expect(calls.map((c) => c.name)).toEqual(['finish_transcription']); // no fail_transcription
+  });
+
+  test('a failed transcript never asks for a summary', async () => {
+    const { admin } = fakeAdmin();
+    const startSummary = jest.fn();
+    await runTranscription({ ...base, admin, startSummary, fetcher: jest.fn().mockResolvedValue(errResponse(400)) });
+    expect(startSummary).not.toHaveBeenCalled();
+  });
+
   test('the key never appears in a saved message or in the logs', async () => {
     const { admin, calls } = fakeAdmin();
     const spy = console.error as jest.Mock;

@@ -89,9 +89,10 @@ describe('transcription migration', () => {
     expect(t).not.toMatch(new RegExp(`grant execute on function public\\.${fn.replace(/[()]/g, '\\$&')} to (anon|authenticated)`));
   });
 
-  test('finishing makes the note Ready, adds 1 to usage, and logs the Deepgram cost', () => {
-    expect(t).toContain("set status = 'ready'");
-    expect(t).toMatch(/insert into public\.usage[\s\S]*meetings_used \+ 1/);
+  // This file is history: the summaries migration later replaces finish_transcription so that the
+  // note goes to Summarizing and the +1 happens at the very end. See the "summaries migration"
+  // tests below for what happens now.
+  test('finishing logs the Deepgram cost', () => {
     expect(t).toMatch(/insert into public\.ai_usage[\s\S]*'deepgram'/);
   });
 
@@ -110,5 +111,81 @@ describe('transcription migration', () => {
   test('every new function pins the search path', () => {
     expect(t.match(/security definer/g)).toHaveLength(3);
     expect(t.match(/set search_path = ''/g)).toHaveLength(3);
+  });
+});
+
+describe('summaries migration', () => {
+  const file = fs.readdirSync(dir).find((f) => f.includes('summaries'))!;
+  const t = fs.readFileSync(path.join(dir, file), 'utf8');
+
+  test('it only adds things. It deletes no table, column, or row of other data', () => {
+    expect(t).not.toMatch(/drop (table|column|schema|function)/i);
+    expect(t).not.toMatch(/truncate/i);
+    // The only deletes clear the old lines, summary and to-dos of the SAME note before saving new
+    // ones (which is what a retry needs).
+    expect(t.match(/delete from/gi)).toHaveLength(3);
+    expect(t).toContain('delete from public.transcript_segments s where s.meeting_id = p_meeting_id');
+    expect(t).toContain('delete from public.summaries s where s.meeting_id = p_meeting_id');
+    expect(t).toContain('delete from public.action_items a where a.meeting_id = p_meeting_id');
+  });
+
+  test.each([
+    'claim_summary(uuid, uuid)',
+    'finish_summary(uuid, text, text, text, jsonb, jsonb, jsonb, jsonb, numeric, numeric)',
+    'fail_summary(uuid, text)',
+  ])('only the server can run %s', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon, authenticated`);
+    expect(t).toContain(`grant execute on function public.${fn} to service_role`);
+    expect(t).not.toMatch(new RegExp(`grant execute on function public\\.${fn.replace(/[()]/g, '\\$&')} to (anon|authenticated)`));
+  });
+
+  test('the transcript step now hands the note on to the summary step, and does NOT count it', () => {
+    expect(t).toContain('create or replace function public.finish_transcription');
+    const finish = t.slice(t.indexOf('create or replace function public.finish_transcription'), t.indexOf('create function public.claim_summary'));
+    expect(finish).toContain("set status = 'summarizing'");
+    expect(finish).not.toMatch(/insert into public\.usage/);
+    // The Deepgram cost row stays here, because that money was already spent.
+    expect(finish).toMatch(/insert into public\.ai_usage[\s\S]*'deepgram'/);
+  });
+
+  test('the meeting counts only when it becomes Ready, only once, and never for pasted text', () => {
+    const finish = t.slice(t.indexOf('create function public.finish_summary'), t.indexOf('create function public.fail_summary'));
+    expect(finish).toContain("set status = 'ready'");
+    expect(finish).toMatch(/if note\.counted_at is null and note\.source <> 'text' then[\s\S]*insert into public\.usage/);
+    expect(finish).toMatch(/insert into public\.usage[\s\S]*meetings_used \+ 1/);
+    expect(finish).toMatch(/insert into public\.ai_usage[\s\S]*'anthropic'/);
+    expect(t).toContain('add column if not exists counted_at timestamptz');
+  });
+
+  test('starting checks the plan limit from the plans table and locks the note', () => {
+    const claim = t.slice(t.indexOf('create function public.claim_summary'), t.indexOf('create function public.finish_summary'));
+    expect(claim).toContain('private.assert_under_limit');
+    expect(claim).toContain("set status = 'summarizing'");
+    expect(claim).toContain('summary_started_at = now()');
+    // A run that is already going is left alone, so we never pay for two summaries of one note.
+    expect(claim).toMatch(/summary_started_at > \(now\(\) - interval '3 minutes'\)/);
+    // An upload with no transcript has nothing to summarize.
+    expect(claim).toContain("raise exception 'no_transcript'");
+  });
+
+  test('failing keeps the transcript and never touches usage', () => {
+    const fail = t.slice(t.indexOf('create function public.fail_summary'));
+    expect(fail).not.toMatch(/public\.usage/);
+    expect(fail).not.toMatch(/transcript_segments/);
+    expect(fail).toContain("set status = 'failed'");
+  });
+
+  test('the app may tick an action item off, and change nothing else', () => {
+    expect(t).toContain('grant update (done) on public.action_items to authenticated');
+    expect(t).toMatch(/create policy "[^"]+" on public\.action_items\s+for update/);
+    expect(t).toContain('private.can_read_meeting(meeting_id)');
+    // No other column, and no insert or delete, is opened up to the app.
+    expect(t).not.toMatch(/grant (insert|delete)[^;]* on public\.action_items/);
+    expect(t).not.toMatch(/grant update \((?!done\))/);
+  });
+
+  test('every new function pins the search path', () => {
+    expect(t.match(/security definer/g)).toHaveLength(4);
+    expect(t.match(/set search_path = ''/g)).toHaveLength(4);
   });
 });

@@ -64,12 +64,15 @@ describe('sending a note', () => {
     expect(calls()).toEqual(['create_note', 'mark_note_queued']);
   });
 
-  test('pasted text has no audio, so no transcript is requested', async () => {
-    await sendAttempt(prepareAttempt('acc-1', { kind: 'text', title: 'Notes', text: 'hello' }));
-    expect(mockInvoke).not.toHaveBeenCalled();
+  test('pasted text has no audio, so it goes straight to the summary', async () => {
+    const a = prepareAttempt('acc-1', { kind: 'text', title: 'Notes', text: 'hello' });
+    await sendAttempt(a);
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledWith('summarize', { body: { meeting_id: a.meetingId } });
+    expect(mockInvoke).not.toHaveBeenCalledWith('transcribe', expect.anything());
   });
 
-  test('a failed upload does not ask for a transcript', async () => {
+  test('a failed upload does not ask for a transcript or a summary', async () => {
     mockUpload.mockRejectedValue(new Error('network'));
     await expect(sendAttempt(make())).rejects.toBeInstanceOf(NoteError);
     expect(mockInvoke).not.toHaveBeenCalled();

@@ -3,6 +3,7 @@
  * the list, and adding a note. The limit always comes from the plans table.
  */
 import type { Status } from '@/components/ui/status-badge';
+import { startSummary } from '@/lib/summaries';
 import { getSupabase } from '@/lib/supabase';
 import { startTranscription } from '@/lib/transcripts';
 import { uploadFile } from '@/lib/upload';
@@ -244,13 +245,14 @@ export async function sendAttempt(attempt: Attempt, onProgress?: (fraction: numb
     throw err;
   }
 
-  // The file is safe in storage. Ask the server to make the transcript (pasted text has no audio).
-  // If this call fails, the note simply stays Queued and the person can start it from the note page.
-  if (attempt.source === 'upload') {
-    try {
-      await startTranscription(attempt.meetingId);
-    } catch {
-      /* stays Queued */
-    }
+  // The file is safe in storage. Ask the server to get going.
+  // Sound and video start with the transcript. Pasted text has no audio, so it goes straight to
+  // the summary. If this call fails, the note stays Queued and the person can start it from the
+  // note page.
+  try {
+    if (attempt.source === 'upload') await startTranscription(attempt.meetingId);
+    else await startSummary(attempt.meetingId);
+  } catch {
+    /* stays Queued */
   }
 }

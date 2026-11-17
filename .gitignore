@@ -50,3 +50,7 @@ supabase/.env
 supabase/.temp/
 .claude/settings.local.json
 .playwright-mcp/
+
+# Playwright
+test-results/
+playwright-report/
