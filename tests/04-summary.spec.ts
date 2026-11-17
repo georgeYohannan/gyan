@@ -161,3 +161,22 @@ test('if the server says no, the page says so in plain words', async ({ page }) 
   await page.getByRole('button', { name: 'Write summary' }).click();
   await expect(page.getByText(/could not start it/)).toBeVisible();
 });
+
+test('a summary that gets stuck can be started again from the page', async ({ page }) => {
+  const recorder = await installFakes(page, {
+    notes: [noteRow({ status: 'summarizing' })],
+    summary: null,
+    actionItems: [],
+  });
+  await signIn(page);
+  await openNote(page);
+
+  await expect(page.getByRole('heading', { name: 'No summary yet' })).toBeVisible();
+  // Nothing to press at first: the summary is probably just being written.
+  await expect(page.getByRole('button', { name: 'Start summary again' })).toBeHidden();
+
+  // After a long wait the page offers a way out, so a stuck note is never a dead end.
+  await expect(page.getByText(/taking longer than usual/)).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Start summary again' }).click();
+  await expect.poll(() => recorder.functionCalls.map((c) => c.name)).toContain('summarize');
+});

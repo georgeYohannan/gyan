@@ -12,6 +12,9 @@ import { noteTitle } from '@/lib/notes';
 import { summaryToPlainText, type ActionItem, type Summary } from '@/lib/summaries';
 import type { NoteDetail } from '@/lib/transcripts';
 
+/** How long a summary may run before the page offers to start it again. */
+export const STUCK_AFTER_MS = 45_000;
+
 type SummaryTabProps = {
   note: NoteDetail;
   summary?: Summary;
@@ -61,9 +64,21 @@ export function SummaryTab({
   const [confirming, setConfirming] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const [waitedLong, setWaitedLong] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  // A summary normally takes well under a minute. If one is still going after this long, something
+  // went wrong, so offer a way to start it again instead of leaving the person waiting forever.
+  useEffect(() => {
+    if (note.status !== 'Summarizing') {
+      setWaitedLong(false);
+      return;
+    }
+    const t = setTimeout(() => setWaitedLong(true), STUCK_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [note.status]);
 
   async function copy() {
     if (!summary) return;
@@ -108,18 +123,29 @@ export function SummaryTab({
           : note.status === 'Transcribing'
             ? 'Gyan is turning the talking into text first.'
             : 'Gyan is reading your note and writing the summary. This usually takes less than a minute.';
+    const stuck = note.status === 'Summarizing' && waitedLong;
     return (
       <GlassPanel accessibilityLabel={`Summary is not ready. Status: ${note.status}`}>
         <Heading level={3}>No summary yet</Heading>
         <Body color="textSecondary">{text} This page updates by itself.</Body>
-        {note.status === 'Queued' ? (
+        {stuck ? (
+          <Body small color="textSecondary">
+            This is taking longer than usual. You can start it again.
+          </Body>
+        ) : null}
+        {note.status === 'Queued' || stuck ? (
           <>
             {startError ? (
               <Body small color="danger" accessibilityRole="alert">
                 We could not start it. Check your internet and try again.
               </Body>
             ) : null}
-            <Button label="Write summary" variant="secondary" loading={starting} onPress={onStart} />
+            <Button
+              label={stuck ? 'Start summary again' : 'Write summary'}
+              variant="secondary"
+              loading={starting}
+              onPress={onStart}
+            />
           </>
         ) : null}
       </GlassPanel>

@@ -23,6 +23,7 @@ export class SummaryShapeError extends Error {}
 
 export const MESSAGES = {
   empty: 'This note has nothing to summarize yet. Please add a recording or some text.',
+  notSetUp: 'Gyan cannot write summaries yet, because it has not been set up to. Please tell the Gyan team.',
   tooLong:
     'This note is too long for Gyan to summarize in one go. Please split it into shorter notes and try again.',
   badShape: 'Gyan could not write a summary for this note. Please tap Retry summary.',

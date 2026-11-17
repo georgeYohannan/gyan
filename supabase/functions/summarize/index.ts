@@ -117,7 +117,9 @@ Deno.serve(async (req) => {
   const secretKey = pickKey('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEYS');
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
   const authHeader = req.headers.get('Authorization');
-  if (!url || !publicKey || !secretKey || !anthropicKey) return reply({ error: 'server_not_set_up' }, 500);
+  // The Anthropic key is checked AFTER the note is claimed, further down. That way a note never
+  // sits on Summarizing forever when the key is missing: it fails with a message a person can read.
+  if (!url || !publicKey || !secretKey) return reply({ error: 'server_not_set_up' }, 500);
   if (!authHeader) return reply({ error: 'not_signed_in' }, 401);
 
   let meetingId: string | undefined;
@@ -148,7 +150,14 @@ Deno.serve(async (req) => {
     return reply({ error: 'not_allowed' }, 403);
   }
 
-  // 3. Do the slow work in the background, so the app does not have to wait.
+  // 3. No key means Gyan cannot write summaries at all. Say so on the note, rather than leaving
+  // it on Summarizing with nothing happening. A failed note is never counted.
+  if (!anthropicKey) {
+    await admin.rpc('fail_summary', { p_meeting_id: meetingId, p_message: MESSAGES.notSetUp });
+    return reply({ error: 'server_not_set_up' }, 500);
+  }
+
+  // 4. Do the slow work in the background, so the app does not have to wait.
   const client = new Anthropic({ apiKey: anthropicKey });
   const work = runSummary({
     admin,

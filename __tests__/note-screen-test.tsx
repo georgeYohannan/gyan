@@ -217,6 +217,28 @@ describe('<NoteDetailScreen /> Summary tab', () => {
     expect(screen.getByText(/updates by itself/)).toBeTruthy();
   });
 
+  test('a summary that gets stuck offers to start it again, and only after a wait', async () => {
+    jest.useFakeTimers();
+    try {
+      mockGetNote.mockResolvedValue(note({ status: 'Summarizing' }));
+      mockStartSummary.mockResolvedValue(undefined);
+      await render(<NoteDetailScreen />);
+      expect(await screen.findByText('No summary yet')).toBeTruthy();
+      // Straight away there is no button: the summary is probably just being written.
+      expect(screen.queryByText('Start summary again')).toBeNull();
+
+      await act(async () => {
+        jest.advanceTimersByTime(46_000);
+      });
+      expect(screen.getByText(/taking longer than usual/)).toBeTruthy();
+      await fireEvent.press(screen.getByRole('button', { name: 'Start summary again' }));
+      await act(async () => {});
+      expect(mockStartSummary).toHaveBeenCalledWith('n1');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('FAILED: keeps the transcript, says it was not counted, and Retry summary starts again', async () => {
     mockGetNote.mockResolvedValue(note({ status: 'Failed', error_message: 'Gyan could not write a summary for this note.' }));
     mockList.mockResolvedValue(lines);

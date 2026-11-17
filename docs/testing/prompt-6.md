@@ -135,6 +135,17 @@ Open the Supabase dashboard for the TEST project, then **Table Editor**.
    The first run takes a few minutes, because the web app has to be built first.
 3. If you want the help screenshots made again, run `npm run e2e:shots`.
 
+## If a note gets stuck on Summarizing
+
+This almost always means the key is not set up yet. Check with `supabase secrets list`: you should
+see `ANTHROPIC_API_KEY` in the list. If it is missing, do Part A steps 3 and 4, then open the note
+and tap **Start summary again** (that button appears under the waiting message after about a
+minute). A note added before the key was set can always be picked up this way, and a note that was
+never counted still will not be counted until it is Ready.
+
+A note added **before this step was built** can sit on **Queued** instead. Open it and tap
+**Write summary** on the Summary tab.
+
 ## Known gaps (on purpose, for later)
 
 - **Mind map and side chat** are not built yet. The Summary and Transcript tabs are the only tabs.

@@ -202,20 +202,20 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
 /**
  * Opens a page in the app.
  *
- * The web app is built as it is asked for (by Metro), and now and then it serves a half built
- * bundle and shows "Requiring unknown module". Asking again fixes it, so that is what this does.
+ * While the app is being worked on, its builder sometimes serves a half built copy, or a saved
+ * file re-loads a screen at a bad moment. Either way an error box appears instead of the app.
+ * Asking for the page again clears it, so that is what this does.
  */
 export async function gotoApp(page: Page, path: string): Promise<void> {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await page.goto(path);
-    const stale = page.getByText('Requiring unknown module');
-    if (!(await stale.isVisible({ timeout: 2_000 }).catch(() => false))) return;
-    // Use the app's own Reload button, which asks the builder for a fresh copy.
+    // The error box has its own Reload button. That button is how we spot it.
     const reload = page.getByRole('button', { name: 'Reload application' });
-    if (await reload.isVisible().catch(() => false)) await reload.click();
+    if (!(await reload.isVisible({ timeout: 2_000 }).catch(() => false))) return;
+    await reload.click().catch(() => {});
     await page.waitForTimeout(3_000);
   }
-  throw new Error(`The web app would not build. Stop the dev server and run: npx expo start --web --clear`);
+  throw new Error('The web app would not start. Stop the dev server, then run: npx expo start --web --clear');
 }
 
 /** Logs in through the real login screen, with a fake account, and gets past the consent note. */
