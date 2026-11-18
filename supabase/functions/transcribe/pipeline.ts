@@ -1,0 +1,71 @@
+// The slow part of a transcript: link -> Deepgram -> save (or fail). Pure code, so Jest can test it
+// with a fake database and a fake Deepgram.
+import { costFor, MESSAGES, TranscribeError, transcribeUrl } from './deepgram.ts';
+
+/** The small part of the Supabase admin client that we use. */
+export type AdminLike = {
+  rpc(name: string, args: Record<string, unknown>): PromiseLike<{ error: { message: string } | null }>;
+  storage: {
+    from(bucket: string): {
+      createSignedUrl(path: string, seconds: number): PromiseLike<{ data: { signedUrl: string } | null; error: unknown }>;
+    };
+  };
+};
+
+export type PipelineOptions = {
+  admin: AdminLike;
+  meetingId: string;
+  filePath: string;
+  deepgramKey: string;
+  model: string;
+  usdPerMinute: number;
+  bucket: string;
+  signedLinkSeconds: number;
+  fetcher?: typeof fetch;
+  /**
+   * Hands the note on to the summarize function. index.ts passes the real one in.
+   * Left out in tests, and in that case the note simply waits on Summarizing.
+   */
+  startSummary?: () => Promise<void>;
+};
+
+/**
+ * Makes the transcript. On success the note becomes Summarizing and the summary step is asked to
+ * carry on (the meeting is counted at the very end, when it becomes Ready).
+ * On any problem the note becomes Failed with a plain message and nothing is counted.
+ * Returns true when the transcript was made.
+ */
+export async function runTranscription(o: PipelineOptions): Promise<boolean> {
+  try {
+    const { data: signed, error: signError } = await o.admin.storage.from(o.bucket).createSignedUrl(o.filePath, o.signedLinkSeconds);
+    if (signError || !signed?.signedUrl) throw new TranscribeError(MESSAGES.missing);
+
+    const result = await transcribeUrl(signed.signedUrl, o.deepgramKey, o.model, o.fetcher);
+    const { error } = await o.admin.rpc('finish_transcription', {
+      p_meeting_id: o.meetingId,
+      p_language: result.language,
+      p_audio_seconds: result.audioSeconds,
+      p_cost: costFor(result.audioSeconds, o.usdPerMinute),
+      p_segments: result.segments,
+    });
+    if (error) throw new Error('finish_failed');
+
+    // The transcript is saved and the note now says Summarizing. Ask the summary step to carry on.
+    // If that call does not get through, the note waits on Summarizing and the note page can start
+    // it again, so this must never turn a good transcript into a Failed note.
+    if (o.startSummary) {
+      try {
+        await o.startSummary();
+      } catch {
+        /* the note waits on Summarizing */
+      }
+    }
+    return true;
+  } catch (e) {
+    const message = e instanceof TranscribeError ? e.message : MESSAGES.unknown;
+    // Log the kind of problem only. Never log the key or the audio link.
+    console.error('transcribe failed for', o.meetingId, e instanceof Error ? e.name : 'error');
+    await o.admin.rpc('fail_transcription', { p_meeting_id: o.meetingId, p_message: message });
+    return false;
+  }
+}

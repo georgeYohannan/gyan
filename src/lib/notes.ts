@@ -3,7 +3,9 @@
  * the list, and adding a note. The limit always comes from the plans table.
  */
 import type { Status } from '@/components/ui/status-badge';
+import { startSummary } from '@/lib/summaries';
 import { getSupabase } from '@/lib/supabase';
+import { startTranscription } from '@/lib/transcripts';
 import { uploadFile } from '@/lib/upload';
 
 /** The most Supabase's Free plan lets one file be (50 MB). The bucket enforces the same number. */
@@ -209,7 +211,7 @@ export function prepareAttempt(
 }
 
 /**
- * Sends a note: makes the row (Uploading), sends the file, then sets Queued.
+ * Sends a note: makes the row (Uploading), sends the file, sets Queued, then starts the transcript.
  * If anything fails, the row is marked Failed and a NoteError is thrown. Calling again retries.
  */
 export async function sendAttempt(attempt: Attempt, onProgress?: (fraction: number | undefined) => void): Promise<void> {
@@ -241,5 +243,16 @@ export async function sendAttempt(attempt: Attempt, onProgress?: (fraction: numb
     const err = toNoteError(e);
     await supabase.rpc('mark_note_failed', { p_meeting_id: attempt.meetingId, p_message: NOTE_ERROR_TEXT[err.code] });
     throw err;
+  }
+
+  // The file is safe in storage. Ask the server to get going.
+  // Sound and video start with the transcript. Pasted text has no audio, so it goes straight to
+  // the summary. If this call fails, the note stays Queued and the person can start it from the
+  // note page.
+  try {
+    if (attempt.source === 'upload') await startTranscription(attempt.meetingId);
+    else await startSummary(attempt.meetingId);
+  } catch {
+    /* stays Queued */
   }
 }

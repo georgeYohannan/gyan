@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import HomeScreen from '@/app/(app)/index';
+import HomeScreen from '@/app/(app)/(home)/index';
 import { HELP } from '@/content/help';
 
 const mockSignOut = jest.fn();
@@ -117,5 +117,38 @@ describe('<HomeScreen />', () => {
     await render(<HomeScreen />);
     await fireEvent.press(screen.getByText('Log out'));
     expect(await screen.findByText('Something went wrong. Please try again.')).toBeTruthy();
+  });
+
+  test('a note that is still being made updates by itself, without a refresh', async () => {
+    jest.useFakeTimers();
+    try {
+      mockListNotes.mockResolvedValueOnce([note({ source: 'upload', status: 'Transcribing' })]);
+      mockListNotes.mockResolvedValue([note({ source: 'upload', status: 'Failed', error_message: 'We could not read this audio file.' })]);
+      await render(<HomeScreen />);
+      expect(await screen.findByLabelText('Status: Transcribing')).toBeTruthy();
+      await act(async () => {
+        jest.advanceTimersByTime(3100);
+      });
+      expect(await screen.findByLabelText('Status: Failed')).toBeTruthy();
+      expect(screen.getByText('We could not read this audio file.')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('when every note is done, Home stops checking', async () => {
+    jest.useFakeTimers();
+    try {
+      mockListNotes.mockResolvedValue([note({ status: 'Ready' })]);
+      await render(<HomeScreen />);
+      await screen.findByLabelText('Status: Ready');
+      const calls = mockListNotes.mock.calls.length;
+      await act(async () => {
+        jest.advanceTimersByTime(10000);
+      });
+      expect(mockListNotes.mock.calls.length).toBe(calls);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

@@ -8,6 +8,7 @@ module.exports = {
     '\\.css$': '<rootDir>/__mocks__/style-mock.js',
     '^@/assets/(.*)$': '<rootDir>/assets/$1',
   },
-  // Do not treat the mocks folder or setup file as tests.
-  testPathIgnorePatterns: ['/node_modules/', '/__mocks__/'],
+  // Do not treat the mocks folder, the setup file, or the browser scripts as Jest tests.
+  // The files in tests/ are Playwright scripts and are run with `npm run e2e`.
+  testPathIgnorePatterns: ['/node_modules/', '/__mocks__/', '/tests/', '/test-results/'],
 };

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import NewNoteScreen from '@/app/(app)/new-note';
+import NewNoteScreen from '@/app/(app)/(home)/new-note';
 import { HELP } from '@/content/help';
 import { NoteError } from '@/lib/notes';
 

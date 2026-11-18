@@ -63,7 +63,7 @@ export const HELP: Record<string, HelpEntry> = {
           'Uploading: your file is on its way.',
           'Queued: your note is waiting for its turn.',
           'Transcribing: Gyan is turning the talking into text.',
-          'Summarizing: Gyan is writing the short summary and the to-do list.',
+          'Summarizing: Gyan is reading the note and writing the summary and the to-do list. If it stays here a long time, a button appears to start it again.',
           'Ready: your note is done.',
           'Failed: something went wrong. A message tells you what.',
         ],
@@ -136,6 +136,128 @@ export const HELP: Record<string, HelpEntry> = {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/new-note-1280.png'),
         alt: 'The New note screen on a wide web window with the same 4 choices.',
+      },
+    ],
+  },
+  note: {
+    id: 'note',
+    title: 'Your note',
+    sentences: [
+      'This page shows one note. It has two tabs: Summary and Transcript.',
+      'The Summary tab has a short summary of the meeting and a to-do list you can tick off.',
+      'The Transcript tab shows what people said, line by line, with who spoke and when.',
+      'The label under the title tells you where the note is right now.',
+    ],
+    lists: [
+      {
+        heading: 'What the Summary tab shows',
+        items: [
+          'A few sentences at the top saying what the meeting was about.',
+          'Key points: the things worth remembering.',
+          'Decisions: what people agreed to do or chose.',
+          'Open questions: things nobody answered yet.',
+          'Action items: the to-do list, with a name and a date when somebody said one.',
+          'A part is left out when the meeting had nothing to put in it.',
+        ],
+      },
+      {
+        heading: 'Ticking action items',
+        items: [
+          'Tap an action item to tick it off. Tap it again to untick it.',
+          'The count above the list shows how many are done.',
+          'Only you and your team can see your notes, so only they see your ticks.',
+          'Gyan writes the name and the date only when somebody said them out loud.',
+        ],
+      },
+      {
+        heading: 'What Regenerate does',
+        items: [
+          'Regenerate asks the AI to write the summary again.',
+          'Gyan asks you first, because each new summary costs money.',
+          'The summary and the to-do list are replaced, and your ticks are cleared.',
+          'Your transcript is never changed by Regenerate.',
+          'Copy puts the summary and the to-do list on your clipboard, to paste anywhere.',
+        ],
+      },
+      {
+        heading: 'What each status means',
+        items: [
+          'Uploading: your file is on its way.',
+          'Queued: your note is waiting for its turn.',
+          'Transcribing: Gyan is turning the talking into text. This page updates by itself.',
+          'Summarizing: Gyan is reading the note and writing the summary and the to-do list. If it stays here a long time, a button appears to start it again.',
+          'Ready: your note is done and the transcript is here.',
+          'Failed: something went wrong. A message tells you what.',
+        ],
+      },
+      {
+        heading: 'What the speaker labels mean',
+        items: [
+          'Speaker 1, Speaker 2, and so on are different voices that Gyan heard.',
+          'Gyan does not know real names. It only tells voices apart.',
+          'The time is how far into the recording the line starts.',
+        ],
+      },
+      {
+        heading: 'Why a speaker can be wrong',
+        items: [
+          'Gyan guesses who is talking from the sound of each voice.',
+          'It can mix up two people who sound alike, or people who talk at the same time.',
+          'Noise, an echo, a far-away microphone, or a very short sentence also cause mistakes.',
+          'The words are usually right even when the speaker is wrong.',
+        ],
+      },
+      {
+        heading: 'If your note says Failed',
+        items: [
+          'Read the message on the note. It says what went wrong.',
+          'A Failed note does not use up one of your meetings.',
+          'If the summary went wrong, your transcript is still there. Tap Retry summary on the Summary tab.',
+          'If the transcript went wrong, tap Retry on the Transcript tab.',
+          'If the message says the file could not be read, upload a different file.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-summary-390.png'),
+        alt: 'The Summary tab of a note on a phone-sized window. A green Ready label sits under the title, then Summary and Transcript tabs, then a few sentences about the meeting, then Key points, Decisions, Open questions, and an Action items list with tick boxes. One item is ticked and crossed out.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-summary-1280.png'),
+        alt: 'The same Summary tab on a wide web window, with a Copy button and a Regenerate button under the action items.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-summary-empty-390.png'),
+        alt: 'A note on a phone-sized window with a blue Summarizing label. A panel says "No summary yet" and that Gyan is reading the note and writing the summary.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-summary-empty-1280.png'),
+        alt: 'The same waiting note on a wide web window.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-transcript-390.png'),
+        alt: 'A note on a phone-sized window. The title and a green Ready label are at the top, then a Transcript tab, then lines from Speaker 1 and Speaker 2 with the time of each line.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-transcript-1280.png'),
+        alt: 'The same note on a wide web window, with the transcript lines laid out wider.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-failed-390.png'),
+        alt: 'A Failed note on a phone-sized window. A red Failed label sits under the title, and a panel explains what went wrong, says the note did not use up a meeting, and has a Retry summary button.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-failed-1280.png'),
+        alt: 'The same Failed note on a wide web window, with the same message and Retry summary button.',
       },
     ],
   },
