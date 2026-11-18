@@ -12,6 +12,8 @@ const mockListItems = jest.fn();
 const mockSetDone = jest.fn();
 const mockStartSummary = jest.fn();
 const mockCopy = jest.fn();
+const mockChatList = jest.fn();
+const mockAsk = jest.fn();
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
@@ -31,6 +33,12 @@ jest.mock('@/lib/summaries', () => ({
   startSummary: (...a: unknown[]) => mockStartSummary(...a),
 }));
 jest.mock('@/lib/clipboard', () => ({ copyText: (...a: unknown[]) => mockCopy(...a) }));
+jest.mock('@/lib/chat', () => ({
+  ...jest.requireActual('@/lib/chat'),
+  listChatMessages: (...a: unknown[]) => mockChatList(...a),
+  askChat: (...a: unknown[]) => mockAsk(...a),
+  retryChat: jest.fn(),
+}));
 
 const note = (over: Record<string, unknown> = {}) => ({
   id: 'n1',
@@ -76,6 +84,8 @@ beforeEach(() => {
   mockListItems.mockResolvedValue([]);
   mockSetDone.mockResolvedValue(undefined);
   mockCopy.mockResolvedValue(undefined);
+  mockChatList.mockReset().mockResolvedValue([]);
+  mockAsk.mockReset();
 });
 
 describe('<NoteDetailScreen /> Summary tab', () => {
@@ -376,5 +386,117 @@ describe('help for the note screen', () => {
 
   test('has screenshots', () => {
     expect(HELP.note.images.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('<NoteDetailScreen /> the side chat', () => {
+  const CHAT = [
+    { id: 'c1', role: 'user' as const, content: 'What were the decisions?', sources: [], created_at: 'x' },
+    {
+      id: 'c2',
+      role: 'assistant' as const,
+      content: 'We are happy to be here [2].',
+      // Passage 2 is the second transcript line, which is the one with id 'b'.
+      sources: [{ n: 2, segment_id: 'b', start_ms: 65000, speaker_label: 'Speaker 2' }],
+      created_at: 'y',
+    },
+  ];
+
+  test('a Ready note with words has an Ask button', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    await render(<NoteDetailScreen />);
+
+    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
+    expect(ask.props.accessibilityState).toMatchObject({ disabled: false });
+  });
+
+  test('a note with no words yet cannot be asked about, and says why', async () => {
+    mockGetNote.mockResolvedValue(note({ status: 'Transcribing' }));
+    mockList.mockResolvedValue([]);
+    await render(<NoteDetailScreen />);
+
+    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
+    expect(ask.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(screen.getByText('You can ask questions once this note has its words.')).toBeTruthy();
+  });
+
+  test('Ask opens the chat panel, and the chat is read from the database', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    await render(<NoteDetailScreen />);
+
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+    });
+
+    expect(screen.getByRole('header', { name: 'Ask about this note' })).toBeTruthy();
+    expect(mockChatList).toHaveBeenCalledWith('n1');
+  });
+
+  test('tapping a passage number opens the Transcript tab and lights up that line', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    mockChatList.mockResolvedValue(CHAT);
+    await render(<NoteDetailScreen />);
+
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 1:05' }));
+    });
+
+    // The Transcript tab is now the one showing.
+    expect(screen.getByRole('tab', { name: 'Transcript' }).props.accessibilityState).toMatchObject({ selected: true });
+    // And the line the number pointed at is marked as highlighted.
+    expect(screen.getByLabelText('Speaker 2, 1:05. Happy to be here.. Highlighted')).toBeTruthy();
+    // The other line is not.
+    expect(screen.getByLabelText('Speaker 1, 0:00. Hi, thanks for joining.')).toBeTruthy();
+  });
+
+  test('changing tab by hand clears the highlight', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    mockChatList.mockResolvedValue(CHAT);
+    await render(<NoteDetailScreen />);
+
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 1:05' }));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('tab', { name: 'Summary' }));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('tab', { name: 'Transcript' }));
+    });
+
+    expect(screen.queryByLabelText(/Highlighted/)).toBeNull();
+  });
+});
+
+describe('help for the chat panel', () => {
+  const entry = HELP.noteChat;
+  const words = [...entry.sentences, ...(entry.lists ?? []).flatMap((l) => [l.heading, ...l.items])].join(' ');
+
+  test('it exists and is written in short plain words', () => {
+    expect(entry.title.length).toBeGreaterThan(0);
+    // No jargon a 15 year old would have to look up.
+    expect(words).not.toMatch(/token|prompt|API|model|embedding|passage number/i);
+  });
+
+  test('it explains what you can ask, the little numbers, and the daily limit', () => {
+    expect(words).toMatch(/ask/i);
+    expect(words).toMatch(/little numbers|small numbers/i);
+    expect(words).toMatch(/could not find/i);
+    expect(words).toMatch(/day/i);
+  });
+
+  test('it has screenshots', () => {
+    expect(entry.images.length).toBeGreaterThanOrEqual(2);
+    for (const img of entry.images) expect(img.alt.length).toBeGreaterThan(0);
   });
 });

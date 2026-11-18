@@ -261,6 +261,94 @@ export const HELP: Record<string, HelpEntry> = {
       },
     ],
   },
+  noteChat: {
+    id: 'noteChat',
+    title: 'Asking about your note',
+    sentences: [
+      'Tap Ask to open the chat and ask anything about this note.',
+      'Gyan only reads this one note. It never makes things up, and it never looks anything up elsewhere.',
+      'Every answer shows small numbers. Tap one to jump to the line where that answer came from.',
+    ],
+    lists: [
+      {
+        heading: 'What you can ask',
+        items: [
+          'What were the decisions?',
+          'What did I promise to do?',
+          'What is still open?',
+          'Anything else in your own words, like "What did Priya say about Friday?".',
+          'The first time you open the chat, 3 questions are offered. Tap one to try it.',
+        ],
+      },
+      {
+        heading: 'What the little numbers mean',
+        items: [
+          'A small number in an answer is the line of the note that answer came from.',
+          'Tap it. The chat closes, the Transcript tab opens, and that line is outlined in blue.',
+          'Tap a different number to move the blue outline to that line.',
+          'Switching tab by hand clears the outline.',
+        ],
+      },
+      {
+        heading: 'If it says it could not find something',
+        items: [
+          'Gyan says "I could not find that in your notes" when the answer is not in this note.',
+          'That is on purpose. It would rather say nothing than make something up.',
+          'It then suggests a question that this note can answer.',
+          'A note has to be Ready before you can ask about it. Until then the Ask button is greyed out.',
+        ],
+      },
+      {
+        heading: 'How many questions you get a day',
+        items: [
+          'Your plan says how many questions you can ask each day.',
+          'When only a few are left, the chat quietly tells you how many.',
+          'When they run out, you get a new set the next day.',
+          'If an answer goes wrong, Retry does not use up another question.',
+        ],
+      },
+      {
+        heading: 'Where your chat is kept',
+        items: [
+          'Your questions and answers are saved, so they are still there after you close the app.',
+          'Only you can see your chat. Even people on your team cannot read it.',
+          'Each note has its own separate chat.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-chat-390.png'),
+        alt: 'The chat on a phone-sized window, slid up from the bottom. A question from You says "What were the decisions?" and an answer from Gyan says the sign up screen ships on Friday, with a small round number 3 at the end.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-chat-empty-390.png'),
+        alt: 'A new chat on a phone-sized window, with 3 suggested questions as buttons: What were the decisions?, What did I promise to do?, and What is still open?',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-chat-cited-390.png'),
+        alt: 'The Transcript tab on a phone-sized window after tapping a number. The line at 1 minute 5 seconds, where Priya says she will send the test plan on Friday, is outlined in blue.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-chat-1280.png'),
+        alt: 'The same chat on a wide web window, floating down the right side of the note while the note stays on the left.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-chat-empty-1280.png'),
+        alt: 'A new chat on a wide web window, with the same 3 suggested questions.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-chat-cited-1280.png'),
+        alt: 'The Transcript tab on a wide web window with the line at 1 minute 5 seconds outlined in blue, and an Ask button beside the tabs.',
+      },
+    ],
+  },
   signUp: {
     id: 'signUp',
     title: 'Sign up',

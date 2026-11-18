@@ -5,7 +5,7 @@
  */
 import { expect, test } from '@playwright/test';
 
-import { installFakes, noteRow, openNote, signIn, type FakeData } from './fixtures/fake-api';
+import { CHAT_MESSAGES, installFakes, noteRow, openNote, signIn, type FakeData } from './fixtures/fake-api';
 
 const IMAGES = 'docs/help/images';
 // Each picture gets a tall enough window to show the whole thing, with no empty space below.
@@ -56,5 +56,56 @@ for (const w of WIDTHS) {
       summary: null,
       actionItems: [],
     });
+  });
+}
+
+/**
+ * One screenshot of the note page with the chat panel open.
+ * `cite` taps a passage number first, so the picture shows a lit-up transcript line instead.
+ */
+async function shootChat(
+  { page, context }: { page: import('@playwright/test').Page; context: import('@playwright/test').BrowserContext },
+  file: string,
+  size: { width: number; height: number },
+  data: Partial<FakeData>,
+  options: { cite?: boolean } = {},
+) {
+  await page.setViewportSize(size);
+  await installFakes(page, data);
+  await signIn(page);
+  await openNote(page);
+
+  await page.getByRole('button', { name: 'Ask about this note' }).click();
+  await expect(page.getByRole('heading', { name: 'Ask about this note' })).toBeVisible();
+
+  if (options.cite) {
+    await page.getByRole('link', { name: 'Go to the line at 1:05' }).click();
+    await expect(page.getByLabel(/Highlighted/)).toBeVisible();
+  }
+
+  await page.waitForTimeout(700); // let the panel finish sliding and the fonts settle
+  await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
+  await context.clearCookies();
+}
+
+for (const w of WIDTHS) {
+  test(`the chat with a conversation at ${w.name} pixels`, async ({ page, context }) => {
+    await shootChat({ page, context }, `note-chat-${w.name}.png`, { width: w.width, height: w.short }, {
+      chatMessages: CHAT_MESSAGES,
+    });
+  });
+
+  test(`the chat with its suggested questions at ${w.name} pixels`, async ({ page, context }) => {
+    await shootChat({ page, context }, `note-chat-empty-${w.name}.png`, { width: w.width, height: w.short }, {});
+  });
+
+  test(`a highlighted transcript line at ${w.name} pixels`, async ({ page, context }) => {
+    await shootChat(
+      { page, context },
+      `note-chat-cited-${w.name}.png`,
+      { width: w.width, height: w.short },
+      { chatMessages: CHAT_MESSAGES },
+      { cite: true },
+    );
   });
 }

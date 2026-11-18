@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
+import { ChatPanel } from '@/components/notes/chat-panel';
 import { SummaryTab } from '@/components/notes/summary-tab';
 import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,8 @@ import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { TabBar } from '@/components/ui/tab-bar';
-import { Colors, MinTouchTarget, Spacing } from '@/constants/theme';
+import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
+import { NO_TRANSCRIPT_MESSAGE, type ChatSource } from '@/lib/chat';
 import { noteTitle } from '@/lib/notes';
 import {
   getSummary,
@@ -56,7 +58,7 @@ async function fetchState(id: string): Promise<Load> {
 const BUSY = ['Uploading', 'Queued', 'Transcribing', 'Summarizing'];
 const POLL_MS = 3000;
 
-/** Note detail: a Summary tab and a Transcript tab. Mind map and side chat come later. */
+/** Note detail: a Summary tab, a Transcript tab, and the side chat. Mind map comes later. */
 export default function NoteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -66,6 +68,13 @@ export default function NoteDetailScreen() {
   const [startError, setStartError] = useState(false);
   const [savingItemId, setSavingItemId] = useState<string>();
   const [itemError, setItemError] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  /** The transcript line a passage number pointed at. It stays lit until another one is tapped. */
+  const [highlightId, setHighlightId] = useState<string>();
+
+  const pageRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  /** How far down the page each transcript line starts, so we can scroll to it. */
+  const lineTops = useRef<Record<string, number>>({});
 
   const refresh = useCallback(
     // 'again' shows the loading state first. 'quiet' is a background check that keeps what is on screen if it fails.
@@ -137,75 +146,137 @@ export default function NoteDetailScreen() {
     setSavingItemId(undefined);
   }
 
+  /**
+   * Somebody tapped a passage number in an answer. Close the chat, open the Transcript tab,
+   * scroll to that line, and light it up.
+   */
+  const jumpTo = useCallback((source: ChatSource) => {
+    setChatOpen(false);
+    setTab('Transcript');
+    setHighlightId(source.segment_id);
+    // Wait for the Transcript tab to be drawn before scrolling to the line.
+    setTimeout(() => {
+      const top = lineTops.current[source.segment_id];
+      if (typeof top === 'number') pageRef.current?.scrollTo({ y: Math.max(top - 80, 0), animated: true });
+    }, 50);
+  }, []);
+
+  const lines = load.state === 'ready' ? load.lines : [];
+  const canAsk = load.state === 'ready' && lines.length > 0;
+
   return (
-    <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back to Home"
-          onPress={() => router.replace('/')}
-          style={{ minHeight: MinTouchTarget, minWidth: MinTouchTarget, justifyContent: 'center' }}>
-          <Body color="link">‹ Home</Body>
-        </Pressable>
-        <HelpButton helpId="note" />
-      </View>
-
-      {load.state === 'loading' ? (
-        <View style={{ gap: Spacing.three }} accessibilityLabel="Loading your note">
-          <Skeleton width="60%" height={30} />
-          {[0, 1, 2].map((i) => (
-            <GlassPanel key={i}>
-              <Skeleton width="30%" />
-              <Skeleton width="90%" height={18} />
-            </GlassPanel>
-          ))}
+    <View style={{ flex: 1 }}>
+      <Screen scrollRef={pageRef}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to Home"
+            onPress={() => router.replace('/')}
+            style={{ minHeight: MinTouchTarget, minWidth: MinTouchTarget, justifyContent: 'center' }}>
+            <Body color="link">‹ Home</Body>
+          </Pressable>
+          <HelpButton helpId="note" />
         </View>
-      ) : load.state === 'error' ? (
-        <GlassPanel>
-          <Body color="danger" accessibilityRole="alert">
-            We could not load this note. Check your internet and try again.
-          </Body>
-          <Button label="Retry" variant="secondary" onPress={() => refresh()} />
-        </GlassPanel>
-      ) : load.state === 'missing' ? (
-        <GlassPanel>
-          <Heading level={3}>Note not found</Heading>
-          <Body color="textSecondary">This note does not exist, or it belongs to another account.</Body>
-          <Button label="Back to Home" variant="secondary" onPress={() => router.replace('/')} />
-        </GlassPanel>
-      ) : (
-        <>
-          <View style={{ gap: Spacing.two }}>
-            <Heading level={1}>{noteTitle(load.note)}</Heading>
-            <StatusBadge status={load.note.status} />
+
+        {load.state === 'loading' ? (
+          <View style={{ gap: Spacing.three }} accessibilityLabel="Loading your note">
+            <Skeleton width="60%" height={30} />
+            {[0, 1, 2].map((i) => (
+              <GlassPanel key={i}>
+                <Skeleton width="30%" />
+                <Skeleton width="90%" height={18} />
+              </GlassPanel>
+            ))}
           </View>
+        ) : load.state === 'error' ? (
+          <GlassPanel>
+            <Body color="danger" accessibilityRole="alert">
+              We could not load this note. Check your internet and try again.
+            </Body>
+            <Button label="Retry" variant="secondary" onPress={() => refresh()} />
+          </GlassPanel>
+        ) : load.state === 'missing' ? (
+          <GlassPanel>
+            <Heading level={3}>Note not found</Heading>
+            <Body color="textSecondary">This note does not exist, or it belongs to another account.</Body>
+            <Button label="Back to Home" variant="secondary" onPress={() => router.replace('/')} />
+          </GlassPanel>
+        ) : (
+          <>
+            <View style={{ gap: Spacing.two }}>
+              <Heading level={1}>{noteTitle(load.note)}</Heading>
+              <StatusBadge status={load.note.status} />
+            </View>
 
-          <TabBar tabs={TABS} selected={tab} onSelect={setTab} />
+            <View style={{ gap: Spacing.two }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two, flexWrap: 'wrap' }}>
+                <TabBar
+                  tabs={TABS}
+                  selected={tab}
+                  onSelect={(next) => {
+                    setTab(next);
+                    setHighlightId(undefined);
+                  }}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Ask about this note"
+                  accessibilityState={{ disabled: !canAsk }}
+                  disabled={!canAsk}
+                  onPress={() => setChatOpen(true)}
+                  style={{
+                    minHeight: MinTouchTarget,
+                    justifyContent: 'center',
+                    paddingHorizontal: Spacing.four,
+                    borderRadius: Radius.pill,
+                    borderWidth: 1,
+                    borderColor: canAsk ? Colors.brand : Colors.glassBorder,
+                    backgroundColor: Colors.glass,
+                    opacity: canAsk ? 1 : 0.5,
+                  }}>
+                  <Body color="link" style={{ fontWeight: '600' }}>
+                    Ask
+                  </Body>
+                </Pressable>
+              </View>
+              {!canAsk ? (
+                <Body small color="textSecondary">
+                  {NO_TRANSCRIPT_MESSAGE}
+                </Body>
+              ) : null}
+            </View>
 
-          {tab === 'Summary' ? (
-            <SummaryTab
-              note={load.note}
-              summary={load.summary}
-              items={load.items}
-              onToggleItem={toggleItem}
-              savingItemId={savingItemId}
-              itemError={itemError}
-              onStart={() => start('summary')}
-              starting={starting}
-              startError={startError}
-            />
-          ) : (
-            <TranscriptTab
-              note={load.note}
-              lines={load.lines}
-              onStart={() => start('transcript')}
-              starting={starting}
-              startError={startError}
-            />
-          )}
-        </>
-      )}
-    </Screen>
+            {tab === 'Summary' ? (
+              <SummaryTab
+                note={load.note}
+                summary={load.summary}
+                items={load.items}
+                onToggleItem={toggleItem}
+                savingItemId={savingItemId}
+                itemError={itemError}
+                onStart={() => start('summary')}
+                starting={starting}
+                startError={startError}
+              />
+            ) : (
+              <TranscriptTab
+                note={load.note}
+                lines={load.lines}
+                onStart={() => start('transcript')}
+                starting={starting}
+                startError={startError}
+                highlightId={highlightId}
+                onLineLayout={(lineId, y) => {
+                  lineTops.current[lineId] = y;
+                }}
+              />
+            )}
+          </>
+        )}
+      </Screen>
+
+      {id ? <ChatPanel meetingId={id} visible={chatOpen} onClose={() => setChatOpen(false)} onJump={jumpTo} /> : null}
+    </View>
   );
 }
 
@@ -215,12 +286,17 @@ function TranscriptTab({
   onStart,
   starting,
   startError,
+  highlightId,
+  onLineLayout,
 }: {
   note: NoteDetail;
   lines: TranscriptLine[];
   onStart: () => void;
   starting: boolean;
   startError: boolean;
+  /** The line a passage number pointed at. It gets a blue border and a brighter fill. */
+  highlightId?: string;
+  onLineLayout?: (lineId: string, y: number) => void;
 }) {
   // A note that failed while writing its summary still has its transcript. Keep showing it, and
   // point to the Summary tab, where the Retry summary button is.
@@ -299,19 +375,26 @@ function TranscriptTab({
           Spoken language: {note.spoken_language}
         </Body>
       ) : null}
-      {lines.map((l) => (
-        <GlassPanel key={l.id} accessibilityLabel={`${l.speaker_label ?? 'Speaker'}, ${formatTime(l.start_ms)}. ${l.text}`}>
-          <View style={{ flexDirection: 'row', gap: Spacing.three, alignItems: 'baseline' }}>
-            <Body color="link" style={{ fontWeight: '600' }}>
-              {l.speaker_label ?? 'Speaker'}
-            </Body>
-            <Body small color="textSecondary">
-              {formatTime(l.start_ms)}
-            </Body>
-          </View>
-          <Body>{l.text}</Body>
-        </GlassPanel>
-      ))}
+      {lines.map((l) => {
+        const lit = l.id === highlightId;
+        return (
+          <GlassPanel
+            key={l.id}
+            onLayout={(e) => onLineLayout?.(l.id, e.nativeEvent.layout.y)}
+            style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
+            accessibilityLabel={`${l.speaker_label ?? 'Speaker'}, ${formatTime(l.start_ms)}. ${l.text}${lit ? '. Highlighted' : ''}`}>
+            <View style={{ flexDirection: 'row', gap: Spacing.three, alignItems: 'baseline' }}>
+              <Body color="link" style={{ fontWeight: '600' }}>
+                {l.speaker_label ?? 'Speaker'}
+              </Body>
+              <Body small color="textSecondary">
+                {formatTime(l.start_ms)}
+              </Body>
+            </View>
+            <Body>{l.text}</Body>
+          </GlassPanel>
+        );
+      })}
     </View>
   );
 }
