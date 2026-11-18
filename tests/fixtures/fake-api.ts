@@ -13,6 +13,7 @@ export const FAKE_USER = { id: '11111111-1111-4111-8111-111111111111', email: 't
 export const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 export const NOTE_ID = '33333333-3333-4333-8333-333333333333';
 export const FAILED_NOTE_ID = '44444444-4444-4444-8444-444444444444';
+export const TEXT_NOTE_ID = '55555555-5555-4555-8555-555555555555';
 
 type Row = Record<string, unknown>;
 
@@ -34,6 +35,8 @@ export type FakeData = {
   chatAnswers: ChatAnswer[];
   /** true makes the chat function say the day's questions are used up. */
   chatLimitReached?: boolean;
+  /** The words inside a pasted-text note, as the private bucket would hand them back. */
+  textWords: string;
 };
 
 /** One made up answer from the chat function. `ok: false` is a problem with a Retry. */
@@ -50,8 +53,30 @@ export const noteRow = (over: Row = {}): Row => ({
   created_at: '2026-11-17T10:00:00Z',
   spoken_language: 'en',
   duration_seconds: 184,
+  file_path: `${ACCOUNT_ID}/${NOTE_ID}/call.mp3`,
   ...over,
 });
+
+/** A note somebody pasted or uploaded as text. It has no transcript, only paragraphs. */
+export const textNoteRow = (over: Row = {}): Row => ({
+  id: TEXT_NOTE_ID,
+  title: 'gyan development',
+  source: 'text',
+  status: 'ready',
+  error_message: null,
+  created_at: '2026-11-18T09:00:00Z',
+  spoken_language: null,
+  duration_seconds: null,
+  file_path: `${ACCOUNT_ID}/${TEXT_NOTE_ID}/notes.txt`,
+  ...over,
+});
+
+/** The words inside that pasted-text note. 3 paragraphs, so passage 2 is the middle one. */
+export const TEXT_NOTE_WORDS = [
+  'The module ingests financial documents for a family-law matter and keeps a chain of custody.',
+  'Audience: forensic accountants, family-law attorneys, paralegals and firm admins.',
+  'Frontend stack: React 18, TypeScript, Vite and Tailwind.',
+].join('\n\n');
 
 export const SEGMENTS: Row[] = [
   { id: 's1', speaker_label: 'Speaker 1', start_ms: 500, end_ms: 4200, text: 'Thanks for joining. Let us start with the sign up screen.' },
@@ -96,6 +121,7 @@ export const DEFAULTS: FakeData = {
   usage: { used: 2, limit: 5 },
   chatMessages: [],
   chatAnswers: [{ ok: true, answer: CHAT_ANSWER, sources: CHAT_SOURCES, remaining: 19 }],
+  textWords: TEXT_NOTE_WORDS,
 };
 
 /** Everything the scripts can ask about after the fact: which calls the app made. */
@@ -186,9 +212,14 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
     return json(route, status === 202 ? { status: 'accepted' } : { error: 'problem' }, status);
   });
 
-  // Sending a file. Nothing is really stored.
+  // Files. Nothing is really stored, and nothing real is ever downloaded.
   await page.route('**/storage/v1/**', async (route) => {
-    recorder.uploads.push(new URL(route.request().url()).pathname);
+    const path = new URL(route.request().url()).pathname;
+    // Reading a pasted-text note's words back out of the bucket.
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'text/plain', body: data.textWords });
+    }
+    recorder.uploads.push(path);
     return json(route, { Key: 'notes-files/fake' });
   });
 

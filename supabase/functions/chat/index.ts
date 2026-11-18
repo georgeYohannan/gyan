@@ -20,6 +20,8 @@ import {
 
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Response | Promise<Response>): void };
 
+const BUCKET = 'notes-files';
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -208,9 +210,9 @@ Deno.serve(async (req) => {
   // 4. The note's title and date go into every passage line.
   const { data: note } = await admin
     .from('meetings')
-    .select('title, source, created_at')
+    .select('title, source, created_at, file_path')
     .eq('id', meetingId)
-    .maybeSingle<{ title: string | null; source: string; created_at: string }>();
+    .maybeSingle<{ title: string | null; source: string; created_at: string; file_path: string | null }>();
   const noteTitle = note?.title?.trim() || (note?.source === 'text' ? 'Pasted text' : 'Untitled note');
 
   // 5. Answer the question. The app is waiting, so this is not sent to the background.
@@ -221,6 +223,9 @@ Deno.serve(async (req) => {
       meetingId,
       threadId: claimed.thread_id,
       accountId: claimed.account_id,
+      source: note?.source ?? 'upload',
+      filePath: note?.file_path ?? null,
+      bucket: BUCKET,
       noteTitle,
       noteDate: note?.created_at ?? null,
       question,

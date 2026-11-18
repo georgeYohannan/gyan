@@ -191,6 +191,14 @@ export const HELP: Record<string, HelpEntry> = {
         ],
       },
       {
+        heading: 'Notes you pasted or uploaded as text',
+        items: [
+          'These have no recording, so nobody spoke them and there are no speakers or times.',
+          'The Transcript tab shows their words as Paragraph 1, Paragraph 2, and so on.',
+          'You can still ask questions about them, and the little numbers point at a paragraph.',
+        ],
+      },
+      {
         heading: 'What the speaker labels mean',
         items: [
           'Speaker 1, Speaker 2, and so on are different voices that Gyan heard.',
@@ -267,7 +275,8 @@ export const HELP: Record<string, HelpEntry> = {
     sentences: [
       'Tap Ask to open the chat and ask anything about this note.',
       'Gyan only reads this one note. It never makes things up, and it never looks anything up elsewhere.',
-      'Every answer shows small numbers. Tap one to jump to the line where that answer came from.',
+      'Every answer shows small numbers. Tap one to jump to the place the answer came from.',
+      'This works on recordings and on notes you pasted or uploaded as text.',
     ],
     lists: [
       {
@@ -283,9 +292,10 @@ export const HELP: Record<string, HelpEntry> = {
       {
         heading: 'What the little numbers mean',
         items: [
-          'A small number in an answer is the line of the note that answer came from.',
-          'Tap it. The chat closes, the Transcript tab opens, and that line is outlined in blue.',
-          'Tap a different number to move the blue outline to that line.',
+          'A small number in an answer is the part of the note that answer came from.',
+          'Tap it. The chat closes, the Transcript tab opens, and that part is outlined in blue.',
+          'On a recording it points at a spoken line. On a pasted note it points at a paragraph.',
+          'Tap a different number to move the blue outline there.',
           'Switching tab by hand clears the outline.',
         ],
       },
@@ -295,7 +305,7 @@ export const HELP: Record<string, HelpEntry> = {
           'Gyan says "I could not find that in your notes" when the answer is not in this note.',
           'That is on purpose. It would rather say nothing than make something up.',
           'It then suggests a question that this note can answer.',
-          'A note has to be Ready before you can ask about it. Until then the Ask button is greyed out.',
+          'A note needs its words before you can ask about it. Until then the Ask button is greyed out.',
         ],
       },
       {

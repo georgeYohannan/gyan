@@ -14,7 +14,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { TabBar } from '@/components/ui/tab-bar';
 import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
-import { NO_TRANSCRIPT_MESSAGE, type ChatSource } from '@/lib/chat';
+import { NO_TRANSCRIPT_MESSAGE, NO_WORDS_MESSAGE, type ChatSource } from '@/lib/chat';
+import { listPassages, type Passage } from '@/lib/passages';
 import { noteTitle } from '@/lib/notes';
 import {
   getSummary,
@@ -29,7 +30,10 @@ import { formatTime, getNote, listSegments, startTranscription, type NoteDetail,
 type Ready = {
   state: 'ready';
   note: NoteDetail;
+  /** A recording's transcript lines. Empty for a pasted-text note. */
   lines: TranscriptLine[];
+  /** A pasted-text note's numbered paragraphs. Empty for a recording. */
+  passages: Passage[];
   summary?: Summary;
   items: ActionItem[];
 };
@@ -47,9 +51,17 @@ async function fetchState(id: string): Promise<Load> {
   try {
     const note = await getNote(id);
     if (!note) return { state: 'missing' };
-    if (!HAS_WORDS.includes(note.status)) return { state: 'ready', note, lines: [], items: [] };
-    const [lines, summary, items] = await Promise.all([listSegments(id), getSummary(id), listActionItems(id)]);
-    return { state: 'ready', note, lines, summary, items };
+    if (!HAS_WORDS.includes(note.status)) return { state: 'ready', note, lines: [], passages: [], items: [] };
+
+    // A recording has transcript lines. Pasted text has paragraphs instead, kept in the file.
+    const isText = note.source === 'text';
+    const [lines, passages, summary, items] = await Promise.all([
+      isText ? Promise.resolve([]) : listSegments(id),
+      isText ? listPassages(note.file_path).catch(() => []) : Promise.resolve([]),
+      getSummary(id),
+      listActionItems(id),
+    ]);
+    return { state: 'ready', note, lines, passages, summary, items };
   } catch {
     return { state: 'error' };
   }
@@ -162,7 +174,10 @@ export default function NoteDetailScreen() {
   }, []);
 
   const lines = load.state === 'ready' ? load.lines : [];
-  const canAsk = load.state === 'ready' && lines.length > 0;
+  const passages = load.state === 'ready' ? load.passages : [];
+  const isText = load.state === 'ready' && load.note.source === 'text';
+  // A note can be asked about as soon as it has words, whether somebody spoke them or typed them.
+  const canAsk = lines.length > 0 || passages.length > 0;
 
   return (
     <View style={{ flex: 1 }}>
@@ -241,7 +256,7 @@ export default function NoteDetailScreen() {
               </View>
               {!canAsk ? (
                 <Body small color="textSecondary">
-                  {NO_TRANSCRIPT_MESSAGE}
+                  {isText ? NO_WORDS_MESSAGE : NO_TRANSCRIPT_MESSAGE}
                 </Body>
               ) : null}
             </View>
@@ -262,6 +277,7 @@ export default function NoteDetailScreen() {
               <TranscriptTab
                 note={load.note}
                 lines={load.lines}
+                passages={load.passages}
                 onStart={() => start('transcript')}
                 starting={starting}
                 startError={startError}
@@ -283,6 +299,7 @@ export default function NoteDetailScreen() {
 function TranscriptTab({
   note,
   lines,
+  passages,
   onStart,
   starting,
   startError,
@@ -291,6 +308,7 @@ function TranscriptTab({
 }: {
   note: NoteDetail;
   lines: TranscriptLine[];
+  passages: Passage[];
   onStart: () => void;
   starting: boolean;
   startError: boolean;
@@ -298,9 +316,10 @@ function TranscriptTab({
   highlightId?: string;
   onLineLayout?: (lineId: string, y: number) => void;
 }) {
-  // A note that failed while writing its summary still has its transcript. Keep showing it, and
+  const hasWords = lines.length > 0 || passages.length > 0;
+  // A note that failed while writing its summary still has its words. Keep showing them, and
   // point to the Summary tab, where the Retry summary button is.
-  const failedWithTranscript = note.status === 'Failed' && lines.length > 0;
+  const failedWithTranscript = note.status === 'Failed' && hasWords;
 
   if (note.status === 'Failed' && !failedWithTranscript) {
     return (
@@ -349,11 +368,13 @@ function TranscriptTab({
     );
   }
 
-  if (lines.length === 0) {
+  if (!hasWords) {
     return (
       <GlassPanel>
-        <Heading level={3}>No transcript</Heading>
-        <Body color="textSecondary">This note has no transcript lines.</Body>
+        <Heading level={3}>{note.source === 'text' ? 'No words' : 'No transcript'}</Heading>
+        <Body color="textSecondary">
+          {note.source === 'text' ? 'This note has no words in it.' : 'This note has no transcript lines.'}
+        </Body>
       </GlassPanel>
     );
   }
@@ -375,6 +396,21 @@ function TranscriptTab({
           Spoken language: {note.spoken_language}
         </Body>
       ) : null}
+      {passages.map((p, i) => {
+        const lit = p.id === highlightId;
+        return (
+          <GlassPanel
+            key={p.id}
+            onLayout={(e) => onLineLayout?.(p.id, e.nativeEvent.layout.y)}
+            style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
+            accessibilityLabel={`Paragraph ${i + 1}. ${p.text}${lit ? '. Highlighted' : ''}`}>
+            <Body color="link" style={{ fontWeight: '600' }}>
+              Paragraph {i + 1}
+            </Body>
+            <Body>{p.text}</Body>
+          </GlassPanel>
+        );
+      })}
       {lines.map((l) => {
         const lit = l.id === highlightId;
         return (

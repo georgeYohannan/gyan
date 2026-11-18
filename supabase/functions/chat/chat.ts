@@ -16,6 +16,7 @@ export class ChatError extends Error {}
 
 export const MESSAGES = {
   noTranscript: 'This note has no words yet, so there is nothing to ask about. Wait until the note is ready.',
+  noText: 'This note has no words in it, so there is nothing to ask about.',
   notSetUp: 'Gyan cannot answer questions yet, because it has not been set up to. Please tell the Gyan team.',
   tooLong: 'This note is too long for Gyan to read in one go. Please ask about a shorter note.',
   limit: 'You have used all your questions for today. You get a new set tomorrow.',
@@ -81,16 +82,52 @@ export function formatDate(iso: string | null | undefined): string {
   return `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
+export type Passage = { id: string; text: string };
+
+/**
+ * Cuts text into numbered paragraphs.
+ * Paragraphs are blocks separated by a blank line. If the whole thing is one block with no blank
+ * lines, every line becomes its own paragraph instead.
+ *
+ * IMPORTANT: this is copied word for word from src/lib/passages.ts. Both sides must cut the text
+ * the same way, or a number in an answer would point at the wrong paragraph. A test
+ * (__tests__/passages-test.ts) keeps the two copies in step.
+ */
+export function splitPassages(raw: string): Passage[] {
+  const text = raw.replace(/\r\n/g, '\n').trim();
+  if (text === '') return [];
+
+  let chunks = text.split(/\n\s*\n+/);
+  if (chunks.length === 1) chunks = text.split(/\n+/);
+
+  return chunks
+    .map((c) => c.trim())
+    .filter((c) => c !== '')
+    .map((c, i) => ({ id: `p${i + 1}`, text: c }));
+}
+
+/** Pasted-text paragraphs, in the shape the rest of the chat works with. */
+export function passagesAsSegments(passages: Passage[]): Segment[] {
+  return passages.map((p) => ({ id: p.id, speaker_label: null, start_ms: 0, text: p.text }));
+}
+
 /**
  * The numbered passages, in the shape docs/data-model.md asks for:
  *   [1] {{meeting title}}, {{date}}, at {{time}}: {{text}}
  * Passage 1 is the first transcript line, passage 2 the second, and so on, in time order.
  * The speaker is kept in the text so the answer can say who said something.
  */
-export function formatPassages(segments: Segment[], noteTitle: string, noteDate: string | null): string {
+export function formatPassages(
+  segments: Segment[],
+  noteTitle: string,
+  noteDate: string | null,
+  /** false for pasted text, which nobody spoke, so it has no speaker and no time. */
+  hasTimes = true,
+): string {
   const date = formatDate(noteDate);
   return segments
     .map((s, i) => {
+      if (!hasTimes) return `[${i + 1}] ${noteTitle}, ${date}: ${s.text.trim()}`;
       const who = s.speaker_label ?? 'Speaker';
       return `[${i + 1}] ${noteTitle}, ${date}, at ${formatTime(s.start_ms)}: ${who}: ${s.text.trim()}`;
     })

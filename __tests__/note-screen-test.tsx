@@ -14,6 +14,7 @@ const mockStartSummary = jest.fn();
 const mockCopy = jest.fn();
 const mockChatList = jest.fn();
 const mockAsk = jest.fn();
+const mockPassages = jest.fn();
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
@@ -33,6 +34,10 @@ jest.mock('@/lib/summaries', () => ({
   startSummary: (...a: unknown[]) => mockStartSummary(...a),
 }));
 jest.mock('@/lib/clipboard', () => ({ copyText: (...a: unknown[]) => mockCopy(...a) }));
+jest.mock('@/lib/passages', () => ({
+  ...jest.requireActual('@/lib/passages'),
+  listPassages: (...a: unknown[]) => mockPassages(...a),
+}));
 jest.mock('@/lib/chat', () => ({
   ...jest.requireActual('@/lib/chat'),
   listChatMessages: (...a: unknown[]) => mockChatList(...a),
@@ -49,6 +54,7 @@ const note = (over: Record<string, unknown> = {}) => ({
   created_at: '2026-11-17T10:00:00Z',
   spoken_language: 'en',
   duration_seconds: 120,
+  file_path: 'acc/n1/call.mp3',
   ...over,
 });
 
@@ -86,6 +92,7 @@ beforeEach(() => {
   mockCopy.mockResolvedValue(undefined);
   mockChatList.mockReset().mockResolvedValue([]);
   mockAsk.mockReset();
+  mockPassages.mockReset().mockResolvedValue([]);
 });
 
 describe('<NoteDetailScreen /> Summary tab', () => {
@@ -498,5 +505,97 @@ describe('help for the chat panel', () => {
   test('it has screenshots', () => {
     expect(entry.images.length).toBeGreaterThanOrEqual(2);
     for (const img of entry.images) expect(img.alt.length).toBeGreaterThan(0);
+  });
+});
+
+describe('<NoteDetailScreen /> a pasted-text note', () => {
+  const textNote = () => note({ source: 'text', title: 'gyan development', file_path: 'acc/n1/notes.txt' });
+
+  const PARAGRAPHS = [
+    { id: 'p1', text: 'The module ingests financial documents for a family-law matter.' },
+    { id: 'p2', text: 'Audience: forensic accountants and family-law attorneys.' },
+    { id: 'p3', text: 'Frontend: React 18, TypeScript and Vite.' },
+  ];
+
+  test('its words show in the Transcript tab as numbered paragraphs', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue(PARAGRAPHS);
+    await render(<NoteDetailScreen />);
+    await openTranscript();
+
+    expect(screen.getByText('Paragraph 1')).toBeTruthy();
+    expect(screen.getByText('Paragraph 2')).toBeTruthy();
+    expect(screen.getByText('Audience: forensic accountants and family-law attorneys.')).toBeTruthy();
+    // Nobody spoke these words, so no speaker and no time is invented for them.
+    expect(screen.queryByText('Speaker 1')).toBeNull();
+  });
+
+  test('it reads the words from the note file, not from transcript lines', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue(PARAGRAPHS);
+    await render(<NoteDetailScreen />);
+    await screen.findByRole('tab', { name: 'Transcript' });
+
+    expect(mockPassages).toHaveBeenCalledWith('acc/n1/notes.txt');
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  test('THE BUG THIS FIXES: a pasted-text note CAN be asked about', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue(PARAGRAPHS);
+    await render(<NoteDetailScreen />);
+
+    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
+    expect(ask.props.accessibilityState).toMatchObject({ disabled: false });
+    expect(screen.queryByText('You can ask questions once this note has its words.')).toBeNull();
+  });
+
+  test('tapping a number jumps to that paragraph and lights it up', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue(PARAGRAPHS);
+    mockChatList.mockResolvedValue([
+      { id: 'c1', role: 'user', content: 'Who is it for?', sources: [], created_at: 'x' },
+      {
+        id: 'c2',
+        role: 'assistant',
+        content: 'Forensic accountants and family-law attorneys [2].',
+        sources: [{ n: 2, segment_id: 'p2', start_ms: 0, speaker_label: null }],
+        created_at: 'y',
+      },
+    ]);
+    await render(<NoteDetailScreen />);
+
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 0:00' }));
+    });
+
+    expect(screen.getByRole('tab', { name: 'Transcript' }).props.accessibilityState).toMatchObject({ selected: true });
+    expect(screen.getByLabelText(/Paragraph 2\..*Highlighted/)).toBeTruthy();
+  });
+
+  test('a text note with nothing in it says so, and cannot be asked about', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue([]);
+    await render(<NoteDetailScreen />);
+
+    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
+    expect(ask.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(screen.getByText('This note has no words in it, so there is nothing to ask about.')).toBeTruthy();
+
+    await openTranscript();
+    expect(screen.getByText('No words')).toBeTruthy();
+  });
+
+  test('words that will not open leave the rest of the note working', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockRejectedValue(new Error('down'));
+    mockGetSummary.mockResolvedValue(summary);
+    await render(<NoteDetailScreen />);
+
+    // The summary still shows. Only the words are missing.
+    expect(await screen.findByText(/agreed to ship the new sign up screen/)).toBeTruthy();
   });
 });

@@ -39,6 +39,9 @@ export const LIMIT_MESSAGE = 'You have used all your questions for today. You ge
 
 export const NO_TRANSCRIPT_MESSAGE = 'You can ask questions once this note has its words.';
 
+/** For a pasted-text note that somehow has nothing in it. */
+export const NO_WORDS_MESSAGE = 'This note has no words in it, so there is nothing to ask about.';
+
 export const SEND_PROBLEM_MESSAGE = 'We could not send your question. Check your internet and tap Retry.';
 
 /** The longest question we let somebody send, to match the server. */

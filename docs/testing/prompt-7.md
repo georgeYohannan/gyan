@@ -96,7 +96,20 @@ only pays full price for reading the note the first time.
 7. Set it to **4**, reload, and ask 1 question. Under the Send button you should now see a quiet
    line saying how many questions are left today. Put it back to **20** when you are done.
 
-## Part G: The help entry, and the automatic checks
+## Part G: Notes you pasted, not recorded
+
+A note you pasted in (or uploaded as a .txt or .md file) has no recording, so nobody spoke it and
+it has no speakers and no times. It can still be asked about.
+
+1. Open a note whose words you **pasted**. Its title may say *Pasted text* if you did not name it.
+2. Tap the **Transcript** tab. Its words should be listed as **Paragraph 1**, **Paragraph 2**, and
+   so on. No speaker names, no times, because there was no recording.
+3. Tap **Ask**. The button must **not** be greyed out.
+4. Ask something the pasted words really cover.
+5. Tap one of the small numbers in the answer. It should jump to the right **paragraph** and
+   outline it in blue, exactly like a recording jumps to a line.
+
+## Part H: The help entry, and the automatic checks
 
 1. Open a note, tap **Ask**, then tap the round **?** button in the top of the chat panel.
 2. The help should explain, in short plain sentences: what you can ask, what the little numbers
@@ -114,8 +127,8 @@ only pays full price for reading the note the first time.
 
 ## If something does not work
 
-- **The Ask button is greyed out.** The note has no words yet. Only a note whose Transcript tab has
-  lines can be asked about. Wait for the note to say **Ready**.
+- **The Ask button is greyed out.** The note has no words yet. Wait for it to say **Ready**. If it
+  is a pasted note and the Transcript tab says *No words*, the pasted text was empty.
 - **Every question says Gyan has not been set up.** The key is missing. Run `supabase secrets list`
   and check `ANTHROPIC_API_KEY` is there. If not, do Part A of `docs/testing/prompt-6.md`.
 - **Every question fails with a problem and a Retry button.** The `chat` function probably is not
@@ -126,6 +139,9 @@ only pays full price for reading the note the first time.
 
 ## Known gaps (on purpose, for later)
 
+- **The free-plan check needs the Free plan back at 5 meetings a month.** It is at 3 in the test
+  project right now, left over from an earlier test, so 2 of the automatic checks fail until you
+  put it back. See "Before you run npm run check" below.
 - **The chat only reads 1 note at a time.** Asking across all your notes at once needs the search
   pieces (`chunks`) and an embedding model, which is still an open decision. The Search screen will
   bring both.
@@ -139,5 +155,12 @@ only pays full price for reading the note the first time.
 - **The free-plan privacy test** expects the Free plan to be 5 meetings a month **and** a chat limit
   above 0. If you leave the chat limit at 1 after Part F step 3, put it back to 20, or
   `npm run check` will tell you to.
+
+## Before you run npm run check
+
+Two automatic checks read the real test project and expect the **Free** plan to be **5 meetings a
+month**. Right now it is **3**, left over from testing the limit in an earlier step. In the Supabase
+dashboard, open **Table Editor**, then **plans**, and set the Free row's `meetings_per_month` back
+to **5**. Then `npm run check` passes.
 
 If something does not match, tell me the Part letter and the step number and I will fix it.

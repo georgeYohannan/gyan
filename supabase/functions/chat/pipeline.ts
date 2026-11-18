@@ -8,7 +8,9 @@ import {
   formatPassages,
   languageName,
   MESSAGES,
+  passagesAsSegments,
   sourcesFor,
+  splitPassages,
   type HistoryMessage,
   type Segment,
   type Source,
@@ -44,6 +46,11 @@ export type AdminLike = {
       };
     };
   };
+  storage: {
+    from(bucket: string): {
+      download(path: string): PromiseLike<{ data: { text(): Promise<string> } | null; error: unknown }>;
+    };
+  };
 };
 
 export type ChatOptions = {
@@ -51,6 +58,10 @@ export type ChatOptions = {
   meetingId: string;
   threadId: string;
   accountId: string;
+  /** 'text' means the person pasted or uploaded words, so there is no transcript to read. */
+  source: string;
+  filePath: string | null;
+  bucket: string;
   /** The title and date of the note, used in every passage line. */
   noteTitle: string;
   noteDate: string | null;
@@ -70,8 +81,20 @@ export type ChatOptions = {
 
 export type ChatResult = { answer: string; sources: Source[] };
 
-/** The transcript lines of the note, in time order. */
-async function readSegments(o: ChatOptions): Promise<Segment[]> {
+/**
+ * The words of the note, in order: the transcript lines of a recording, or the paragraphs of a
+ * pasted-text note. Either way they come back numbered the same way the app numbers them.
+ */
+async function readSegments(o: ChatOptions): Promise<{ segments: Segment[]; hasTimes: boolean }> {
+  if (o.source === 'text') {
+    if (!o.filePath) throw new ChatError(MESSAGES.noText);
+    const { data, error } = await o.admin.storage.from(o.bucket).download(o.filePath);
+    if (error || !data) throw new ChatError(MESSAGES.noText);
+    const segments = passagesAsSegments(splitPassages(await data.text()));
+    if (segments.length === 0) throw new ChatError(MESSAGES.noText);
+    return { segments, hasTimes: false };
+  }
+
   const { data, error } = await o.admin
     .from('transcript_segments')
     .select('id, speaker_label, start_ms, text')
@@ -80,7 +103,7 @@ async function readSegments(o: ChatOptions): Promise<Segment[]> {
   if (error) throw new ChatError(MESSAGES.unknown);
   const segments = (data ?? []) as Segment[];
   if (segments.length === 0) throw new ChatError(MESSAGES.noTranscript);
-  return segments;
+  return { segments, hasTimes: true };
 }
 
 /**
@@ -120,11 +143,11 @@ async function readHistory(o: ChatOptions): Promise<HistoryMessage[]> {
  * person can tap Retry without it costing them another question out of their day.
  */
 export async function runChat(o: ChatOptions): Promise<ChatResult> {
-  const segments = await readSegments(o);
+  const { segments, hasTimes } = await readSegments(o);
   const history = await readHistory(o);
 
   const ask: Ask = {
-    system: buildSystem(languageName(o.language), formatPassages(segments, o.noteTitle, o.noteDate)),
+    system: buildSystem(languageName(o.language), formatPassages(segments, o.noteTitle, o.noteDate, hasTimes)),
     history,
     question: buildUser(o.question),
   };

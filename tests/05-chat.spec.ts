@@ -13,6 +13,8 @@ import {
   noteRow,
   openNote,
   signIn,
+  TEXT_NOTE_ID,
+  textNoteRow,
 } from './fixtures/fake-api';
 
 /** Opens a note and opens the chat panel on it. */
@@ -191,4 +193,48 @@ test('on a phone-sized window the chat still works', async ({ page }) => {
 
   await expect(page.getByText(/agreed to ship the sign up screen on Friday/)).toBeVisible();
   await expect(page.getByRole('link', { name: 'Go to the line at 1:05' })).toBeVisible();
+});
+
+/**
+ * A pasted-text note has no transcript, only paragraphs. It must still be askable.
+ * This is the gap the founder found: the Ask button used to be switched off here.
+ */
+test('a pasted-text note shows numbered paragraphs and CAN be asked about', async ({ page }) => {
+  await installFakes(page, { notes: [textNoteRow()], segments: [] });
+  await signIn(page);
+  await openNote(page, TEXT_NOTE_ID);
+
+  await expect(page.getByRole('button', { name: 'Ask about this note' })).toBeEnabled();
+  await expect(page.getByText('You can ask questions once this note has its words.')).toBeHidden();
+
+  await page.getByRole('tab', { name: 'Transcript' }).click();
+  await expect(page.getByText('Paragraph 1')).toBeVisible();
+  await expect(page.getByText(/Audience: forensic accountants/)).toBeVisible();
+});
+
+test('a number in an answer jumps to the right paragraph of a pasted-text note', async ({ page }) => {
+  await installFakes(page, {
+    notes: [textNoteRow()],
+    segments: [],
+    chatMessages: [
+      { id: 'cm1', role: 'user', content: 'Who is it for?', sources: [], created_at: '2026-11-18T10:00:00Z' },
+      {
+        id: 'cm2',
+        role: 'assistant',
+        content: 'Forensic accountants, family-law attorneys, paralegals and firm admins [2].',
+        sources: [{ n: 2, segment_id: 'p2', start_ms: 0, speaker_label: null }],
+        created_at: '2026-11-18T10:00:06Z',
+      },
+    ],
+  });
+  await signIn(page);
+  await openNote(page, TEXT_NOTE_ID);
+
+  await page.getByRole('button', { name: 'Ask about this note' }).click();
+  await expect(page.getByText(/Forensic accountants, family-law attorneys/)).toBeVisible();
+
+  await page.getByRole('link', { name: 'Go to the line at 0:00' }).click();
+
+  await expect(page.getByRole('tab', { name: 'Transcript' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByLabel(/Paragraph 2\..*Highlighted/)).toBeVisible();
 });

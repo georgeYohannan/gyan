@@ -20,6 +20,8 @@ function fakeAdmin(
     segmentsError?: boolean;
     historyError?: boolean;
     finishError?: boolean;
+    downloadText?: string;
+    downloadError?: boolean;
   } = {},
 ) {
   const calls: Call[] = [];
@@ -53,6 +55,16 @@ function fakeAdmin(
         },
       };
     },
+    storage: {
+      from() {
+        return {
+          download() {
+            if (options.downloadError) return Promise.resolve({ data: null, error: { message: 'no' } });
+            return Promise.resolve({ data: { text: async () => options.downloadText ?? '' }, error: null });
+          },
+        };
+      },
+    },
   };
   return { admin: admin as unknown as ChatOptions['admin'], calls };
 }
@@ -80,6 +92,9 @@ const base = {
   meetingId: 'm1',
   threadId: 't1',
   accountId: 'acc1',
+  source: 'upload',
+  filePath: 'acc1/m1/call.mp3',
+  bucket: 'notes-files',
   noteTitle: 'Weekly team call',
   noteDate: '2026-11-17T10:00:00Z',
   question: 'What were the decisions?',
@@ -296,5 +311,71 @@ describe('privacy', () => {
     expect(seen).toContain('transcript_segments:m1');
     expect(seen).toContain('chat_messages:t1');
     expect(seen.some((s) => !s.endsWith(':m1') && !s.endsWith(':t1'))).toBe(false);
+  });
+});
+
+describe('a pasted-text note', () => {
+  const PASTED = 'The module ingests financial documents.\n\nAudience: forensic accountants and family-law attorneys.\n\nFrontend: React 18 and TypeScript.';
+
+  const text = { ...base, source: 'text', filePath: 'acc1/m1/notes.txt' };
+
+  test('its paragraphs become the numbered passages', async () => {
+    const { admin } = fakeAdmin({ downloadText: PASTED });
+    const { call, asks } = fakeClaude([{ text: 'Forensic accountants and family-law attorneys [2].' }]);
+
+    await runChat({ ...text, question: 'Who is it for?', admin, call });
+
+    // Paragraph 1 is passage 1, paragraph 2 is passage 2, and so on.
+    expect(asks[0].system).toContain('[1] Weekly team call, 17 November 2026: The module ingests financial documents.');
+    expect(asks[0].system).toContain('[2] Weekly team call, 17 November 2026: Audience: forensic accountants and family-law attorneys.');
+    // Nobody spoke these words, so there is no speaker and no time to invent.
+    expect(asks[0].system).not.toContain('Speaker');
+    expect(asks[0].system).not.toContain(' at 0:00');
+  });
+
+  test('a passage number points at the right paragraph, so the app can jump to it', async () => {
+    const { admin } = fakeAdmin({ downloadText: PASTED });
+    const { call } = fakeClaude([{ text: 'Forensic accountants and family-law attorneys [2].' }]);
+
+    const result = await runChat({ ...text, question: 'Who is it for?', admin, call });
+
+    expect(result.sources).toEqual([{ n: 2, segment_id: 'p2', start_ms: 0, speaker_label: null }]);
+  });
+
+  test('it never asks the database for transcript lines it does not have', async () => {
+    const seen: string[] = [];
+    const admin = {
+      rpc: () => Promise.resolve({ error: null }),
+      from(table: string) {
+        seen.push(table);
+        return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) }) };
+      },
+      storage: { from: () => ({ download: () => Promise.resolve({ data: { text: async () => PASTED }, error: null }) }) },
+    } as unknown as ChatOptions['admin'];
+    const { call } = fakeClaude([{ text: 'Yes [1].' }]);
+
+    await runChat({ ...text, admin, call });
+
+    expect(seen).not.toContain('transcript_segments');
+  });
+
+  test('EMPTY: a text note with nothing in it is not sent to the AI at all', async () => {
+    const { admin } = fakeAdmin({ downloadText: '   \n  \n ' });
+    const { call } = fakeClaude([{ text: 'should never be asked' }]);
+
+    await expect(runChat({ ...text, admin, call })).rejects.toThrow(MESSAGES.noText);
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  test('a text note whose words will not open gets a plain message', async () => {
+    const { admin } = fakeAdmin({ downloadError: true });
+    const { call } = fakeClaude([{ text: 'x' }]);
+    await expect(runChat({ ...text, admin, call })).rejects.toThrow(MESSAGES.noText);
+  });
+
+  test('a text note with no file at all gets a plain message', async () => {
+    const { admin } = fakeAdmin();
+    const { call } = fakeClaude([{ text: 'x' }]);
+    await expect(runChat({ ...text, filePath: null, admin, call })).rejects.toThrow(MESSAGES.noText);
   });
 });
