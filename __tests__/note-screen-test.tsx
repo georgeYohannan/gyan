@@ -12,6 +12,9 @@ const mockListItems = jest.fn();
 const mockSetDone = jest.fn();
 const mockStartSummary = jest.fn();
 const mockCopy = jest.fn();
+const mockChatList = jest.fn();
+const mockAsk = jest.fn();
+const mockPassages = jest.fn();
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
@@ -31,6 +34,16 @@ jest.mock('@/lib/summaries', () => ({
   startSummary: (...a: unknown[]) => mockStartSummary(...a),
 }));
 jest.mock('@/lib/clipboard', () => ({ copyText: (...a: unknown[]) => mockCopy(...a) }));
+jest.mock('@/lib/passages', () => ({
+  ...jest.requireActual('@/lib/passages'),
+  listPassages: (...a: unknown[]) => mockPassages(...a),
+}));
+jest.mock('@/lib/chat', () => ({
+  ...jest.requireActual('@/lib/chat'),
+  listChatMessages: (...a: unknown[]) => mockChatList(...a),
+  askChat: (...a: unknown[]) => mockAsk(...a),
+  retryChat: jest.fn(),
+}));
 
 const note = (over: Record<string, unknown> = {}) => ({
   id: 'n1',
@@ -41,6 +54,7 @@ const note = (over: Record<string, unknown> = {}) => ({
   created_at: '2026-11-17T10:00:00Z',
   spoken_language: 'en',
   duration_seconds: 120,
+  file_path: 'acc/n1/call.mp3',
   ...over,
 });
 
@@ -76,6 +90,9 @@ beforeEach(() => {
   mockListItems.mockResolvedValue([]);
   mockSetDone.mockResolvedValue(undefined);
   mockCopy.mockResolvedValue(undefined);
+  mockChatList.mockReset().mockResolvedValue([]);
+  mockAsk.mockReset();
+  mockPassages.mockReset().mockResolvedValue([]);
 });
 
 describe('<NoteDetailScreen /> Summary tab', () => {
@@ -376,5 +393,209 @@ describe('help for the note screen', () => {
 
   test('has screenshots', () => {
     expect(HELP.note.images.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('<NoteDetailScreen /> the side chat', () => {
+  const CHAT = [
+    { id: 'c1', role: 'user' as const, content: 'What were the decisions?', sources: [], created_at: 'x' },
+    {
+      id: 'c2',
+      role: 'assistant' as const,
+      content: 'We are happy to be here [2].',
+      // Passage 2 is the second transcript line, which is the one with id 'b'.
+      sources: [{ n: 2, segment_id: 'b', start_ms: 65000, speaker_label: 'Speaker 2' }],
+      created_at: 'y',
+    },
+  ];
+
+  test('a Ready note with words has an Ask button', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    await render(<NoteDetailScreen />);
+
+    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
+    expect(ask.props.accessibilityState).toMatchObject({ disabled: false });
+  });
+
+  test('a note with no words yet cannot be asked about, and says why', async () => {
+    mockGetNote.mockResolvedValue(note({ status: 'Transcribing' }));
+    mockList.mockResolvedValue([]);
+    await render(<NoteDetailScreen />);
+
+    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
+    expect(ask.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(screen.getByText('You can ask questions once this note has its words.')).toBeTruthy();
+  });
+
+  test('Ask opens the chat panel, and the chat is read from the database', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    await render(<NoteDetailScreen />);
+
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+    });
+
+    expect(screen.getByRole('header', { name: 'Ask about this note' })).toBeTruthy();
+    expect(mockChatList).toHaveBeenCalledWith('n1');
+  });
+
+  test('tapping a passage number opens the Transcript tab and lights up that line', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    mockChatList.mockResolvedValue(CHAT);
+    await render(<NoteDetailScreen />);
+
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 1:05' }));
+    });
+
+    // The Transcript tab is now the one showing.
+    expect(screen.getByRole('tab', { name: 'Transcript' }).props.accessibilityState).toMatchObject({ selected: true });
+    // And the line the number pointed at is marked as highlighted.
+    expect(screen.getByLabelText('Speaker 2, 1:05. Happy to be here.. Highlighted')).toBeTruthy();
+    // The other line is not.
+    expect(screen.getByLabelText('Speaker 1, 0:00. Hi, thanks for joining.')).toBeTruthy();
+  });
+
+  test('changing tab by hand clears the highlight', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    mockChatList.mockResolvedValue(CHAT);
+    await render(<NoteDetailScreen />);
+
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 1:05' }));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('tab', { name: 'Summary' }));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('tab', { name: 'Transcript' }));
+    });
+
+    expect(screen.queryByLabelText(/Highlighted/)).toBeNull();
+  });
+});
+
+describe('help for the chat panel', () => {
+  const entry = HELP.noteChat;
+  const words = [...entry.sentences, ...(entry.lists ?? []).flatMap((l) => [l.heading, ...l.items])].join(' ');
+
+  test('it exists and is written in short plain words', () => {
+    expect(entry.title.length).toBeGreaterThan(0);
+    // No jargon a 15 year old would have to look up.
+    expect(words).not.toMatch(/token|prompt|API|model|embedding|passage number/i);
+  });
+
+  test('it explains what you can ask, the little numbers, and the daily limit', () => {
+    expect(words).toMatch(/ask/i);
+    expect(words).toMatch(/little numbers|small numbers/i);
+    expect(words).toMatch(/could not find/i);
+    expect(words).toMatch(/day/i);
+  });
+
+  test('it has screenshots', () => {
+    expect(entry.images.length).toBeGreaterThanOrEqual(2);
+    for (const img of entry.images) expect(img.alt.length).toBeGreaterThan(0);
+  });
+});
+
+describe('<NoteDetailScreen /> a pasted-text note', () => {
+  const textNote = () => note({ source: 'text', title: 'gyan development', file_path: 'acc/n1/notes.txt' });
+
+  const PARAGRAPHS = [
+    { id: 'p1', text: 'The module ingests financial documents for a family-law matter.' },
+    { id: 'p2', text: 'Audience: forensic accountants and family-law attorneys.' },
+    { id: 'p3', text: 'Frontend: React 18, TypeScript and Vite.' },
+  ];
+
+  test('its words show in the Transcript tab as numbered paragraphs', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue(PARAGRAPHS);
+    await render(<NoteDetailScreen />);
+    await openTranscript();
+
+    expect(screen.getByText('Paragraph 1')).toBeTruthy();
+    expect(screen.getByText('Paragraph 2')).toBeTruthy();
+    expect(screen.getByText('Audience: forensic accountants and family-law attorneys.')).toBeTruthy();
+    // Nobody spoke these words, so no speaker and no time is invented for them.
+    expect(screen.queryByText('Speaker 1')).toBeNull();
+  });
+
+  test('it reads the words from the note file, not from transcript lines', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue(PARAGRAPHS);
+    await render(<NoteDetailScreen />);
+    await screen.findByRole('tab', { name: 'Transcript' });
+
+    expect(mockPassages).toHaveBeenCalledWith('acc/n1/notes.txt');
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  test('THE BUG THIS FIXES: a pasted-text note CAN be asked about', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue(PARAGRAPHS);
+    await render(<NoteDetailScreen />);
+
+    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
+    expect(ask.props.accessibilityState).toMatchObject({ disabled: false });
+    expect(screen.queryByText('You can ask questions once this note has its words.')).toBeNull();
+  });
+
+  test('tapping a number jumps to that paragraph and lights it up', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue(PARAGRAPHS);
+    mockChatList.mockResolvedValue([
+      { id: 'c1', role: 'user', content: 'Who is it for?', sources: [], created_at: 'x' },
+      {
+        id: 'c2',
+        role: 'assistant',
+        content: 'Forensic accountants and family-law attorneys [2].',
+        sources: [{ n: 2, segment_id: 'p2', start_ms: 0, speaker_label: null }],
+        created_at: 'y',
+      },
+    ]);
+    await render(<NoteDetailScreen />);
+
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 0:00' }));
+    });
+
+    expect(screen.getByRole('tab', { name: 'Transcript' }).props.accessibilityState).toMatchObject({ selected: true });
+    expect(screen.getByLabelText(/Paragraph 2\..*Highlighted/)).toBeTruthy();
+  });
+
+  test('a text note with nothing in it says so, and cannot be asked about', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockResolvedValue([]);
+    await render(<NoteDetailScreen />);
+
+    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
+    expect(ask.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(screen.getByText('This note has no words in it, so there is nothing to ask about.')).toBeTruthy();
+
+    await openTranscript();
+    expect(screen.getByText('No words')).toBeTruthy();
+  });
+
+  test('words that will not open leave the rest of the note working', async () => {
+    mockGetNote.mockResolvedValue(textNote());
+    mockPassages.mockRejectedValue(new Error('down'));
+    mockGetSummary.mockResolvedValue(summary);
+    await render(<NoteDetailScreen />);
+
+    // The summary still shows. Only the words are missing.
+    expect(await screen.findByText(/agreed to ship the new sign up screen/)).toBeTruthy();
   });
 });

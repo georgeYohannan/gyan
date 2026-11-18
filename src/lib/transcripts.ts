@@ -14,6 +14,8 @@ export type NoteDetail = {
   created_at: string;
   spoken_language: string | null;
   duration_seconds: number | null;
+  /** Where the file sits in the private bucket. Pasted text keeps its words there too. */
+  file_path: string | null;
 };
 
 export type TranscriptLine = {
@@ -37,7 +39,7 @@ const STATUS_FROM_DB: Record<string, Status> = {
 export async function getNote(id: string): Promise<NoteDetail | undefined> {
   const { data, error } = await getSupabase()
     .from('meetings')
-    .select('id, title, source, status, error_message, created_at, spoken_language, duration_seconds')
+    .select('id, title, source, status, error_message, created_at, spoken_language, duration_seconds, file_path')
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;

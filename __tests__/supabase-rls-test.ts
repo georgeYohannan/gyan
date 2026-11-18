@@ -4,6 +4,10 @@
  * It proves one person cannot read or change another person's rows, and that the
  * sign up trigger made a profile, a Free account, and an owner row.
  *
+ * One half of the chat rule cannot be checked here: "a teammate on the SAME account still
+ * cannot read your chat" needs 2 users sharing 1 account, and these 2 fixtures each own their own.
+ * That half is checked against the migration itself, in __tests__/migrations-test.ts.
+ *
  * Needs 2 fake test users, made by hand in the Supabase dashboard (see docs/testing/prompt-3.md).
  * Put their details in .env.local as TEST_USER_A_EMAIL, TEST_USER_A_PASSWORD,
  * TEST_USER_B_EMAIL, TEST_USER_B_PASSWORD. Without them these tests are skipped.
@@ -116,6 +120,45 @@ maybe('Supabase test project: privacy between users', () => {
       const { data, error } = await B.client.from(table).select('*').eq('account_id', accountA);
       expect({ table, error: error?.message, rows: data }).toEqual({ table, error: undefined, rows: [] });
     }
+  });
+
+  test('user B cannot read ANY chat message, and cannot read A\'s threads', async () => {
+    // A chat is more private than a note: the rules only ever show a person their OWN threads,
+    // so B sees nothing at all here, not even their own teammates'.
+    const threads = await B.client.from('chat_threads').select('id').eq('account_id', accountA);
+    expect(threads.data).toEqual([]);
+    const messages = await B.client.from('chat_messages').select('id');
+    expect({ error: messages.error?.message, rows: messages.data }).toEqual({ error: undefined, rows: [] });
+  });
+
+  test('nobody can write a chat from the app: only the server saves messages', async () => {
+    const thread = await B.client
+      .from('chat_threads')
+      .insert({ account_id: accountA, user_id: B.userId, meeting_id: null });
+    expect(thread.error).not.toBeNull();
+
+    const message = await B.client
+      .from('chat_messages')
+      .insert({ thread_id: '00000000-0000-4000-8000-000000000000', role: 'user', content: '[test] hello' });
+    expect(message.error).not.toBeNull();
+  });
+
+  test('the daily chat limit is readable on the plan, but nobody can change it', async () => {
+    const read = await B.client.from('plans').select('chat_messages_per_day').eq('name', 'Free').single();
+
+    // The side chat migration may not be pushed to the test project yet. Say so clearly rather
+    // than failing with something confusing. Run `supabase db push`, then run this again.
+    if (read.error) {
+      // eslint-disable-next-line no-console
+      console.warn('Skipping the chat limit check: run `supabase db push` to add chat_messages_per_day, then run npm test again.');
+      return;
+    }
+
+    expect(typeof read.data?.chat_messages_per_day).toBe('number');
+    expect(read.data!.chat_messages_per_day).toBeGreaterThan(0);
+
+    const write = await B.client.from('plans').update({ chat_messages_per_day: 9999 }).eq('name', 'Free').select();
+    expect(write.data ?? []).toEqual([]);
   });
 
   test('user B cannot change user A\'s profile', async () => {

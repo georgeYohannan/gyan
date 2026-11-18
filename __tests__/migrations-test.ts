@@ -14,7 +14,7 @@ const tables = [...sql.matchAll(/create table public\.(\w+)/g)].map((m) => m[1])
 /** Tables that only server functions may write to. */
 const serverOnly = [
   'plans', 'usage', 'ai_usage', 'translations', 'summaries', 'mind_maps', 'transcript_segments',
-  'accounts', 'account_members', 'meetings',
+  'accounts', 'account_members', 'meetings', 'chat_threads', 'chat_messages',
 ];
 
 describe('database migration files', () => {
@@ -187,5 +187,85 @@ describe('summaries migration', () => {
   test('every new function pins the search path', () => {
     expect(t.match(/security definer/g)).toHaveLength(4);
     expect(t.match(/set search_path = ''/g)).toHaveLength(4);
+  });
+});
+
+describe('side chat migration', () => {
+  const file = fs.readdirSync(dir).find((f) => f.includes('side_chat'))!;
+  const t = fs.readFileSync(path.join(dir, file), 'utf8');
+
+  test('it deletes no table, column, or row of data', () => {
+    expect(t).not.toMatch(/drop (table|column|schema|function)/i);
+    expect(t).not.toMatch(/truncate/i);
+    expect(t).not.toMatch(/delete from/i);
+    // The one thing it does replace is a read rule, named here on purpose, to make the chat
+    // MORE private than it was. See the comment at the top of the migration.
+    expect(t.match(/drop policy/gi)).toHaveLength(1);
+    expect(t).toContain('drop policy if exists "Read chat threads of own accounts" on public.chat_threads');
+    expect(t).toContain('create policy "Read own chat threads" on public.chat_threads');
+  });
+
+  test('THE DAILY LIMIT COMES FROM THE PLANS TABLE, never from code', () => {
+    expect(t).toContain('alter table public.plans');
+    expect(t).toContain('add column if not exists chat_messages_per_day integer');
+    // The one and only place a number is written is the starting value for a plan row.
+    const counter = t.slice(t.indexOf('create function private.chat_questions_left'), t.indexOf('create function public.claim_chat_message'));
+    expect(counter).toContain('p.chat_messages_per_day');
+    expect(counter).toContain('join public.plans p on p.id = a.plan_id');
+    expect(counter).not.toMatch(/\b(10|20|50|100)\b/);
+  });
+
+  test('a person can only ever read THEIR OWN chat, not a teammate\'s', () => {
+    const helper = t.slice(t.indexOf('create or replace function private.can_read_thread'), t.indexOf('drop policy'));
+    expect(helper).toContain('t.user_id = (select auth.uid())');
+    expect(t).toContain('create policy "Read own chat threads" on public.chat_threads\n  for select to authenticated using (user_id = (select auth.uid()))');
+  });
+
+  test('the day is counted from midnight UTC, like the monthly meeting count', () => {
+    expect(t).toContain("date_trunc('day', now() at time zone 'utc')");
+    expect(t).toContain("cm.role = 'user'");
+  });
+
+  test('asking and checking the limit happen in ONE step, so two taps cannot slip past it', () => {
+    const claim = t.slice(t.indexOf('create function public.claim_chat_message'), t.indexOf('create function public.claim_chat_retry'));
+    expect(claim).toContain('private.chat_questions_left');
+    expect(claim).toContain("raise exception 'limit_reached'");
+    expect(claim).toContain("raise exception 'not_allowed'");
+    expect(claim).toContain('insert into public.chat_messages');
+    // The limit is checked BEFORE the question is saved.
+    expect(claim.indexOf('chat_questions_left')).toBeLessThan(claim.indexOf('insert into public.chat_messages'));
+  });
+
+  test('a retry never saves a second question, so it costs nobody an extra one', () => {
+    const retry = t.slice(t.indexOf('create function public.claim_chat_retry'), t.indexOf('create function public.finish_chat_message'));
+    expect(retry).not.toMatch(/insert into/i);
+    // It still refuses to re-open somebody else's question.
+    expect(retry).toContain('thread.user_id <> p_user_id');
+  });
+
+  test('one thread per person per note, so the chat is still there tomorrow', () => {
+    expect(t).toContain('create unique index if not exists chat_threads_one_per_person_per_note_idx');
+    expect(t).toContain('on public.chat_threads (user_id, meeting_id)');
+  });
+
+  test('saving an answer logs what it cost', () => {
+    const finish = t.slice(t.indexOf('create function public.finish_chat_message'));
+    expect(finish).toContain('insert into public.ai_usage');
+    expect(finish).toContain("'chat', 'anthropic'");
+  });
+
+  test.each([
+    'claim_chat_message(uuid, uuid, text)',
+    'claim_chat_retry(uuid, uuid)',
+    'finish_chat_message(uuid, uuid, uuid, text, jsonb, text, numeric, numeric)',
+  ])('only the server can run %s', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon, authenticated`);
+    expect(t).toContain(`grant execute on function public.${fn} to service_role`);
+    expect(t).not.toMatch(new RegExp(`grant execute on function public\\.${fn.replace(/[()]/g, '\\$&')} to (anon|authenticated)`));
+  });
+
+  test('every new function pins the search path', () => {
+    expect(t.match(/security definer/g)).toHaveLength(5);
+    expect(t.match(/set search_path = ''/g)).toHaveLength(5);
   });
 });

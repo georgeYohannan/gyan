@@ -13,6 +13,7 @@ export const FAKE_USER = { id: '11111111-1111-4111-8111-111111111111', email: 't
 export const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 export const NOTE_ID = '33333333-3333-4333-8333-333333333333';
 export const FAILED_NOTE_ID = '44444444-4444-4444-8444-444444444444';
+export const TEXT_NOTE_ID = '55555555-5555-4555-8555-555555555555';
 
 type Row = Record<string, unknown>;
 
@@ -28,7 +29,20 @@ export type FakeData = {
   functionStatus?: Record<string, number>;
   /** Make the login fail, to check the error message. */
   loginFails?: boolean;
+  /** The chat about this note that is already saved. Empty means nobody has asked anything. */
+  chatMessages: Row[];
+  /** What the chat server function answers. One per question asked, then the last one repeats. */
+  chatAnswers: ChatAnswer[];
+  /** true makes the chat function say the day's questions are used up. */
+  chatLimitReached?: boolean;
+  /** The words inside a pasted-text note, as the private bucket would hand them back. */
+  textWords: string;
 };
+
+/** One made up answer from the chat function. `ok: false` is a problem with a Retry. */
+export type ChatAnswer =
+  | { ok: true; answer: string; sources: Row[]; remaining: number }
+  | { ok: false; message: string };
 
 export const noteRow = (over: Row = {}): Row => ({
   id: NOTE_ID,
@@ -39,8 +53,30 @@ export const noteRow = (over: Row = {}): Row => ({
   created_at: '2026-11-17T10:00:00Z',
   spoken_language: 'en',
   duration_seconds: 184,
+  file_path: `${ACCOUNT_ID}/${NOTE_ID}/call.mp3`,
   ...over,
 });
+
+/** A note somebody pasted or uploaded as text. It has no transcript, only paragraphs. */
+export const textNoteRow = (over: Row = {}): Row => ({
+  id: TEXT_NOTE_ID,
+  title: 'gyan development',
+  source: 'text',
+  status: 'ready',
+  error_message: null,
+  created_at: '2026-11-18T09:00:00Z',
+  spoken_language: null,
+  duration_seconds: null,
+  file_path: `${ACCOUNT_ID}/${TEXT_NOTE_ID}/notes.txt`,
+  ...over,
+});
+
+/** The words inside that pasted-text note. 3 paragraphs, so passage 2 is the middle one. */
+export const TEXT_NOTE_WORDS = [
+  'The module ingests financial documents for a family-law matter and keeps a chain of custody.',
+  'Audience: forensic accountants, family-law attorneys, paralegals and firm admins.',
+  'Frontend stack: React 18, TypeScript, Vite and Tailwind.',
+].join('\n\n');
 
 export const SEGMENTS: Row[] = [
   { id: 's1', speaker_label: 'Speaker 1', start_ms: 500, end_ms: 4200, text: 'Thanks for joining. Let us start with the sign up screen.' },
@@ -63,12 +99,29 @@ export const ACTION_ITEMS: Row[] = [
   { id: 'a3', text: 'Book the review call', owner_name: 'Sam', due_text: 'next week', start_ms: 9000, done: true },
 ];
 
+/** The passage numbers point at the SEGMENTS above: [3] is the third line, at 1:05. */
+export const CHAT_SOURCES: Row[] = [{ n: 3, segment_id: 's3', start_ms: 65000, speaker_label: 'Speaker 1' }];
+
+export const CHAT_ANSWER = 'You agreed to ship the sign up screen on Friday, and Priya will send the test plan first [3].';
+
+export const CHAT_NOT_FOUND =
+  'I could not find that in your notes. Try asking what was decided about the sign up screen.';
+
+/** A chat that is already saved, used to check it is still there after a refresh. */
+export const CHAT_MESSAGES: Row[] = [
+  { id: 'cm1', role: 'user', content: 'What were the decisions?', sources: [], created_at: '2026-11-18T10:00:00Z' },
+  { id: 'cm2', role: 'assistant', content: CHAT_ANSWER, sources: CHAT_SOURCES, created_at: '2026-11-18T10:00:06Z' },
+];
+
 export const DEFAULTS: FakeData = {
   notes: [noteRow()],
   segments: SEGMENTS,
   summary: SUMMARY,
   actionItems: ACTION_ITEMS,
   usage: { used: 2, limit: 5 },
+  chatMessages: [],
+  chatAnswers: [{ ok: true, answer: CHAT_ANSWER, sources: CHAT_SOURCES, remaining: 19 }],
+  textWords: TEXT_NOTE_WORDS,
 };
 
 /** Everything the scripts can ask about after the fact: which calls the app made. */
@@ -124,7 +177,8 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
     return json(route, {});
   });
 
-  // The server functions. Nothing is really run: the app only needs to know it was accepted.
+  // The server functions. Nothing is really run, and the real AI is never called.
+  let questionsAsked = 0;
   await page.route('**/functions/v1/**', async (route) => {
     const name = new URL(route.request().url()).pathname.split('/').pop() ?? '';
     let body: unknown;
@@ -135,12 +189,37 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
     }
     recorder.functionCalls.push({ name, body });
     const status = data.functionStatus?.[name] ?? 202;
+
+    // The chat function answers with a made up answer, so the panel has something to show.
+    if (name === 'chat') {
+      if (status !== 202) return json(route, { error: 'problem' }, status);
+      if (data.chatLimitReached) return json(route, { error: 'limit_reached' }, 402);
+      const answers = data.chatAnswers;
+      const picked = answers[Math.min(questionsAsked, answers.length - 1)] ?? answers[0];
+      questionsAsked += 1;
+      if (picked.ok) {
+        return json(route, {
+          ok: true,
+          answer: picked.answer,
+          sources: picked.sources,
+          remaining: picked.remaining,
+          message_id: `q${questionsAsked}`,
+        });
+      }
+      return json(route, { ok: false, message: picked.message, message_id: `q${questionsAsked}`, remaining: 18 });
+    }
+
     return json(route, status === 202 ? { status: 'accepted' } : { error: 'problem' }, status);
   });
 
-  // Sending a file. Nothing is really stored.
+  // Files. Nothing is really stored, and nothing real is ever downloaded.
   await page.route('**/storage/v1/**', async (route) => {
-    recorder.uploads.push(new URL(route.request().url()).pathname);
+    const path = new URL(route.request().url()).pathname;
+    // Reading a pasted-text note's words back out of the bucket.
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'text/plain', body: data.textWords });
+    }
+    recorder.uploads.push(path);
     return json(route, { Key: 'notes-files/fake' });
   });
 
@@ -176,6 +255,11 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
           return data.summary ? [data.summary] : [];
         case 'action_items':
           return data.actionItems;
+        case 'chat_threads':
+          // No saved chat means no thread yet, which is how the app knows the chat is empty.
+          return data.chatMessages.length > 0 ? [{ id: 'thread-1' }] : [];
+        case 'chat_messages':
+          return data.chatMessages;
         case 'account_members':
           return [
             {
