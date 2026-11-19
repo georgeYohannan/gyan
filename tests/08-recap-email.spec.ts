@@ -34,9 +34,28 @@ const BODY: RecapBody = {
   ],
 };
 
+/** The same note, as a saved Spanish translation would hand it back. Made up words, not real. */
+const BODY_ES: RecapBody = {
+  title: 'Team call',
+  overview:
+    'El equipo acordó lanzar la nueva pantalla de registro el viernes. Dos personas la probaron en un teléfono y les pareció lenta, así que Priya enviará un plan de pruebas antes.',
+  keyPoints: [
+    'El registro es lento en los teléfonos',
+    'Dos personas lo probaron y ambas se atascaron en el paso de la contraseña',
+    'La nueva pantalla está lista salvo por los mensajes de error',
+  ],
+  decisions: ['Lanzar el viernes', 'Mantener la pantalla antigua disponible una semana'],
+  actionItems: [
+    // The names are NOT translated, exactly as the translating rules say.
+    { text: 'Enviar el plan de pruebas', owner: 'Test Person A', due: 'viernes' },
+    { text: 'Reescribir el mensaje de error de la contraseña', owner: 'Test Person B', due: null },
+    { text: 'Reservar la revisión', owner: null, due: null },
+  ],
+};
+
 function email(translated: boolean) {
   return renderRecap({
-    body: BODY,
+    body: translated ? BODY_ES : BODY,
     date: '2026-11-19T09:30:00Z',
     language: translated ? 'es' : 'en',
     translated,
@@ -86,6 +105,12 @@ test('a translated recap says "Translated by AI" right at the top', async ({ pag
 
   await expect(page.getByText('Translated by AI')).toBeVisible();
   await expect(page.getByText('Spanish. Names, numbers and times are unchanged.')).toBeVisible();
+  // The first match is the hidden one-line preview many email programs show; the visible one
+  // is the overview itself.
+  await expect(page.getByText(/El equipo acordó lanzar/).last()).toBeVisible();
+  // The date and the people's names are untouched, which is what the label promises.
+  await expect(page.getByText('19 November 2026')).toBeVisible();
+  await expect(page.getByText(/Test Person A/).first()).toBeVisible();
 
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${IMAGES}/recap-email-translated-390.png`, fullPage: true });
