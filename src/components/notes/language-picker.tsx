@@ -140,6 +140,10 @@ export function LanguagePicker({
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: Spacing.two,
+                    // The one you are on is outlined. A press is only a fill, so "this is mine"
+                    // and "my finger is here" never look the same.
+                    borderWidth: 1,
+                    borderColor: chosen ? Colors.brand : 'transparent',
                     backgroundColor: chosen || pressed ? Colors.backgroundSelected : 'transparent',
                   })}>
                   <View style={{ flex: 1, gap: Spacing.half }}>
@@ -154,7 +158,7 @@ export function LanguagePicker({
                   </View>
                   {busy ? (
                     <Body small color="link">
-                      Working…
+                      Translating…
                     </Body>
                   ) : chosen ? (
                     <Body small color="success" accessibilityElementsHidden>

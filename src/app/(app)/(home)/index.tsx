@@ -23,6 +23,38 @@ const POLL_MS = 3000;
 
 type Load = { state: 'loading' } | { state: 'error' } | { state: 'ready'; notes: Note[]; usage?: Usage };
 
+/** One line of the account box: what it is set to, what that means, and how to change it. */
+function SettingRow({
+  value,
+  note,
+  action,
+  error,
+}: {
+  value: string;
+  note: string;
+  action?: React.ReactNode;
+  error?: string;
+}) {
+  return (
+    <View style={{ gap: Spacing.two }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two }}>
+        <View style={{ flex: 1, minWidth: 180, gap: Spacing.half }}>
+          <Body>{value}</Body>
+          <Body small color="textSecondary">
+            {note}
+          </Body>
+        </View>
+        {action}
+      </View>
+      {error ? (
+        <Body small color="danger" accessibilityRole="alert">
+          {error}
+        </Body>
+      ) : null}
+    </View>
+  );
+}
+
 /** Home: the list of notes, newest first, and how many meetings are used this month. */
 export default function HomeScreen() {
   const { session, signOut } = useAuth();
@@ -103,27 +135,22 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {/*
+        A settings box, so it is built like one: the thing itself first, the explanation under it,
+        and the button that changes it beside it. Stacking a quiet label above every value would
+        make three lines where one will do.
+      */}
       <GlassPanel>
         <Heading level={3}>Your account</Heading>
 
-        <Body small color="textSecondary">
-          Logged in as
-        </Body>
-        <Body>{session?.user.email}</Body>
+        <SettingRow value={session?.user.email ?? ''} note="Signed in on this device." />
 
-        <Body small color="textSecondary">
-          Your language
-        </Body>
-        <Body>{languageName(languageCode)}</Body>
-        <Body small color="textSecondary">
-          Gyan writes your summaries, your to-dos and its chat answers in this language.
-        </Body>
-        {languageError ? (
-          <Body small color="danger" accessibilityRole="alert">
-            {languageError}
-          </Body>
-        ) : null}
-        <Button label="Change language" variant="secondary" onPress={() => setLanguageOpen(true)} />
+        <SettingRow
+          value={languageName(languageCode)}
+          note="Your summaries, your to-dos and the chat answers are written in this language."
+          action={<Button label="Change language" variant="secondary" onPress={() => setLanguageOpen(true)} />}
+          error={languageError}
+        />
 
         {logOutError ? (
           <Body small color="danger" accessibilityRole="alert">

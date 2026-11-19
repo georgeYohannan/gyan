@@ -702,7 +702,7 @@ describe('<NoteDetailScreen /> translating', () => {
     });
 
     expect(mockTranslate).toHaveBeenCalledWith('n1', 'summary', 'es');
-    expect(await screen.findByText('Spanish · Translated by AI')).toBeTruthy();
+    expect(await screen.findByText('Translated by AI')).toBeTruthy();
     expect(screen.getByText('El equipo acordó lanzar la nueva pantalla de registro el viernes.')).toBeTruthy();
     expect(screen.getByText('Lanzar el viernes')).toBeTruthy();
     // The to-dos are translated too, and keep their own tick boxes. A screen reader reads the
@@ -726,13 +726,13 @@ describe('<NoteDetailScreen /> translating', () => {
     });
     expect(screen.getByText('Ship on Friday')).toBeTruthy();
     expect(screen.queryByText('Lanzar el viernes')).toBeNull();
-    expect(screen.getByText('Spanish translation ready · showing the original')).toBeTruthy();
+    expect(screen.getByText('Your Spanish translation is saved.')).toBeTruthy();
 
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Show translation' }));
     });
     expect(screen.getByText('Lanzar el viernes')).toBeTruthy();
-    expect(screen.getByText('Spanish · Translated by AI')).toBeTruthy();
+    expect(screen.getByText('Translated by AI')).toBeTruthy();
   });
 
   test('PAID ONCE: a saved translation appears without asking the server at all', async () => {
@@ -744,7 +744,7 @@ describe('<NoteDetailScreen /> translating', () => {
 
     expect(mockSaved).toHaveBeenCalledWith('n1', 'summary', 'es');
     expect(mockTranslate).not.toHaveBeenCalled();
-    expect(await screen.findByText('Spanish · Translated by AI')).toBeTruthy();
+    expect(await screen.findByText('Translated by AI')).toBeTruthy();
     expect(screen.getByText('Lanzar el viernes')).toBeTruthy();
   });
 
@@ -792,7 +792,7 @@ describe('<NoteDetailScreen /> translating', () => {
     });
 
     expect(mockTranslate).toHaveBeenCalledWith('n1', 'transcript', 'ar');
-    expect(await screen.findByText('Arabic · Translated by AI')).toBeTruthy();
+    expect(await screen.findByText('Translated by AI')).toBeTruthy();
     expect(screen.getByText('شكرا لانضمامكم.')).toBeTruthy();
     // The speaker and the time are not words to translate, so they are untouched.
     expect(screen.getByText('Speaker 1')).toBeTruthy();
@@ -828,7 +828,7 @@ describe('<NoteDetailScreen /> translating', () => {
     await act(async () => {
       fireEvent.press(screen.getByRole('radio', { name: 'Spanish, Español' }));
     });
-    expect(await screen.findByText('Spanish · Translated by AI')).toBeTruthy();
+    expect(await screen.findByText('Translated by AI')).toBeTruthy();
 
     // The Transcript tab has not been translated, so it shows no label.
     await openTranscript();
@@ -839,7 +839,7 @@ describe('<NoteDetailScreen /> translating', () => {
     await act(async () => {
       fireEvent.press(screen.getByRole('tab', { name: 'Summary' }));
     });
-    expect(screen.getByText('Spanish · Translated by AI')).toBeTruthy();
+    expect(screen.getByText('Translated by AI')).toBeTruthy();
   });
 });
 

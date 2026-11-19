@@ -179,10 +179,9 @@ describe('<HomeScreen /> your language', () => {
       await render(<HomeScreen />);
     });
     expect(await screen.findByRole('header', { name: 'Your account' })).toBeTruthy();
-    expect(screen.getByText('Your language')).toBeTruthy();
     expect(screen.getByText('English')).toBeTruthy();
     expect(
-      screen.getByText('Gyan writes your summaries, your to-dos and its chat answers in this language.'),
+      screen.getByText('Your summaries, your to-dos and the chat answers are written in this language.'),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Change language' })).toBeTruthy();
   });

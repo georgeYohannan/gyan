@@ -51,9 +51,18 @@ export function TranslationBar({ language, busy, error, showing, onToggle, onCle
   return (
     <GlassPanel>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two }}>
-        <Body small color="link" style={{ flex: 1, minWidth: 160 }}>
-          {showing ? `${name} · ${TRANSLATED_LABEL}` : `${name} translation ready · showing the original`}
-        </Body>
+        {/* Two lines, not one line joined by a dot: the first says what you are reading, the
+            second says the thing people actually worry about. */}
+        <View style={{ flex: 1, minWidth: 180, gap: Spacing.half }}>
+          <Body small color="link">
+            {showing ? TRANSLATED_LABEL : 'Showing the original'}
+          </Body>
+          <Body small color="textSecondary">
+            {showing
+              ? `${name}. Names, numbers and times are unchanged.`
+              : `Your ${name} translation is saved.`}
+          </Body>
+        </View>
         <Button
           label={showing ? 'Show original' : 'Show translation'}
           variant="secondary"

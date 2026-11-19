@@ -60,7 +60,7 @@ describe('the language picker', () => {
 
   test('while one is being fetched, the list cannot be tapped again', async () => {
     const { onPick } = await open({ busyCode: 'ja' });
-    expect(screen.getByText('Working…')).toBeTruthy();
+    expect(screen.getByText('Translating…')).toBeTruthy();
     expect(screen.getByRole('radio', { name: 'Spanish, Español' }).props.accessibilityState).toMatchObject({
       disabled: true,
     });
@@ -116,14 +116,19 @@ describe('the "Translated by AI" bar', () => {
 
   test('every translation says it was translated by AI, and offers the original', async () => {
     await bar();
-    expect(screen.getByText(`Spanish · ${TRANSLATED_LABEL}`)).toBeTruthy();
+    expect(screen.getByText(TRANSLATED_LABEL)).toBeTruthy();
+    // And it answers the question people actually have about a translation.
+    expect(screen.getByText('Spanish. Names, numbers and times are unchanged.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Show original' })).toBeTruthy();
   });
 
   test('with the original on screen, it offers the translation back', async () => {
     await bar({ showing: false });
-    expect(screen.getByText('Spanish translation ready · showing the original')).toBeTruthy();
+    expect(screen.getByText('Showing the original')).toBeTruthy();
+    expect(screen.getByText('Your Spanish translation is saved.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Show translation' })).toBeTruthy();
+    // The label only belongs on translated words, so it is not here.
+    expect(screen.queryByText(TRANSLATED_LABEL)).toBeNull();
   });
 
   test('the toggle works both ways', async () => {

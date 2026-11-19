@@ -30,8 +30,10 @@ test('Home is where you set your language, and it is remembered after a refresh'
 
   // The account box at the bottom of Home is where a person looks for their own settings.
   await expect(page.getByRole('heading', { name: 'Your account' })).toBeVisible();
-  await expect(page.getByText('Your language')).toBeVisible();
   await expect(page.getByText('English', { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText('Your summaries, your to-dos and the chat answers are written in this language.'),
+  ).toBeVisible();
 
   await page.getByRole('button', { name: 'Change language' }).click();
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
@@ -56,7 +58,7 @@ test('a saved translation made by OLDER rules is not shown, so a rule change rea
   await openTranslate(page);
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
 
-  await expect(page.getByText('Spanish · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
   expect(recorder.functionCalls.filter((c) => c.name === 'translate')).toHaveLength(1);
 });
 
@@ -108,7 +110,7 @@ test('a translated summary shows the label and the translated words', async ({ p
 
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
 
-  await expect(page.getByText('Spanish · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
   await expect(page.getByText(String(SUMMARY_TRANSLATIONS.es.overview))).toBeVisible();
   await expect(page.getByText('Publicar la pantalla de registro el viernes')).toBeVisible();
   // The to-dos are translated too.
@@ -126,16 +128,16 @@ test('Show original brings the English back, and you can go back to the translat
   await signIn(page);
   await openTranslate(page);
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
-  await expect(page.getByText('Spanish · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
 
   await page.getByRole('button', { name: 'Show original' }).click();
   await expect(page.getByText('Ship the sign up screen on Friday')).toBeVisible();
   await expect(page.getByText('Publicar la pantalla de registro el viernes')).toBeHidden();
-  await expect(page.getByText('Spanish translation ready · showing the original')).toBeVisible();
+  await expect(page.getByText('Your Spanish translation is saved.')).toBeVisible();
 
   await page.getByRole('button', { name: 'Show translation' }).click();
   await expect(page.getByText('Publicar la pantalla de registro el viernes')).toBeVisible();
-  await expect(page.getByText('Spanish · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
 });
 
 test('PAID ONCE: a translation that is already saved never calls the server', async ({ page }) => {
@@ -148,7 +150,7 @@ test('PAID ONCE: a translation that is already saved never calls the server', as
 
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
 
-  await expect(page.getByText('Spanish · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
   await expect(page.getByText('Publicar la pantalla de registro el viernes')).toBeVisible();
   expect(recorder.functionCalls.filter((c) => c.name === 'translate')).toHaveLength(0);
 });
@@ -172,7 +174,7 @@ test('a translated transcript keeps every speaker and every time', async ({ page
 
   await page.getByRole('radio', { name: 'Arabic, العربية' }).click();
 
-  await expect(page.getByText('Arabic · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
   await expect(page.getByText(String((TRANSCRIPT_TRANSLATIONS.ar as { lines: string[] }).lines[0]))).toBeVisible();
   // The speaker names and the times are not words to translate, so they do not change.
   await expect(page.getByText('Speaker 1').first()).toBeVisible();
@@ -219,7 +221,7 @@ for (const [code, name] of [
 
     await page.getByRole('radio', { name: new RegExp(`^${name}, `) }).click();
 
-    await expect(page.getByText(`${name} · Translated by AI`)).toBeVisible();
+    await expect(page.getByText('Translated by AI')).toBeVisible();
     await expect(page.getByText(String(SUMMARY_TRANSLATIONS[code].overview))).toBeVisible();
     // Every to-do came back, so nothing lined up against the wrong tick box.
     const items = (SUMMARY_TRANSLATIONS[code].action_items as { text: string }[]) ?? [];
@@ -239,7 +241,7 @@ test('a pasted-text note translates paragraph by paragraph', async ({ page }) =>
   await page.getByRole('button', { name: 'Translate this transcript' }).click();
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
 
-  await expect(page.getByText('Spanish · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
   await expect(page.getByText('Paragraph 1')).toBeVisible();
   await expect(page.getByText('Primer párrafo.')).toBeVisible();
   await expect(page.getByText('Tercer párrafo.')).toBeVisible();
@@ -273,7 +275,7 @@ test('each tab keeps its own translation', async ({ page }) => {
   await signIn(page);
   await openTranslate(page);
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
-  await expect(page.getByText('Spanish · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
 
   // The Transcript tab has not been translated, so it has no label and still shows English.
   await page.getByRole('tab', { name: 'Transcript' }).click();
@@ -282,7 +284,7 @@ test('each tab keeps its own translation', async ({ page }) => {
 
   // Back on the Summary tab, the Spanish is still there.
   await page.getByRole('tab', { name: 'Summary' }).click();
-  await expect(page.getByText('Spanish · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
 });
 
 test('ON A PHONE: the language list slides up and still works', async ({ page }) => {
@@ -292,7 +294,7 @@ test('ON A PHONE: the language list slides up and still works', async ({ page })
   await openTranslate(page);
 
   await page.getByRole('radio', { name: 'Hindi, हिन्दी' }).click();
-  await expect(page.getByText('Hindi · Translated by AI')).toBeVisible();
+  await expect(page.getByText('Translated by AI')).toBeVisible();
   await expect(page.getByText(String(SUMMARY_TRANSLATIONS.hi.overview))).toBeVisible();
   await expect(page.getByRole('button', { name: 'Show original' })).toBeVisible();
 });

@@ -351,6 +351,7 @@ export default function NoteDetailScreen() {
                   <Pill
                     label={`Language: ${languageName(languageCode)}`}
                     accessibilityLabel={`Your language: ${languageName(languageCode)}`}
+                    tone="quiet"
                     onPress={() => setPicker('mine')}
                   />
                   <Pill
@@ -440,18 +441,27 @@ export default function NoteDetailScreen() {
   );
 }
 
-/** One of the small round-ended buttons next to the tabs: Language, Translate, Ask. */
+/**
+ * One of the small round-ended buttons next to the tabs.
+ *
+ * `tone` is information, not decoration. Translate and Ask DO something to the note, so they are
+ * outlined in brand blue. Language only shows what you are set to and lets you change it, so it is
+ * quiet: three identical buttons would say these are three of the same thing, and they are not.
+ */
 function Pill({
   label,
   accessibilityLabel,
   onPress,
   enabled = true,
+  tone = 'action',
 }: {
   label: string;
   accessibilityLabel: string;
   onPress: () => void;
   enabled?: boolean;
+  tone?: 'action' | 'quiet';
 }) {
+  const quiet = tone === 'quiet';
   return (
     <Pressable
       accessibilityRole="button"
@@ -465,11 +475,11 @@ function Pill({
         paddingHorizontal: Spacing.three,
         borderRadius: Radius.pill,
         borderWidth: 1,
-        borderColor: enabled ? Colors.brand : Colors.glassBorder,
-        backgroundColor: Colors.glass,
+        borderColor: !enabled || quiet ? Colors.glassBorder : Colors.brand,
+        backgroundColor: quiet ? 'transparent' : Colors.glass,
         opacity: enabled ? 1 : 0.5,
       }}>
-      <Body color="link" style={{ fontWeight: '600' }}>
+      <Body color={quiet ? 'textSecondary' : 'link'} style={quiet ? undefined : { fontWeight: '600' }}>
         {label}
       </Body>
     </Pressable>
