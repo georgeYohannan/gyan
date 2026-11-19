@@ -182,14 +182,20 @@ export function originalBody(claim: Claim): RecapBody {
 }
 
 /**
- * Lays a saved translation over the note's own words.
+ * Lays a translation over the note's own words.
  *
  * Only words are replaced. The title is left alone (a translated summary has no title in it),
  * and so is every to-do's owner, because a person's name is never translated. The translated
  * to-dos line up with the originals BY POSITION, so a list that comes back a different length
  * is refused rather than risking a to-do against the wrong name.
+ *
+ * `checkVersion` is true for words read straight out of the database, which may have been saved
+ * a long time ago by older translating rules and carry a `v` saying which. Words that have just
+ * come back from the translate function were made by today's rules and carry no `v` at all, so
+ * demanding one would throw away every translation the moment it was bought. The app draws the
+ * same distinction, in readContent in src/lib/translations.ts.
  */
-export function translatedBody(claim: Claim, content: unknown): RecapBody | null {
+export function translatedBody(claim: Claim, content: unknown, checkVersion = false): RecapBody | null {
   let value: unknown = content;
   if (typeof value === 'string') {
     try {
@@ -200,7 +206,7 @@ export function translatedBody(claim: Claim, content: unknown): RecapBody | null
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
-  if (row.v !== PROMPT_VERSION) return null;
+  if (checkVersion && row.v !== PROMPT_VERSION) return null;
   if (typeof row.overview !== 'string') return null;
 
   const original = originalBody(claim);
@@ -332,12 +338,15 @@ export async function runRecap(o: RecapOptions): Promise<RecapRunResult> {
       continue;
     }
 
-    let laid = translatedBody(claim, await readSavedTranslation(o.admin, claim.summary_id, language));
+    // Words out of the database: check which rules made them, and ignore anything out of date.
+    let laid = translatedBody(claim, await readSavedTranslation(o.admin, claim.summary_id, language), true);
 
     // Nothing saved yet. Buy it once, then it is saved for good and free from here on.
     if (!laid && o.translate && bought < o.maxTranslations) {
       bought += 1;
       try {
+        // Words straight back from the translate function: made by today's rules by definition,
+        // and handed back WITHOUT a version on them, so they are not checked for one.
         laid = translatedBody(claim, await o.translate(language, o.userId ?? claim.owner_id));
       } catch {
         // A translation that will not come is not a reason for nobody to get an email.

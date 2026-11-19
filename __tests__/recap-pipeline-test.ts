@@ -58,14 +58,23 @@ const CLAIM: Claim = {
   recipients: [OWNER, MEMBER],
 };
 
-const HINDI_TRANSLATION = {
-  v: PROMPT_VERSION,
+const HINDI_WORDS = {
   overview: 'टीम शुक्रवार को नई साइन अप स्क्रीन भेजने पर सहमत हुई।',
   key_points: ['फ़ोन पर साइन अप धीमा है'],
   decisions: ['शुक्रवार को भेजें'],
   open_questions: ['रिलीज़ नोट कौन लिखेगा?'],
   action_items: [{ text: 'परीक्षण योजना भेजें', due: 'शुक्रवार' }],
 };
+
+/**
+ * The two shapes the SAME translation comes in, which is not a detail: getting them mixed up
+ * threw away every translation the moment it was bought.
+ *
+ * In the database, words are stamped with the version of the translating rules that made them.
+ * Handed straight back by the translate function, they carry no stamp at all.
+ */
+const HINDI_SAVED = { v: PROMPT_VERSION, ...HINDI_WORDS };
+const HINDI_FRESH = { ...HINDI_WORDS };
 
 type Rig = {
   admin: AdminLike;
@@ -245,7 +254,7 @@ describe('the settings decide who gets it', () => {
         settings: { to_owner: true, to_members: true, auto_send: false },
         recipients: [OWNER, { ...MEMBER, default_on: true }],
       },
-      saved: { hi: HINDI_TRANSLATION },
+      saved: { hi: HINDI_SAVED },
     });
     await run(r);
     expect(r.sentTo.map((m) => m.to).sort()).toEqual([OWNER.email, MEMBER.email].sort());
@@ -257,7 +266,7 @@ describe('the settings decide who gets it', () => {
         settings: { to_owner: false, to_members: true, auto_send: false },
         recipients: [{ ...OWNER, default_on: false }, { ...MEMBER, default_on: true }],
       },
-      saved: { hi: HINDI_TRANSLATION },
+      saved: { hi: HINDI_SAVED },
     });
     await run(r);
     expect(r.sentTo.map((m) => m.to)).toEqual([MEMBER.email]);
@@ -274,7 +283,7 @@ describe('the settings decide who gets it', () => {
   });
 
   test('ticking somebody by hand overrides the settings for that one email', async () => {
-    const r = rig({ saved: { hi: HINDI_TRANSLATION } });
+    const r = rig({ saved: { hi: HINDI_SAVED } });
     await run(r, { recipientUserIds: [MEMBER.user_id] });
     expect(r.sentTo.map((m) => m.to)).toEqual([MEMBER.email]);
   });
@@ -282,7 +291,7 @@ describe('the settings decide who gets it', () => {
 
 describe('everybody reads it in their own language', () => {
   test('a translation that is already saved is used, and nothing is bought', async () => {
-    const r = rig({ saved: { hi: HINDI_TRANSLATION } });
+    const r = rig({ saved: { hi: HINDI_SAVED } });
     await run(r, { recipientUserIds: [MEMBER.user_id], translate: translate(r, null) });
     expect(r.translationsAsked).toHaveLength(0);
     expect(r.sentTo[0].text).toContain('टीम शुक्रवार');
@@ -291,7 +300,7 @@ describe('everybody reads it in their own language', () => {
 
   test('a language nobody has translated into yet is bought once, then used', async () => {
     const r = rig();
-    await run(r, { recipientUserIds: [MEMBER.user_id], translate: translate(r, HINDI_TRANSLATION) });
+    await run(r, { recipientUserIds: [MEMBER.user_id], translate: translate(r, HINDI_FRESH) });
     expect(r.translationsAsked).toEqual([{ language: 'hi', asUserId: OWNER.user_id }]);
     expect(r.sentTo[0].text).toContain('टीम शुक्रवार');
   });
@@ -300,7 +309,7 @@ describe('everybody reads it in their own language', () => {
     const r = rig({
       claim: { settings: { to_owner: false, to_members: true, auto_send: true }, recipients: [{ ...MEMBER, default_on: true }] },
     });
-    await run(r, { auto: true, userId: null, translate: translate(r, HINDI_TRANSLATION) });
+    await run(r, { auto: true, userId: null, translate: translate(r, HINDI_FRESH) });
     expect(r.translationsAsked).toEqual([{ language: 'hi', asUserId: OWNER.user_id }]);
   });
 
@@ -309,7 +318,7 @@ describe('everybody reads it in their own language', () => {
     const r = rig({ claim: { recipients: [MEMBER, second] } });
     await run(r, {
       recipientUserIds: [MEMBER.user_id, second.user_id],
-      translate: translate(r, HINDI_TRANSLATION),
+      translate: translate(r, HINDI_FRESH),
     });
     expect(r.translationsAsked).toHaveLength(1);
     expect(r.sentTo).toHaveLength(2);
@@ -317,7 +326,7 @@ describe('everybody reads it in their own language', () => {
 
   test('somebody who reads the language the note is in gets the original, untouched', async () => {
     const r = rig();
-    await run(r, { recipientUserIds: [OWNER.user_id], translate: translate(r, HINDI_TRANSLATION) });
+    await run(r, { recipientUserIds: [OWNER.user_id], translate: translate(r, HINDI_FRESH) });
     expect(r.translationsAsked).toHaveLength(0);
     expect(r.sentTo[0].text).toContain('The team agreed to ship');
     expect(r.sentTo[0].text).not.toContain('Translated by AI');
@@ -334,7 +343,7 @@ describe('everybody reads it in their own language', () => {
     await run(r, {
       recipientUserIds: people.map((p) => p.user_id),
       maxTranslations: 1,
-      translate: translate(r, HINDI_TRANSLATION),
+      translate: translate(r, HINDI_FRESH),
     });
     expect(r.translationsAsked).toHaveLength(1);
     // Everybody still got an email. The two past the ceiling got the original words.
@@ -356,8 +365,28 @@ describe('everybody reads it in their own language', () => {
     expect(logs(r)[0].args.p_translated).toBe(false);
   });
 
+  test('A JUST-BOUGHT TRANSLATION IS USED, even though it carries no version stamp', async () => {
+    // The translate function SAVES the words stamped with the rules that made them, but hands
+    // them back bare. Demanding a stamp here threw every fresh translation away and quietly
+    // sent English instead: it looked like translation simply not working.
+    const r = rig();
+    await run(r, { recipientUserIds: [MEMBER.user_id], translate: translate(r, HINDI_FRESH) });
+    expect(r.sentTo).toHaveLength(1);
+    expect(r.sentTo[0].text).toContain('टीम शुक्रवार');
+    expect(r.sentTo[0].text).toContain('Translated by AI');
+    expect(logs(r)[0].args.p_translated).toBe(true);
+    expect(logs(r)[0].args.p_language).toBe('hi');
+  });
+
+  test('but words OUT OF THE DATABASE with no stamp at all are not trusted', async () => {
+    // Nothing writes these today. If something ever did, they would be of unknown age.
+    const r = rig({ saved: { hi: HINDI_FRESH } });
+    await run(r, { recipientUserIds: [MEMBER.user_id], translate: translate(r, null) });
+    expect(r.translationsAsked).toHaveLength(1);
+  });
+
   test('words saved by OLD translating rules are ignored, not shown', async () => {
-    const r = rig({ saved: { hi: { ...HINDI_TRANSLATION, v: PROMPT_VERSION - 1 } } });
+    const r = rig({ saved: { hi: { ...HINDI_WORDS, v: PROMPT_VERSION - 1 } } });
     await run(r, { recipientUserIds: [MEMBER.user_id], translate: translate(r, null) });
     // It tried to buy a fresh one rather than sending out-of-date words.
     expect(r.translationsAsked).toHaveLength(1);
@@ -367,7 +396,7 @@ describe('everybody reads it in their own language', () => {
 
 describe('laying a translation over the original', () => {
   test("a person's name is never translated, and the to-dos keep their owners", () => {
-    const laid = translatedBody(CLAIM, HINDI_TRANSLATION);
+    const laid = translatedBody(CLAIM, HINDI_SAVED, true);
     expect(laid?.actionItems[0]).toEqual({
       text: 'परीक्षण योजना भेजें',
       owner: 'Priya Shah',
@@ -376,23 +405,23 @@ describe('laying a translation over the original', () => {
   });
 
   test('the title is left in the language it was written in', () => {
-    expect(translatedBody(CLAIM, HINDI_TRANSLATION)?.title).toBe('Monday planning call');
+    expect(translatedBody(CLAIM, HINDI_SAVED, true)?.title).toBe('Monday planning call');
   });
 
   test('a list that comes back the wrong length is refused, never lined up wrongly', () => {
-    expect(translatedBody(CLAIM, { ...HINDI_TRANSLATION, action_items: [] })).toBeNull();
+    expect(translatedBody(CLAIM, { ...HINDI_SAVED, action_items: [] }, true)).toBeNull();
   });
 
   test('junk is refused', () => {
-    expect(translatedBody(CLAIM, null)).toBeNull();
-    expect(translatedBody(CLAIM, 'not json')).toBeNull();
-    expect(translatedBody(CLAIM, { v: PROMPT_VERSION })).toBeNull();
-    expect(translatedBody(CLAIM, [1, 2, 3])).toBeNull();
+    expect(translatedBody(CLAIM, null, true)).toBeNull();
+    expect(translatedBody(CLAIM, 'not json', true)).toBeNull();
+    expect(translatedBody(CLAIM, { v: PROMPT_VERSION }, true)).toBeNull();
+    expect(translatedBody(CLAIM, [1, 2, 3], true)).toBeNull();
   });
 
   test('words stored as text, the way the database holds them, are read back fine', () => {
-    expect(translatedBody(CLAIM, JSON.stringify(HINDI_TRANSLATION))?.overview).toBe(
-      HINDI_TRANSLATION.overview,
+    expect(translatedBody(CLAIM, JSON.stringify(HINDI_SAVED), true)?.overview).toBe(
+      HINDI_WORDS.overview,
     );
   });
 
@@ -409,7 +438,7 @@ describe('laying a translation over the original', () => {
 
 describe('EVERY EMAIL IS WRITTEN DOWN', () => {
   test('one row per person, with who, when, which language, and the result', async () => {
-    const r = rig({ saved: { hi: HINDI_TRANSLATION }, claim: { recipients: [OWNER, { ...MEMBER, default_on: true }] } });
+    const r = rig({ saved: { hi: HINDI_SAVED }, claim: { recipients: [OWNER, { ...MEMBER, default_on: true }] } });
     await run(r, { recipientUserIds: [OWNER.user_id, MEMBER.user_id] });
     const rows = logs(r);
     expect(rows).toHaveLength(2);
@@ -450,7 +479,7 @@ describe('EVERY EMAIL IS WRITTEN DOWN', () => {
   });
 
   test('ONE PERSON FAILING NEVER STOPS THE OTHERS', async () => {
-    const r = rig({ saved: { hi: HINDI_TRANSLATION }, claim: { recipients: [OWNER, { ...MEMBER, default_on: true }] } });
+    const r = rig({ saved: { hi: HINDI_SAVED }, claim: { recipients: [OWNER, { ...MEMBER, default_on: true }] } });
     const result = await run(r, {
       recipientUserIds: [OWNER.user_id, MEMBER.user_id],
       send: send(r, [OWNER.email]),
@@ -470,7 +499,7 @@ describe('EVERY EMAIL IS WRITTEN DOWN', () => {
 
 describe('what the sender is told afterwards', () => {
   test('it says how many went, and names each person and their language', async () => {
-    const r = rig({ saved: { hi: HINDI_TRANSLATION }, claim: { recipients: [OWNER, { ...MEMBER, default_on: true }] } });
+    const r = rig({ saved: { hi: HINDI_SAVED }, claim: { recipients: [OWNER, { ...MEMBER, default_on: true }] } });
     const result = await run(r, { recipientUserIds: [OWNER.user_id, MEMBER.user_id] });
     expect(result.sent).toBe(2);
     expect(result.failed).toBe(0);
