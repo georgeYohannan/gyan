@@ -269,3 +269,71 @@ describe('side chat migration', () => {
     expect(t.match(/set search_path = ''/g)).toHaveLength(5);
   });
 });
+
+describe('translation migration', () => {
+  const file = fs.readdirSync(dir).find((f) => f.includes('translation'))!;
+  const t = fs.readFileSync(path.join(dir, file), 'utf8');
+
+  test('it deletes no table, column, or row of data', () => {
+    expect(t).not.toMatch(/drop (table|column|schema|function)/i);
+    expect(t).not.toMatch(/truncate/i);
+    expect(t).not.toMatch(/delete from/i);
+    expect(t).toContain('This file only ADDS things. It deletes nothing');
+  });
+
+  test('it changes no existing rule, because the translations table already has its own', () => {
+    expect(t).not.toMatch(/create policy/i);
+    expect(t).not.toMatch(/drop policy/i);
+    expect(t).not.toMatch(/alter table/i);
+  });
+
+  test('starting a translation checks the person belongs to the account first', () => {
+    const claim = t.slice(
+      t.indexOf('create function public.claim_translation'),
+      t.indexOf('create function public.save_translation'),
+    );
+    expect(claim).toContain('public.account_members');
+    expect(claim).toContain("raise exception 'not_allowed'");
+    // The membership check comes before anything is read or handed back.
+    expect(claim.indexOf('account_members')).toBeLessThan(claim.indexOf('public.translations'));
+  });
+
+  test('a translation that is already saved is handed straight back, so it is never bought twice', () => {
+    const claim = t.slice(
+      t.indexOf('create function public.claim_translation'),
+      t.indexOf('create function public.save_translation'),
+    );
+    expect(claim).toContain('select t.content into saved');
+    expect(claim).toContain('from public.translations t');
+    expect(claim).toContain('t.kind = p_kind and t.source_id = found_source and t.language = btrim(p_language)');
+  });
+
+  test('only a summary or a transcript can be translated', () => {
+    expect(t).toContain("p_kind not in ('summary', 'transcript')");
+    expect(t).toContain("raise exception 'bad_kind'");
+  });
+
+  test('saving a translation also logs what it cost, in the same step', () => {
+    const save = t.slice(t.indexOf('create function public.save_translation'));
+    expect(save).toContain('insert into public.translations');
+    expect(save).toContain('on conflict (kind, source_id, language) do update');
+    expect(save).toContain('insert into public.ai_usage');
+    expect(save).toContain("'translation', 'anthropic'");
+    // The cost row is written next to the translation, never before it.
+    expect(save.indexOf('insert into public.translations')).toBeLessThan(save.indexOf('insert into public.ai_usage'));
+  });
+
+  test.each([
+    'claim_translation(uuid, uuid, text, text)',
+    'save_translation(uuid, uuid, text, uuid, text, text, numeric, numeric)',
+  ])('only the server can run %s', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon, authenticated`);
+    expect(t).toContain(`grant execute on function public.${fn} to service_role`);
+    expect(t).not.toMatch(new RegExp(`grant execute on function public\\.${fn.replace(/[()]/g, '\\$&')} to (anon|authenticated)`));
+  });
+
+  test('every new function pins the search path', () => {
+    expect(t.match(/security definer/g)).toHaveLength(2);
+    expect(t.match(/set search_path = ''/g)).toHaveLength(2);
+  });
+});

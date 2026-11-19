@@ -6,11 +6,14 @@ import { Button } from '@/components/ui/button';
 import { GlassPanel } from '@/components/ui/glass-panel';
 import { Heading } from '@/components/ui/heading';
 import { ActionItemRow } from '@/components/notes/action-item-row';
+import { ScriptText } from '@/components/ui/script-text';
+import { DEFAULT_LANGUAGE } from '@/constants/languages';
 import { Colors, Spacing } from '@/constants/theme';
 import { copyText } from '@/lib/clipboard';
 import { noteTitle } from '@/lib/notes';
 import { summaryToPlainText, type ActionItem, type Summary } from '@/lib/summaries';
 import type { NoteDetail } from '@/lib/transcripts';
+import type { SummaryTranslation } from '@/lib/translations';
 
 /** How long a summary may run before the page offers to start it again. */
 export const STUCK_AFTER_MS = 45_000;
@@ -29,10 +32,24 @@ type SummaryTabProps = {
   onStart: () => void;
   starting?: boolean;
   startError?: boolean;
+  /** The translated words, when a translation is on screen instead of the original. */
+  translation?: SummaryTranslation;
+  /** The language the translated words are in, for example 'es'. */
+  translationLanguage?: string;
+  /** Goes above the summary: the "Translated by AI" label and the Show original button. */
+  translationBar?: React.ReactNode;
 };
 
 /** A short list of words under a heading. Nothing is drawn when the list is empty. */
-function Points({ heading, items }: { heading: string; items: string[] }) {
+function Points({
+  heading,
+  items,
+  language = DEFAULT_LANGUAGE,
+}: {
+  heading: string;
+  items: string[];
+  language?: string;
+}) {
   if (items.length === 0) return null;
   return (
     <GlassPanel>
@@ -41,7 +58,9 @@ function Points({ heading, items }: { heading: string; items: string[] }) {
         {items.map((item, i) => (
           <View key={`${heading}-${i}`} style={{ flexDirection: 'row', gap: Spacing.two }}>
             <Body color="textSecondary">{'•'}</Body>
-            <Body style={{ flex: 1 }}>{item}</Body>
+            <ScriptText language={language} style={{ flex: 1 }}>
+              {item}
+            </ScriptText>
           </View>
         ))}
       </View>
@@ -60,6 +79,9 @@ export function SummaryTab({
   onStart,
   starting,
   startError,
+  translation,
+  translationLanguage,
+  translationBar,
 }: SummaryTabProps) {
   const [confirming, setConfirming] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -84,7 +106,16 @@ export function SummaryTab({
     if (!summary) return;
     setCopyFailed(false);
     try {
-      await copyText(summaryToPlainText(noteTitle(note), summary, items));
+      // Copy exactly what is on screen: the translation when one is showing, else the original.
+      const words: Summary = translation ? { ...summary, ...translation } : summary;
+      const toDos = translation
+        ? items.map((item, i) => ({
+            ...item,
+            text: translation.action_items[i]?.text ?? item.text,
+            due_text: translation.action_items[i]?.due ?? item.due_text,
+          }))
+        : items;
+      await copyText(summaryToPlainText(noteTitle(note), words, toDos));
       setCopied(true);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 2500);
@@ -172,17 +203,26 @@ export function SummaryTab({
 
   const done = items.filter((i) => i.done).length;
 
+  // When a translation is on screen, every word shown comes from it. The speaker names, the times
+  // and the tick boxes stay exactly as they were, because those are not words to translate.
+  // The lists line up by position: the first translated key point belongs to the first original.
+  const shown = translation ?? summary;
+  const language = translation ? (translationLanguage ?? DEFAULT_LANGUAGE) : DEFAULT_LANGUAGE;
+  const overview = translation ? translation.overview : summary.overview;
+
   return (
     <View style={{ gap: Spacing.three }}>
-      {summary.overview ? (
-        <GlassPanel strong accessibilityLabel={`Overview. ${summary.overview}`}>
-          <Body>{summary.overview}</Body>
+      {translationBar}
+
+      {overview ? (
+        <GlassPanel strong accessibilityLabel={`Overview. ${overview}`}>
+          <ScriptText language={language}>{overview}</ScriptText>
         </GlassPanel>
       ) : null}
 
-      <Points heading="Key points" items={summary.key_points} />
-      <Points heading="Decisions" items={summary.decisions} />
-      <Points heading="Open questions" items={summary.open_questions} />
+      <Points heading="Key points" items={shown.key_points} language={language} />
+      <Points heading="Decisions" items={shown.decisions} language={language} />
+      <Points heading="Open questions" items={shown.open_questions} language={language} />
 
       <GlassPanel>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: Spacing.three, flexWrap: 'wrap' }}>
@@ -197,9 +237,22 @@ export function SummaryTab({
           <Body color="textSecondary">Nobody agreed to do anything in this note.</Body>
         ) : (
           <View>
-            {items.map((item) => (
-              <ActionItemRow key={item.id} item={item} onToggle={onToggleItem} saving={savingItemId === item.id} />
-            ))}
+            {items.map((item, i) => {
+              // The to-dos came back in the same order they went out, so the i-th translated line
+              // belongs to the i-th to-do. Only its words change; its tick box is the same one.
+              const translated = translation?.action_items[i];
+              return (
+                <ActionItemRow
+                  key={item.id}
+                  item={
+                    translated ? { ...item, text: translated.text, due_text: translated.due } : item
+                  }
+                  onToggle={() => onToggleItem(item)}
+                  saving={savingItemId === item.id}
+                  language={language}
+                />
+              );
+            })}
           </View>
         )}
         {itemError ? (

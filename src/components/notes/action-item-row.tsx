@@ -1,6 +1,8 @@
 import { Pressable, Text, View } from 'react-native';
 
 import { Body } from '@/components/ui/body';
+import { ScriptText } from '@/components/ui/script-text';
+import { DEFAULT_LANGUAGE } from '@/constants/languages';
 import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 import type { ActionItem } from '@/lib/summaries';
 import { formatTime } from '@/lib/transcripts';
@@ -10,10 +12,12 @@ type ActionItemRowProps = {
   onToggle: (item: ActionItem) => void;
   /** True while the tick is being saved. */
   saving?: boolean;
+  /** The language the words are in. Set when a translation is on screen. */
+  language?: string;
 };
 
 /** One to-do, with a tick box big enough for a thumb (44 by 44). */
-export function ActionItemRow({ item, onToggle, saving }: ActionItemRowProps) {
+export function ActionItemRow({ item, onToggle, saving, language = DEFAULT_LANGUAGE }: ActionItemRowProps) {
   const extras: string[] = [];
   if (item.owner_name?.trim()) extras.push(item.owner_name.trim());
   if (item.due_text?.trim()) extras.push(item.due_text.trim());
@@ -49,11 +53,12 @@ export function ActionItemRow({ item, onToggle, saving }: ActionItemRowProps) {
         ) : null}
       </View>
       <View style={{ flex: 1, gap: Spacing.half }}>
-        <Body
+        <ScriptText
+          language={language}
           color={item.done ? 'textSecondary' : 'text'}
           style={item.done ? { textDecorationLine: 'line-through' } : undefined}>
           {item.text}
-        </Body>
+        </ScriptText>
         {extras.length > 0 ? (
           <Body small color="textSecondary">
             {extras.join(', ')}

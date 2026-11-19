@@ -359,6 +359,70 @@ export const HELP: Record<string, HelpEntry> = {
       },
     ],
   },
+  translation: {
+    id: 'translation',
+    title: 'Languages and translating',
+    sentences: [
+      'Tap Language to choose the language you want Gyan to write in. Your summaries, your to-dos and the chat answers all use it.',
+      'Tap Translate to turn the note you are reading into any other language, without changing your own setting.',
+      'Translated words always say "Translated by AI", because a person did not write them.',
+      'Tap Show original at any time to put the first words back.',
+    ],
+    lists: [
+      {
+        heading: 'What gets translated',
+        items: [
+          'The summary, the key points, the decisions and the open questions',
+          'Your to-do list, with its ticks left alone',
+          'The transcript, line by line',
+          'Names, numbers, dates and times are left exactly as they were',
+        ],
+      },
+      {
+        heading: 'Good to know',
+        items: [
+          'A language you have asked for before opens straight away and costs nothing.',
+          'A very long recording cannot be translated in one go yet. Its summary still can.',
+          'Arabic reads from right to left on the page, the way it is written.',
+          'The speaker names and the times never change, so you can still follow who said what.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // Metro needs require() for local images.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/language-picker-390.png'),
+        alt: 'The list of languages open on a phone, each language shown in its own letters.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-translated-390.png'),
+        alt: 'A summary in Spanish on a phone, with the words Translated by AI above it.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-original-390.png'),
+        alt: 'The same note on a phone after tapping Show original, with the English words back.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/language-picker-1280.png'),
+        alt: 'The list of languages open on a wide window, as a panel on the right.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-translated-1280.png'),
+        alt: 'A summary in Spanish on a wide window, with the words Translated by AI above it.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-original-1280.png'),
+        alt: 'The same note on a wide window after tapping Show original, with the English words back.',
+      },
+    ],
+  },
+
   signUp: {
     id: 'signUp',
     title: 'Sign up',

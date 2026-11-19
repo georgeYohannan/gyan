@@ -37,6 +37,17 @@ export type FakeData = {
   chatLimitReached?: boolean;
   /** The words inside a pasted-text note, as the private bucket would hand them back. */
   textWords: string;
+  /** The person's preferred language, as the profiles table would hand it back. */
+  preferredLanguage: string;
+  /**
+   * Translations that are ALREADY saved, keyed "kind:language" (for example "summary:es").
+   * A translation in here appears at once and must never make the app call the server.
+   */
+  savedTranslations: Record<string, unknown>;
+  /** What the translate server function answers, keyed "kind:language". */
+  translations: Record<string, unknown>;
+  /** A plain message the translate function answers with instead of a translation. */
+  translateProblem?: string;
 };
 
 /** One made up answer from the chat function. `ok: false` is a problem with a Retry. */
@@ -99,6 +110,118 @@ export const ACTION_ITEMS: Row[] = [
   { id: 'a3', text: 'Book the review call', owner_name: 'Sam', due_text: 'next week', start_ms: 9000, done: true },
 ];
 
+/**
+ * Made up translations of the summary and the transcript above.
+ * Real words in each of the 5 test languages, so the scripts and the screenshots show whether
+ * every script draws properly and whether Arabic reads right to left.
+ */
+export const SUMMARY_TRANSLATIONS: Record<string, Row> = {
+  es: {
+    overview:
+      'El equipo revisó la nueva pantalla de registro. Sigue siendo lenta en los teléfonos, así que se acordó otra ronda de pruebas antes de publicarla.',
+    key_points: ['El registro es lento en los teléfonos', 'Dos personas lo probaron esta semana', 'El diseño no cambió'],
+    decisions: ['Publicar la pantalla de registro el viernes', 'Mantener la pantalla antigua hasta entonces'],
+    open_questions: ['¿Quién escribe la nota de lanzamiento?'],
+    action_items: [
+      { text: 'Enviar el plan de pruebas', due: 'viernes' },
+      { text: 'Probar el registro en un teléfono antiguo', due: null },
+      { text: 'Reservar la llamada de revisión', due: 'la próxima semana' },
+    ],
+  },
+  fr: {
+    overview:
+      "L'équipe a examiné le nouvel écran d'inscription. Il est encore lent sur les téléphones, donc un dernier test a été décidé avant la mise en ligne.",
+    key_points: ["L'inscription est lente sur les téléphones", "Deux personnes l'ont testée cette semaine", "Le design n'a pas changé"],
+    decisions: ["Publier l'écran d'inscription vendredi", "Garder l'ancien écran jusque-là"],
+    open_questions: ['Qui rédige la note de version ?'],
+    action_items: [
+      { text: 'Envoyer le plan de test', due: 'vendredi' },
+      { text: "Tester l'inscription sur un vieux téléphone", due: null },
+      { text: "Réserver l'appel de revue", due: 'la semaine prochaine' },
+    ],
+  },
+  hi: {
+    overview:
+      'टीम ने नई साइन अप स्क्रीन देखी। यह फ़ोन पर अभी भी धीमी है, इसलिए इसे जारी करने से पहले एक और दौर की जाँच तय हुई।',
+    key_points: ['फ़ोन पर साइन अप धीमा है', 'इस हफ़्ते दो लोगों ने इसे जाँचा', 'डिज़ाइन में कोई बदलाव नहीं हुआ'],
+    decisions: ['साइन अप स्क्रीन शुक्रवार को जारी करें', 'तब तक पुरानी स्क्रीन रखें'],
+    open_questions: ['रिलीज़ नोट कौन लिखेगा?'],
+    action_items: [
+      { text: 'जाँच की योजना भेजें', due: 'शुक्रवार' },
+      { text: 'पुराने फ़ोन पर साइन अप जाँचें', due: null },
+      { text: 'समीक्षा कॉल तय करें', due: 'अगले हफ़्ते' },
+    ],
+  },
+  ar: {
+    overview:
+      'راجع الفريق شاشة التسجيل الجديدة. لا تزال بطيئة على الهواتف، لذلك تم الاتفاق على جولة اختبار أخرى قبل نشرها.',
+    key_points: ['التسجيل بطيء على الهواتف', 'اختبرها شخصان هذا الأسبوع', 'لم يتغير التصميم نفسه'],
+    decisions: ['نشر شاشة التسجيل يوم الجمعة', 'الإبقاء على الشاشة القديمة حتى ذلك الحين'],
+    open_questions: ['من يكتب ملاحظة الإصدار؟'],
+    action_items: [
+      { text: 'إرسال خطة الاختبار', due: 'الجمعة' },
+      { text: 'اختبار التسجيل على هاتف قديم', due: null },
+      { text: 'تحديد موعد مكالمة المراجعة', due: 'الأسبوع القادم' },
+    ],
+  },
+  ja: {
+    overview:
+      'チームは新しいサインアップ画面を確認しました。スマートフォンではまだ遅いため、公開前にもう一度テストを行うことで合意しました。',
+    key_points: ['スマートフォンでのサインアップが遅い', '今週2人がテストした', 'デザイン自体は変更していない'],
+    decisions: ['金曜日にサインアップ画面を公開する', 'それまでは古い画面を残す'],
+    open_questions: ['リリースノートは誰が書きますか?'],
+    action_items: [
+      { text: 'テスト計画を送る', due: '金曜日' },
+      { text: '古いスマートフォンでサインアップを確認する', due: null },
+      { text: 'レビュー通話を予約する', due: '来週' },
+    ],
+  },
+};
+
+export const TRANSCRIPT_TRANSLATIONS: Record<string, Row> = {
+  es: {
+    lines: [
+      'Gracias por venir. Empecemos con la pantalla de registro.',
+      'Todavía me parece lenta en el teléfono cuando toco Registrarse.',
+      'Priya enviará el plan de pruebas el viernes, y luego publicamos.',
+    ],
+  },
+  ar: {
+    lines: [
+      'شكرا لانضمامكم. لنبدأ بشاشة التسجيل.',
+      'لا تزال تبدو بطيئة على هاتفي عندما أضغط على التسجيل.',
+      'سترسل بريا خطة الاختبار يوم الجمعة، ثم ننشر.',
+    ],
+  },
+  ja: {
+    lines: [
+      'ご参加ありがとうございます。サインアップ画面から始めましょう。',
+      'サインアップを押すと、私の端末ではまだ遅く感じます。',
+      'プリヤが金曜日にテスト計画を送り、それから公開します。',
+    ],
+  },
+  hi: {
+    lines: [
+      'आने के लिए धन्यवाद। साइन अप स्क्रीन से शुरू करें।',
+      'जब मैं साइन अप दबाता हूँ तो मेरे फ़ोन पर यह अभी भी धीमा लगता है।',
+      'प्रिया शुक्रवार को जाँच की योजना भेजेंगी, फिर हम जारी करेंगे।',
+    ],
+  },
+  fr: {
+    lines: [
+      "Merci d'être venus. Commençons par l'écran d'inscription.",
+      "Je le trouve encore lent sur mon téléphone quand j'appuie sur S'inscrire.",
+      'Priya enverra le plan de test vendredi, puis nous publions.',
+    ],
+  },
+};
+
+/** Both kinds together, keyed the way the fake server looks them up. */
+export const ALL_TRANSLATIONS: Record<string, unknown> = {
+  ...Object.fromEntries(Object.entries(SUMMARY_TRANSLATIONS).map(([code, row]) => [`summary:${code}`, row])),
+  ...Object.fromEntries(Object.entries(TRANSCRIPT_TRANSLATIONS).map(([code, row]) => [`transcript:${code}`, row])),
+};
+
 /** The passage numbers point at the SEGMENTS above: [3] is the third line, at 1:05. */
 export const CHAT_SOURCES: Row[] = [{ n: 3, segment_id: 's3', start_ms: 65000, speaker_label: 'Speaker 1' }];
 
@@ -122,6 +245,9 @@ export const DEFAULTS: FakeData = {
   chatMessages: [],
   chatAnswers: [{ ok: true, answer: CHAT_ANSWER, sources: CHAT_SOURCES, remaining: 19 }],
   textWords: TEXT_NOTE_WORDS,
+  preferredLanguage: 'en',
+  savedTranslations: {},
+  translations: ALL_TRANSLATIONS,
 };
 
 /** Everything the scripts can ask about after the fact: which calls the app made. */
@@ -209,6 +335,18 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
       return json(route, { ok: false, message: picked.message, message_id: `q${questionsAsked}`, remaining: 18 });
     }
 
+    // The translate function answers with a made up translation, so the page has something to show.
+    if (name === 'translate') {
+      if (status !== 202) return json(route, { error: 'problem' }, status);
+      if (data.translateProblem) return json(route, { ok: false, message: data.translateProblem });
+      const asked = body as { kind?: string; language?: string } | undefined;
+      const content = data.translations[`${asked?.kind}:${asked?.language}`];
+      if (!content) {
+        return json(route, { ok: false, message: 'Gyan could not translate this note just now. Please try again.' });
+      }
+      return json(route, { ok: true, kind: asked?.kind, language: asked?.language, content, reused: false });
+    }
+
     return json(route, status === 202 ? { status: 'accepted' } : { error: 'problem' }, status);
   });
 
@@ -271,6 +409,16 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
           return [{ meetings_used: data.usage.used }];
         case 'plans':
           return [{ name: 'Free', meetings_per_month: data.usage.limit }];
+        case 'profiles':
+          return [{ preferred_language: data.preferredLanguage }];
+        case 'translations': {
+          // Only a translation that is ALREADY saved is handed back here. Anything else is a miss,
+          // so the app has to ask the server function for it, exactly as it would for real.
+          const kind = url.searchParams.get('kind')?.replace('eq.', '');
+          const language = url.searchParams.get('language')?.replace('eq.', '');
+          const saved = data.savedTranslations[`${kind}:${language}`];
+          return saved ? [{ content: JSON.stringify(saved) }] : [];
+        }
         default:
           return [];
       }
