@@ -177,6 +177,103 @@ maybe('Supabase test project: privacy between users', () => {
     expect(write.error).not.toBeNull();
   });
 
+  test('user B cannot read A\'s emails, and nobody writes the log from the app', async () => {
+    const read = await B.client.from('email_log').select('*').eq('account_id', accountA);
+
+    // The recap migration may not be pushed to the test project yet. Say so clearly rather than
+    // failing with something confusing. Run `supabase db push`, then run this again.
+    if (read.error) {
+      // eslint-disable-next-line no-console
+      console.warn('Skipping the email_log checks: run `supabase db push`, then run npm test again.');
+      return;
+    }
+    expect(read.data).toEqual([]);
+
+    // Reading is all the app may do. Writing a record is the server's job alone.
+    const write = await B.client.from('email_log').insert({
+      account_id: accountA,
+      recipient_email: 'nobody@example.test',
+      result: 'sent',
+    });
+    expect(write.error).not.toBeNull();
+  });
+
+  test('the two doors the server alone may open cannot be opened from the app', async () => {
+    // claim_recap decides who gets emailed, and log_email writes the record. Both are
+    // service_role only, so a signed-in person must be refused by the database itself.
+    const claim = await B.client.rpc('claim_recap', {
+      p_meeting_id: '00000000-0000-4000-8000-000000000000',
+      p_user_id: B.userId,
+      p_auto: true,
+    });
+    expect(claim.error).not.toBeNull();
+
+    const log = await B.client.rpc('log_email', {
+      p_account_id: accountA,
+      p_meeting_id: null,
+      p_recipient_user_id: null,
+      p_recipient_email: 'nobody@example.test',
+      p_language: 'en',
+      p_translated: false,
+      p_result: 'sent',
+      p_provider_id: null,
+      p_error_message: null,
+      p_sent_by: null,
+      p_auto: false,
+    });
+    expect(log.error).not.toBeNull();
+  });
+
+  test('a person can read their own recap settings, and they start as owner only', async () => {
+    const read = await B.client.rpc('get_recap_settings').single<{
+      is_owner: boolean;
+      settings: { to_owner: boolean; to_members: boolean; auto_send: boolean };
+    }>();
+
+    // The recap migration may not be pushed to the test project yet. Say so clearly rather than
+    // failing with something confusing. Run `supabase db push`, then run this again.
+    if (read.error) {
+      // eslint-disable-next-line no-console
+      console.warn('Skipping the recap settings checks: run `supabase db push`, then run npm test again.');
+      return;
+    }
+
+    // Each fixture user owns their own account, so B is the owner of B's account.
+    expect(read.data?.is_owner).toBe(true);
+    expect(read.data?.settings).toEqual({ to_owner: true, to_members: false, auto_send: false });
+  });
+
+  test('user B cannot change user A\'s recap settings, by any route', async () => {
+    const before = await A.client.from('integrations').select('settings').eq('kind', 'recap_email');
+
+    // Straight at the table: the owner-only rule means the write touches no rows.
+    const direct = await B.client
+      .from('integrations')
+      .update({ settings: { to_owner: true, to_members: true, auto_send: true } })
+      .eq('account_id', accountA)
+      .select();
+    expect(direct.data ?? []).toEqual([]);
+
+    // And B cannot slip a row in for A's account either.
+    const insert = await B.client
+      .from('integrations')
+      .insert({ account_id: accountA, kind: 'recap_email', settings: { to_members: true } });
+    expect(insert.error).not.toBeNull();
+
+    // The door the settings screen uses only ever works on the caller's OWN account.
+    const door = await B.client.rpc('save_recap_settings', {
+      p_settings: { to_owner: true, to_members: true, auto_send: true },
+    });
+    if (!door.error) {
+      const after = await A.client.from('integrations').select('settings').eq('kind', 'recap_email');
+      expect(after.data ?? []).toEqual(before.data ?? []);
+      // Put B's own settings back the way they were.
+      await B.client.rpc('save_recap_settings', {
+        p_settings: { to_owner: true, to_members: false, auto_send: false },
+      });
+    }
+  });
+
   test('a person can change their own preferred language, and it is remembered', async () => {
     const saved = await B.client.from('profiles').update({ preferred_language: 'es' }).eq('id', B.userId).select();
     expect(saved.error).toBeNull();

@@ -8,6 +8,7 @@ const mockPush = jest.fn();
 const mockListNotes = jest.fn();
 const mockGetUsage = jest.fn();
 const mockSetLanguage = jest.fn();
+const mockGetRecapSettings = jest.fn();
 /** The preferred language the fake profile reports. Tests change it. */
 let mockMyLanguage = 'en';
 
@@ -26,6 +27,10 @@ jest.mock('@/lib/notes', () => ({
   ...jest.requireActual('@/lib/notes'),
   listNotes: () => mockListNotes(),
   getUsage: () => mockGetUsage(),
+}));
+jest.mock('@/lib/recaps', () => ({
+  ...jest.requireActual('@/lib/recaps'),
+  getRecapSettings: (...a: unknown[]) => mockGetRecapSettings(...a),
 }));
 jest.mock('@/lib/profile', () => ({
   useProfile: () => ({
@@ -49,6 +54,10 @@ describe('<HomeScreen />', () => {
     mockGetUsage.mockResolvedValue({ accountId: 'a', planName: 'Free', used: 2, limit: 5 });
     mockMyLanguage = 'en';
     mockSetLanguage.mockReset().mockResolvedValue({});
+    mockGetRecapSettings.mockReset().mockResolvedValue({
+      isOwner: true,
+      settings: { toOwner: true, toMembers: false, autoSend: false },
+    });
   });
 
   test('shows loading first, then the notes newest first with title, date, source, and status', async () => {
@@ -172,6 +181,10 @@ describe('<HomeScreen /> your language', () => {
     mockGetUsage.mockReset().mockResolvedValue({ accountId: 'a', planName: 'Free', used: 0, limit: 5 });
     mockMyLanguage = 'en';
     mockSetLanguage.mockReset().mockResolvedValue({});
+    mockGetRecapSettings.mockReset().mockResolvedValue({
+      isOwner: true,
+      settings: { toOwner: true, toMembers: false, autoSend: false },
+    });
   });
 
   test('the account panel says which language you are on, and what it is used for', async () => {
@@ -221,5 +234,62 @@ describe('<HomeScreen /> your language', () => {
       fireEvent.press(screen.getByRole('radio', { name: 'Spanish, Español' }));
     });
     expect(screen.getByText(/could not save your language/)).toBeTruthy();
+  });
+});
+
+describe('<HomeScreen /> the recap email row', () => {
+  beforeEach(() => {
+    mockListNotes.mockReset().mockResolvedValue([]);
+    mockGetUsage.mockReset().mockResolvedValue({ accountId: 'a', planName: 'Free', used: 0, limit: 5 });
+    mockMyLanguage = 'en';
+    mockSetLanguage.mockReset().mockResolvedValue({});
+    mockPush.mockReset();
+    mockGetRecapSettings.mockReset().mockResolvedValue({
+      isOwner: true,
+      settings: { toOwner: true, toMembers: false, autoSend: false },
+    });
+  });
+
+  test('the account box says who gets a recap, and when', async () => {
+    await act(async () => {
+      await render(<HomeScreen />);
+    });
+    expect(await screen.findByText('The account owner only')).toBeTruthy();
+    expect(
+      screen.getByText('Who gets a recap by email. Only sent when somebody presses Send recap.'),
+    ).toBeTruthy();
+  });
+
+  test('it says so when recaps send themselves', async () => {
+    mockGetRecapSettings.mockResolvedValue({
+      isOwner: true,
+      settings: { toOwner: true, toMembers: true, autoSend: true },
+    });
+    await act(async () => {
+      await render(<HomeScreen />);
+    });
+    expect(await screen.findByText('The account owner and the team')).toBeTruthy();
+    expect(
+      screen.getByText('Who gets a recap by email. Sent on its own as soon as a note is ready.'),
+    ).toBeTruthy();
+  });
+
+  test('the button opens the recap settings page', async () => {
+    await act(async () => {
+      await render(<HomeScreen />);
+    });
+    await act(async () => fireEvent.press(await screen.findByRole('button', { name: 'Recap emails' })));
+    expect(mockPush).toHaveBeenCalledWith('/recap-emails');
+  });
+
+  test('settings that will not load leave the row showing the safe default, not an error', async () => {
+    mockGetRecapSettings.mockRejectedValue(new Error('offline'));
+    await act(async () => {
+      await render(<HomeScreen />);
+    });
+    // The list still appears, and the row still points at the page.
+    expect(await screen.findByRole('header', { name: 'Your account' })).toBeTruthy();
+    expect(screen.getByText('The account owner only')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Recap emails' })).toBeTruthy();
   });
 });

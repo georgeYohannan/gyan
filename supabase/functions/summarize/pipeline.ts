@@ -58,6 +58,12 @@ export type SummarizeOptions = {
   call: CallClaude;
   /** Counts the tokens before we send, so a huge note is refused instead of being cut short. */
   countTokens?: CountTokens;
+  /**
+   * Run the moment the note becomes Ready, and only then. This is where the recap email goes
+   * out, when the account owner has the automatic send switched on.
+   * A note that fails never reaches here, so a failed note never emails anybody.
+   */
+  onReady?: () => Promise<void>;
 };
 
 /** The words to summarize: the pasted text, or the transcript lines joined together. */
@@ -141,6 +147,16 @@ export async function runSummary(o: SummarizeOptions): Promise<boolean> {
       p_cost: costFor(tokensIn, tokensOut, o.usdPerMtokIn, o.usdPerMtokOut),
     });
     if (error) throw new Error('finish_failed');
+
+    // The note is Ready. Anything that happens after this point must not be able to undo it, so
+    // a problem sending the recap is written down and swallowed, never raised.
+    if (o.onReady) {
+      try {
+        await o.onReady();
+      } catch (e) {
+        console.error('after-ready step failed for', o.meetingId, e instanceof Error ? e.name : 'error');
+      }
+    }
     return true;
   } catch (e) {
     const message = e instanceof SummaryError ? e.message : MESSAGES.unknown;

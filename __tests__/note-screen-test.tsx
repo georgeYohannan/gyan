@@ -18,11 +18,13 @@ const mockPassages = jest.fn();
 const mockSetLanguage = jest.fn();
 const mockSaved = jest.fn();
 const mockTranslate = jest.fn();
+const mockPreviewRecap = jest.fn();
+const mockPush = jest.fn();
 /** The preferred language the fake profile reports. Tests change it. */
 let mockMyLanguage = 'en';
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
   useLocalSearchParams: () => ({ id: 'n1' }),
 }));
 jest.mock('@/lib/transcripts', () => ({
@@ -56,6 +58,11 @@ jest.mock('@/lib/profile', () => ({
     isLoading: false,
     setLanguage: (...a: unknown[]) => mockSetLanguage(...a),
   }),
+}));
+jest.mock('@/lib/recaps', () => ({
+  ...jest.requireActual('@/lib/recaps'),
+  previewRecap: (...a: unknown[]) => mockPreviewRecap(...a),
+  sendRecap: jest.fn(),
 }));
 jest.mock('@/lib/translations', () => ({
   ...jest.requireActual('@/lib/translations'),
@@ -115,6 +122,23 @@ beforeEach(() => {
   mockSetLanguage.mockReset().mockResolvedValue({});
   mockSaved.mockReset().mockResolvedValue(undefined);
   mockTranslate.mockReset();
+  mockPush.mockReset();
+  mockPreviewRecap.mockReset().mockResolvedValue({
+    ok: true,
+    recipients: [
+      {
+        userId: '11111111-1111-1111-1111-111111111111',
+        email: 'owner@example.test',
+        name: 'Sam Carter',
+        role: 'owner',
+        language: 'en',
+        defaultOn: true,
+        isYou: true,
+      },
+    ],
+    settings: { toOwner: true, toMembers: false, autoSend: false },
+    canSend: true,
+  });
 });
 
 describe('<NoteDetailScreen /> Summary tab', () => {
@@ -866,5 +890,58 @@ describe('help for languages and translating', () => {
   test('it has a picture at both sizes, and every picture has a description', () => {
     expect(entry.images.length).toBeGreaterThanOrEqual(2);
     for (const image of entry.images) expect(image.alt.length).toBeGreaterThan(10);
+  });
+});
+
+describe('<NoteDetailScreen /> sending a recap', () => {
+  test('a Ready note with a summary has a Send recap button', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockGetSummary.mockResolvedValue(summary);
+    mockList.mockResolvedValue(lines);
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    const button = await screen.findByLabelText('Send a recap of this note by email');
+    expect(button.props.accessibilityState.disabled).toBe(false);
+  });
+
+  test('a note with no summary yet has nothing to send', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockGetSummary.mockResolvedValue(undefined);
+    mockList.mockResolvedValue(lines);
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    expect(
+      (await screen.findByLabelText('Send a recap of this note by email')).props.accessibilityState
+        .disabled,
+    ).toBe(true);
+  });
+
+  test('a note that is still being made has nothing to send either', async () => {
+    mockGetNote.mockResolvedValue(note({ status: 'Summarizing' }));
+    mockList.mockResolvedValue(lines);
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    expect(
+      (await screen.findByLabelText('Send a recap of this note by email')).props.accessibilityState
+        .disabled,
+    ).toBe(true);
+  });
+
+  test('pressing it opens the dialog, which asks who would get the recap', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockGetSummary.mockResolvedValue(summary);
+    mockList.mockResolvedValue(lines);
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    await act(async () =>
+      fireEvent.press(await screen.findByLabelText('Send a recap of this note by email')),
+    );
+    expect(await screen.findByRole('header', { name: 'Send recap' })).toBeTruthy();
+    expect(mockPreviewRecap).toHaveBeenCalledWith('n1');
+    expect(await screen.findByText('owner@example.test')).toBeTruthy();
   });
 });

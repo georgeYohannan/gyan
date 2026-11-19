@@ -257,3 +257,58 @@ describe('writing a summary end to end (fake Claude, fake database)', () => {
     expect(logged).not.toContain('Sign up feels slow');
   });
 });
+
+/**
+ * The step that runs the moment a note becomes Ready. This is where the recap email goes out,
+ * so these tests are really about "a failed note never emails anybody".
+ */
+describe('handing the note on once it is Ready', () => {
+  beforeEach(() => jest.spyOn(console, 'error').mockImplementation(() => {}));
+  afterEach(() => jest.restoreAllMocks());
+
+  test('it runs exactly once, after the note is saved as Ready', async () => {
+    const { admin, calls } = fakeAdmin();
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+    const onReady = jest.fn(async () => {});
+
+    expect(await runSummary({ ...base, admin, call, onReady })).toBe(true);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(calls.map((c) => c.name)).toEqual(['finish_summary']);
+  });
+
+  test('A NOTE THAT FAILS NEVER EMAILS ANYBODY', async () => {
+    const { admin } = fakeAdmin();
+    const { call } = fakeClaude([{ text: 'not json at all' }, { text: 'still not json' }]);
+    const onReady = jest.fn(async () => {});
+
+    expect(await runSummary({ ...base, admin, call, onReady })).toBe(false);
+    expect(onReady).not.toHaveBeenCalled();
+  });
+
+  test('a note that cannot be saved as Ready never emails anybody either', async () => {
+    const { admin } = fakeAdmin({ finishError: true });
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+    const onReady = jest.fn(async () => {});
+
+    expect(await runSummary({ ...base, admin, call, onReady })).toBe(false);
+    expect(onReady).not.toHaveBeenCalled();
+  });
+
+  test('an email problem never undoes a note that is already Ready', async () => {
+    const { admin, calls } = fakeAdmin();
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+    const onReady = jest.fn(async () => {
+      throw new Error('the email service was down');
+    });
+
+    // The note is still Ready, and it was never marked Failed.
+    expect(await runSummary({ ...base, admin, call, onReady })).toBe(true);
+    expect(calls.map((c) => c.name)).toEqual(['finish_summary']);
+  });
+
+  test('nothing breaks when there is no step to run', async () => {
+    const { admin } = fakeAdmin();
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+    expect(await runSummary({ ...base, admin, call })).toBe(true);
+  });
+});

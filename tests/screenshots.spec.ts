@@ -192,3 +192,51 @@ for (const w of WIDTHS) {
     });
   });
 }
+
+/** One screenshot of the Send recap dialog, open on a Ready note. */
+async function shootRecap(
+  { page, context }: { page: import('@playwright/test').Page; context: import('@playwright/test').BrowserContext },
+  file: string,
+  size: { width: number; height: number },
+  data: Partial<FakeData> = {},
+) {
+  await page.setViewportSize(size);
+  await installFakes(page, data);
+  await signIn(page);
+  await openNote(page);
+  await page.getByRole('button', { name: 'Send a recap of this note by email' }).click();
+  await expect(page.getByRole('heading', { name: 'Send recap' })).toBeVisible();
+  await page.waitForTimeout(700); // let the panel finish sliding in
+  await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
+  await context.clearCookies();
+}
+
+/** One screenshot of the Recap emails settings page. */
+async function shootRecapSettings(
+  { page, context }: { page: import('@playwright/test').Page; context: import('@playwright/test').BrowserContext },
+  file: string,
+  size: { width: number; height: number },
+  data: Partial<FakeData> = {},
+) {
+  await page.setViewportSize(size);
+  await installFakes(page, data);
+  await signIn(page);
+  await page.getByRole('button', { name: 'Recap emails' }).click();
+  await expect(page.getByRole('heading', { name: 'Recap emails' })).toBeVisible();
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
+  await context.clearCookies();
+}
+
+for (const w of WIDTHS) {
+  test(`the Send recap dialog at ${w.name} pixels`, async ({ page, context }) => {
+    await shootRecap({ page, context }, `recap-dialog-${w.name}.png`, { width: w.width, height: w.full });
+  });
+
+  test(`the Recap emails settings at ${w.name} pixels`, async ({ page, context }) => {
+    await shootRecapSettings({ page, context }, `recap-settings-${w.name}.png`, {
+      width: w.width,
+      height: w.full,
+    });
+  });
+}

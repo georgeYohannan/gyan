@@ -67,7 +67,7 @@ test('typing a question of your own works too', async ({ page }) => {
   await openChat(page);
 
   await page.getByLabel('Your question').fill('Who tested the sign up screen?');
-  await page.getByRole('button', { name: 'Send' }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page.getByText(/agreed to ship the sign up screen on Friday/)).toBeVisible();
   await expect.poll(() => recorder.functionCalls.filter((c) => c.name === 'chat').length).toBe(1);
@@ -98,7 +98,7 @@ test('a question the note cannot answer gets an honest reply, with no chips', as
   await openChat(page);
 
   await page.getByLabel('Your question').fill('What is the budget for next year?');
-  await page.getByRole('button', { name: 'Send' }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page.getByText(/could not find that in your notes/)).toBeVisible();
   await expect(page.getByRole('link', { name: /Go to the line/ })).toBeHidden();
@@ -124,10 +124,10 @@ test('AT THE LIMIT: a friendly message replaces the question box', async ({ page
   await openChat(page);
 
   await page.getByLabel('Your question').fill('One more question?');
-  await page.getByRole('button', { name: 'Send' }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page.getByText(/used all your questions for today/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Send' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeHidden();
 });
 
 test('when few questions are left, the panel quietly says how many', async ({ page }) => {
@@ -151,7 +151,7 @@ test('a problem shows plain words and a Retry that works', async ({ page }) => {
   await openChat(page);
 
   await page.getByLabel('Your question').fill('What were the decisions?');
-  await page.getByRole('button', { name: 'Send' }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page.getByText(/answering service is busy/)).toBeVisible();
   await page.getByRole('button', { name: 'Retry' }).click();

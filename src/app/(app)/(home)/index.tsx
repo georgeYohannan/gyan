@@ -17,6 +17,13 @@ import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { getUsage, listNotes, type NoteRow as Note, type Usage } from '@/lib/notes';
 import { useProfile } from '@/lib/profile';
+import {
+  DEFAULT_SETTINGS,
+  getRecapSettings,
+  shortRecipients,
+  shortWhen,
+  type RecapSettings,
+} from '@/lib/recaps';
 
 const BUSY = ['Uploading', 'Queued', 'Transcribing', 'Summarizing'];
 const POLL_MS = 3000;
@@ -65,12 +72,23 @@ export default function HomeScreen() {
   const { languageCode, setLanguage } = useProfile();
   const [languageOpen, setLanguageOpen] = useState(false);
   const [languageError, setLanguageError] = useState<string>();
+  // The account's recap settings, so the row can say what is set rather than only naming itself.
+  // If they cannot be read, the row shows the safe defaults instead of an error: this is a
+  // signpost to a page, not the page itself.
+  const [recap, setRecap] = useState<RecapSettings>(DEFAULT_SETTINGS);
 
   const refresh = useCallback((quiet = false) => {
     if (!quiet) setLoad({ state: 'loading' });
-    // The list is the main thing. If only the usage fails, still show the list.
-    Promise.all([listNotes(), getUsage().catch(() => undefined)])
-      .then(([notes, usage]) => setLoad({ state: 'ready', notes, usage }))
+    // The list is the main thing. If only the usage or the recap settings fail, still show it.
+    Promise.all([
+      listNotes(),
+      getUsage().catch(() => undefined),
+      getRecapSettings().catch(() => undefined),
+    ])
+      .then(([notes, usage, recapSettings]) => {
+        if (recapSettings) setRecap(recapSettings.settings);
+        setLoad({ state: 'ready', notes, usage });
+      })
       // A failed background check keeps what is on screen.
       .catch(() => !quiet && setLoad({ state: 'error' }));
   }, []);
@@ -150,6 +168,18 @@ export default function HomeScreen() {
           note="Your summaries, your to-dos and the chat answers are written in this language."
           action={<Button label="Change language" variant="secondary" onPress={() => setLanguageOpen(true)} />}
           error={languageError}
+        />
+
+        <SettingRow
+          value={shortRecipients(recap)}
+          note={shortWhen(recap)}
+          action={
+            <Button
+              label="Recap emails"
+              variant="secondary"
+              onPress={() => router.push('/recap-emails')}
+            />
+          }
         />
 
         {logOutError ? (

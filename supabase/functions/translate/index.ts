@@ -55,6 +55,22 @@ const UUID = /^[0-9a-f-]{36}$/i;
 const LANGUAGE_CODE = /^[a-z]{2}(-[A-Za-z0-9]{2,8})?$/;
 
 /**
+ * True when this call came from one of our OWN server functions, not from a person.
+ *
+ * The only thing that carries the project's secret key is our own server code, so a request
+ * holding it is ours. The recap function uses this to buy a translation for somebody who is
+ * being emailed, including on the automatic send, where there is no login to read.
+ *
+ * It does NOT widen what may happen. Such a call has to name the person it is acting for, and
+ * claim_translation still checks in the database that that person is on the note's account. The
+ * decision stays in SQL, exactly where it was.
+ */
+function isOurOwnServer(authHeader: string, secretKey: string): boolean {
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  return token !== '' && token === secretKey;
+}
+
+/**
  * The request we send Claude. The same one is used for the real call and for counting tokens first.
  * No prompt caching here: a translation is paid for once and then saved for good, so there is
  * never a second request with the same words to save money on.
@@ -144,7 +160,7 @@ Deno.serve(async (req) => {
   if (!url || !publicKey || !secretKey) return reply({ error: 'server_not_set_up' }, 500);
   if (!authHeader) return reply({ error: 'not_signed_in' }, 401);
 
-  let body: { meeting_id?: string; kind?: string; language?: string } = {};
+  let body: { meeting_id?: string; kind?: string; language?: string; user_id?: string } = {};
   try {
     body = (await req.json()) ?? {};
   } catch {
@@ -155,14 +171,24 @@ Deno.serve(async (req) => {
   if (!body.kind || !TRANSLATE_KINDS.includes(body.kind as TranslateKind)) return reply({ error: 'bad_request' }, 400);
   if (!body.language || !LANGUAGE_CODE.test(body.language)) return reply({ error: 'bad_request' }, 400);
 
-  // 1. Who is calling? Ask with THEIR login, so the database rules decide what they may see.
-  const asUser = createClient(url, publicKey, { global: { headers: { Authorization: authHeader } } });
-  const { data: auth, error: authError } = await asUser.auth.getUser();
-  if (authError || !auth.user) return reply({ error: 'not_signed_in' }, 401);
+  // 1. Who is calling? Either a signed-in person, or one of our own server functions.
+  let userId: string;
+  if (isOurOwnServer(authHeader, secretKey)) {
+    // Our own server, acting for somebody it is emailing. It must say who, and the database
+    // checks that person belongs to the note's account before anything is translated.
+    if (!body.user_id || !UUID.test(body.user_id)) return reply({ error: 'bad_request' }, 400);
+    userId = body.user_id;
+  } else {
+    // A person. Ask with THEIR login, so the database rules decide what they may see.
+    const asUser = createClient(url, publicKey, { global: { headers: { Authorization: authHeader } } });
+    const { data: auth, error: authError } = await asUser.auth.getUser();
+    if (authError || !auth.user) return reply({ error: 'not_signed_in' }, 401);
 
-  // 2. The note must be one this person can really see, under their own login.
-  const { data: visible } = await asUser.from('meetings').select('id').eq('id', body.meeting_id).maybeSingle();
-  if (!visible) return reply({ error: 'not_allowed' }, 403);
+    // 2. The note must be one this person can really see, under their own login.
+    const { data: visible } = await asUser.from('meetings').select('id').eq('id', body.meeting_id).maybeSingle();
+    if (!visible) return reply({ error: 'not_allowed' }, 403);
+    userId = auth.user.id;
+  }
 
   // 3. No key means Gyan cannot translate at all. Say so in plain words rather than hanging.
   if (!anthropicKey) return reply({ ok: false, message: MESSAGES.notSetUp });
@@ -175,7 +201,7 @@ Deno.serve(async (req) => {
     const result = await runTranslate({
       admin,
       meetingId: body.meeting_id,
-      userId: auth.user.id,
+      userId,
       kind: body.kind as TranslateKind,
       language: body.language,
       bucket: BUCKET,

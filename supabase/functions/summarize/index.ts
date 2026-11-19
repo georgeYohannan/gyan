@@ -171,6 +171,12 @@ Deno.serve(async (req) => {
     usdPerMtokOut: USD_PER_MTOK_OUT,
     call: makeCaller(client),
     countTokens: makeCounter(client),
+    // 5. The note is now Ready, so hand it to the recap function. That function decides whether
+    // anybody is actually emailed: it checks the account's own settings, and it refuses to send
+    // twice for the same note, so Regenerate can never email everybody again.
+    onReady: async () => {
+      await admin.functions.invoke('recap', { body: { meeting_id: meetingId, auto: true } });
+    },
   });
   EdgeRuntime.waitUntil(work);
 
