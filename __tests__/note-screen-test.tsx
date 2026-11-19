@@ -15,6 +15,11 @@ const mockCopy = jest.fn();
 const mockChatList = jest.fn();
 const mockAsk = jest.fn();
 const mockPassages = jest.fn();
+const mockSetLanguage = jest.fn();
+const mockSaved = jest.fn();
+const mockTranslate = jest.fn();
+/** The preferred language the fake profile reports. Tests change it. */
+let mockMyLanguage = 'en';
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
@@ -43,6 +48,19 @@ jest.mock('@/lib/chat', () => ({
   listChatMessages: (...a: unknown[]) => mockChatList(...a),
   askChat: (...a: unknown[]) => mockAsk(...a),
   retryChat: jest.fn(),
+}));
+jest.mock('@/lib/profile', () => ({
+  useProfile: () => ({
+    languageCode: mockMyLanguage,
+    language: jest.requireActual('@/constants/languages').languageFor(mockMyLanguage),
+    isLoading: false,
+    setLanguage: (...a: unknown[]) => mockSetLanguage(...a),
+  }),
+}));
+jest.mock('@/lib/translations', () => ({
+  ...jest.requireActual('@/lib/translations'),
+  getSavedTranslation: (...a: unknown[]) => mockSaved(...a),
+  translate: (...a: unknown[]) => mockTranslate(...a),
 }));
 
 const note = (over: Record<string, unknown> = {}) => ({
@@ -93,6 +111,10 @@ beforeEach(() => {
   mockChatList.mockReset().mockResolvedValue([]);
   mockAsk.mockReset();
   mockPassages.mockReset().mockResolvedValue([]);
+  mockMyLanguage = 'en';
+  mockSetLanguage.mockReset().mockResolvedValue({});
+  mockSaved.mockReset().mockResolvedValue(undefined);
+  mockTranslate.mockReset();
 });
 
 describe('<NoteDetailScreen /> Summary tab', () => {
@@ -597,5 +619,252 @@ describe('<NoteDetailScreen /> a pasted-text note', () => {
 
     // The summary still shows. Only the words are missing.
     expect(await screen.findByText(/agreed to ship the new sign up screen/)).toBeTruthy();
+  });
+});
+
+describe('<NoteDetailScreen /> your language', () => {
+  test('the pill shows the language you are on, and opens the list', async () => {
+    mockGetNote.mockResolvedValue(note());
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Your language: English' }));
+    });
+    expect(screen.getByRole('header', { name: 'Your language' })).toBeTruthy();
+    expect(screen.getByText('Gyan writes your summaries, your to-dos and its chat answers in this language.')).toBeTruthy();
+  });
+
+  test('picking a language saves it on your profile', async () => {
+    mockGetNote.mockResolvedValue(note());
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Your language: English' }));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Hindi, हिन्दी' }));
+    });
+    expect(mockSetLanguage).toHaveBeenCalledWith('hi');
+  });
+
+  test('a language that is already saved shows on the pill after a reload', async () => {
+    mockMyLanguage = 'ja';
+    mockGetNote.mockResolvedValue(note());
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    expect(await screen.findByRole('button', { name: 'Your language: Japanese' })).toBeTruthy();
+  });
+});
+
+describe('<NoteDetailScreen /> translating', () => {
+  const spanishSummary = {
+    overview: 'El equipo acordó lanzar la nueva pantalla de registro el viernes.',
+    key_points: ['El registro es lento en los teléfonos', 'Dos personas lo probaron'],
+    decisions: ['Lanzar el viernes'],
+    open_questions: ['¿Quién escribe la nota de lanzamiento?'],
+    action_items: [
+      { text: 'Enviar el plan de pruebas', due: 'para el viernes' },
+      { text: 'Reservar la revisión', due: null },
+    ],
+  };
+
+  /** Opens the note with a summary, then opens the Translate list. */
+  async function openTranslate() {
+    mockGetNote.mockResolvedValue(note());
+    mockGetSummary.mockResolvedValue(summary);
+    mockListItems.mockResolvedValue(items);
+    mockList.mockResolvedValue(lines);
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Translate this summary' }));
+    });
+  }
+
+  test('the Translate button is off until there is something to translate', async () => {
+    mockGetNote.mockResolvedValue(note({ status: 'Queued' }));
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    const button = await screen.findByRole('button', { name: 'Translate this summary' });
+    expect(button.props.accessibilityState).toMatchObject({ disabled: true });
+  });
+
+  test('a translated summary shows the Spanish words and says it was translated by AI', async () => {
+    mockTranslate.mockResolvedValue({ ok: true, kind: 'summary', language: 'es', content: spanishSummary, reused: false });
+    await openTranslate();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Spanish, Español' }));
+    });
+
+    expect(mockTranslate).toHaveBeenCalledWith('n1', 'summary', 'es');
+    expect(await screen.findByText('Translated by AI')).toBeTruthy();
+    expect(screen.getByText('El equipo acordó lanzar la nueva pantalla de registro el viernes.')).toBeTruthy();
+    expect(screen.getByText('Lanzar el viernes')).toBeTruthy();
+    // The to-dos are translated too, and keep their own tick boxes. A screen reader reads the
+    // translated words, which is the point of translating them.
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    expect(screen.getByRole('checkbox', { name: 'Enviar el plan de pruebas' })).toBeTruthy();
+    expect(screen.getByText('Enviar el plan de pruebas')).toBeTruthy();
+    // The English words are gone while the translation is on screen.
+    expect(screen.queryByText('Ship on Friday')).toBeNull();
+  });
+
+  test('Show original brings the English back, and Show translation puts it back', async () => {
+    mockTranslate.mockResolvedValue({ ok: true, kind: 'summary', language: 'es', content: spanishSummary, reused: false });
+    await openTranslate();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Spanish, Español' }));
+    });
+
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Show original' }));
+    });
+    expect(screen.getByText('Ship on Friday')).toBeTruthy();
+    expect(screen.queryByText('Lanzar el viernes')).toBeNull();
+    expect(screen.getByText('Your Spanish translation is saved.')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Show translation' }));
+    });
+    expect(screen.getByText('Lanzar el viernes')).toBeTruthy();
+    expect(screen.getByText('Translated by AI')).toBeTruthy();
+  });
+
+  test('PAID ONCE: a saved translation appears without asking the server at all', async () => {
+    mockSaved.mockResolvedValue(spanishSummary);
+    await openTranslate();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Spanish, Español' }));
+    });
+
+    expect(mockSaved).toHaveBeenCalledWith('n1', 'summary', 'es');
+    expect(mockTranslate).not.toHaveBeenCalled();
+    expect(await screen.findByText('Translated by AI')).toBeTruthy();
+    expect(screen.getByText('Lanzar el viernes')).toBeTruthy();
+  });
+
+  test('ALREADY IN THAT LANGUAGE: it says so instead of paying for nothing', async () => {
+    await openTranslate();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'English, English' }));
+    });
+    expect(screen.getByText('This note is already in that language, so there is nothing to translate.')).toBeTruthy();
+    expect(mockSaved).not.toHaveBeenCalled();
+    expect(mockTranslate).not.toHaveBeenCalled();
+  });
+
+  test('a problem shows a plain sentence, and the English stays on screen', async () => {
+    mockTranslate.mockResolvedValue({ ok: false, message: 'Gyan could not translate this note just now. Please try again.' });
+    await openTranslate();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Arabic, العربية' }));
+    });
+    expect(await screen.findByText(/could not translate this note just now/)).toBeTruthy();
+    expect(screen.getByText('Ship on Friday')).toBeTruthy();
+  });
+
+  test('a translated transcript keeps every speaker and every time', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockGetSummary.mockResolvedValue(summary);
+    mockListItems.mockResolvedValue(items);
+    mockList.mockResolvedValue(lines);
+    mockTranslate.mockResolvedValue({
+      ok: true,
+      kind: 'transcript',
+      language: 'ar',
+      content: { lines: ['شكرا لانضمامكم.', 'يسعدني وجودي هنا.'] },
+      reused: false,
+    });
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    await openTranscript();
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Translate this transcript' }));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Arabic, العربية' }));
+    });
+
+    expect(mockTranslate).toHaveBeenCalledWith('n1', 'transcript', 'ar');
+    expect(await screen.findByText('Translated by AI')).toBeTruthy();
+    expect(screen.getByText('شكرا لانضمامكم.')).toBeTruthy();
+    // The speaker and the time are not words to translate, so they are untouched.
+    expect(screen.getByText('Speaker 1')).toBeTruthy();
+    expect(screen.getByText('1:05')).toBeTruthy();
+    expect(screen.queryByText('Happy to be here.')).toBeNull();
+  });
+
+  test('ticking a translated to-do still saves the right one', async () => {
+    mockTranslate.mockResolvedValue({ ok: true, kind: 'summary', language: 'es', content: spanishSummary, reused: false });
+    await openTranslate();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Spanish, Español' }));
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('checkbox', { name: 'Enviar el plan de pruebas' }));
+    });
+    // The row shows Spanish, but it is still to-do i1 that gets ticked.
+    expect(mockSetDone).toHaveBeenCalledWith('i1', true);
+  });
+
+  test('each tab keeps its own translation', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockGetSummary.mockResolvedValue(summary);
+    mockListItems.mockResolvedValue(items);
+    mockList.mockResolvedValue(lines);
+    mockTranslate.mockResolvedValue({ ok: true, kind: 'summary', language: 'es', content: spanishSummary, reused: false });
+    await act(async () => {
+      await render(<NoteDetailScreen />);
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Translate this summary' }));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Spanish, Español' }));
+    });
+    expect(await screen.findByText('Translated by AI')).toBeTruthy();
+
+    // The Transcript tab has not been translated, so it shows no label.
+    await openTranscript();
+    expect(screen.queryByText(/Translated by AI/)).toBeNull();
+    expect(screen.getByText('Happy to be here.')).toBeTruthy();
+
+    // Back on the Summary tab, the Spanish is still there.
+    await act(async () => {
+      fireEvent.press(screen.getByRole('tab', { name: 'Summary' }));
+    });
+    expect(screen.getByText('Translated by AI')).toBeTruthy();
+  });
+});
+
+describe('help for languages and translating', () => {
+  const entry = HELP.translation;
+  const words = [...entry.sentences, ...(entry.lists ?? []).flatMap((l) => [l.heading, ...l.items])].join(' ');
+
+  test('it exists and is written in short plain words', () => {
+    expect(entry.title.length).toBeGreaterThan(0);
+    // No jargon a 15 year old would have to look up.
+    expect(words).not.toMatch(/token|prompt|API|model|embedding|translation table|row/i);
+    for (const sentence of entry.sentences) expect(sentence.length).toBeLessThan(160);
+  });
+
+  test('it explains the label, the toggle, and that a repeat costs nothing', () => {
+    expect(words).toContain('Translated by AI');
+    expect(words).toContain('Show original');
+    expect(words).toContain('costs nothing');
+    expect(words).toContain('right to left');
+    // It says what is left alone, so nobody worries about names and times changing.
+    expect(words).toMatch(/Names, numbers, dates and times/);
+  });
+
+  test('it has a picture at both sizes, and every picture has a description', () => {
+    expect(entry.images.length).toBeGreaterThanOrEqual(2);
+    for (const image of entry.images) expect(image.alt.length).toBeGreaterThan(10);
   });
 });

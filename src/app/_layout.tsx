@@ -5,6 +5,14 @@ import {
   IBMPlexSans_500Medium,
   IBMPlexSans_600SemiBold,
 } from '@expo-google-fonts/ibm-plex-sans';
+import {
+  IBMPlexSansArabic_400Regular,
+  IBMPlexSansArabic_600SemiBold,
+} from '@expo-google-fonts/ibm-plex-sans-arabic';
+import {
+  IBMPlexSansDevanagari_400Regular,
+  IBMPlexSansDevanagari_600SemiBold,
+} from '@expo-google-fonts/ibm-plex-sans-devanagari';
 import { SchibstedGrotesk_700Bold } from '@expo-google-fonts/schibsted-grotesk';
 import { DarkTheme, Stack, ThemeProvider, type Theme } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -14,6 +22,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { Colors, FontFamily } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
+import { ProfileProvider } from '@/lib/profile';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -37,6 +46,11 @@ export default function TabLayout() {
     [FontFamily.body]: IBMPlexSans_400Regular,
     [FontFamily.bodyMedium]: IBMPlexSans_500Medium,
     [FontFamily.bodySemiBold]: IBMPlexSans_600SemiBold,
+    // For translations into Arabic and Hindi. See the note on FontFamily in theme.ts.
+    [FontFamily.arabic]: IBMPlexSansArabic_400Regular,
+    [FontFamily.arabicSemiBold]: IBMPlexSansArabic_600SemiBold,
+    [FontFamily.devanagari]: IBMPlexSansDevanagari_400Regular,
+    [FontFamily.devanagariSemiBold]: IBMPlexSansDevanagari_600SemiBold,
   });
 
   // Keep the splash screen up until the fonts are ready (or failed, so the app still opens).
@@ -49,7 +63,9 @@ export default function TabLayout() {
       <StatusBar style="light" />
       <AnimatedSplashOverlay />
       <AuthProvider>
-        <RootNavigator />
+        <ProfileProvider>
+          <RootNavigator />
+        </ProfileProvider>
       </AuthProvider>
     </ThemeProvider>
   );

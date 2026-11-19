@@ -161,6 +161,40 @@ maybe('Supabase test project: privacy between users', () => {
     expect(write.data ?? []).toEqual([]);
   });
 
+  test('user B cannot read a translation of A\'s notes', async () => {
+    const { data, error } = await B.client.from('translations').select('*');
+    expect({ error: error?.message, rows: data }).toEqual({ error: undefined, rows: [] });
+  });
+
+  test('nobody can write a translation from the app: only the server saves them', async () => {
+    const write = await B.client.from('translations').insert({
+      meeting_id: '00000000-0000-4000-8000-000000000000',
+      kind: 'summary',
+      source_id: '00000000-0000-4000-8000-000000000000',
+      language: 'es',
+      content: '[test] hola',
+    });
+    expect(write.error).not.toBeNull();
+  });
+
+  test('a person can change their own preferred language, and it is remembered', async () => {
+    const saved = await B.client.from('profiles').update({ preferred_language: 'es' }).eq('id', B.userId).select();
+    expect(saved.error).toBeNull();
+
+    const read = await B.client.from('profiles').select('preferred_language').eq('id', B.userId).single();
+    expect(read.data?.preferred_language).toBe('es');
+
+    // Put it back, so the next run starts from English again.
+    await B.client.from('profiles').update({ preferred_language: 'en' }).eq('id', B.userId);
+  });
+
+  test('user B cannot change user A\'s preferred language', async () => {
+    const { data } = await B.client.from('profiles').update({ preferred_language: 'ar' }).eq('id', A.userId).select();
+    expect(data).toEqual([]);
+    const check = await A.client.from('profiles').select('preferred_language').eq('id', A.userId).single();
+    expect(check.data?.preferred_language).not.toBe('ar');
+  });
+
   test('user B cannot change user A\'s profile', async () => {
     const { data } = await B.client.from('profiles').update({ display_name: 'hacked' }).eq('id', A.userId).select();
     expect(data).toEqual([]);

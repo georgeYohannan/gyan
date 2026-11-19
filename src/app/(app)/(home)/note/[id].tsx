@@ -4,7 +4,9 @@ import { Pressable, ScrollView, View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
 import { ChatPanel } from '@/components/notes/chat-panel';
+import { LanguagePicker } from '@/components/notes/language-picker';
 import { SummaryTab } from '@/components/notes/summary-tab';
+import { TranslationBar } from '@/components/notes/translation-bar';
 import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
 import { GlassPanel } from '@/components/ui/glass-panel';
@@ -12,7 +14,9 @@ import { Heading } from '@/components/ui/heading';
 import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { ScriptText } from '@/components/ui/script-text';
 import { TabBar } from '@/components/ui/tab-bar';
+import { baseCode, languageName, sameLanguage } from '@/constants/languages';
 import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 import { NO_TRANSCRIPT_MESSAGE, NO_WORDS_MESSAGE, type ChatSource } from '@/lib/chat';
 import { listPassages, type Passage } from '@/lib/passages';
@@ -26,6 +30,16 @@ import {
   type Summary,
 } from '@/lib/summaries';
 import { formatTime, getNote, listSegments, startTranscription, type NoteDetail, type TranscriptLine } from '@/lib/transcripts';
+import { useProfile } from '@/lib/profile';
+import {
+  getSavedTranslation,
+  MESSAGES as TRANSLATE_MESSAGES,
+  translate,
+  type SummaryTranslation,
+  type TranscriptTranslation,
+  type TranslateKind,
+  type TranslationContent,
+} from '@/lib/translations';
 
 type Ready = {
   state: 'ready';
@@ -42,6 +56,14 @@ type Load = { state: 'loading' } | { state: 'error' } | { state: 'missing' } | R
 
 const TABS = ['Summary', 'Transcript'] as const;
 type Tab = (typeof TABS)[number];
+
+/** Each tab translates its own thing. */
+const KIND_FOR_TAB: Record<Tab, TranslateKind> = { Summary: 'summary', Transcript: 'transcript' };
+
+/** One tab's translation: the language it is in, and the words. */
+type TabTranslation = { language: string; content: TranslationContent };
+
+const SAME_LANGUAGE_NOTE = 'This note is already in that language, so there is nothing to translate.';
 
 /** Statuses where a transcript, a summary, or action items may already exist. */
 const HAS_WORDS = ['Summarizing', 'Ready', 'Failed'];
@@ -83,6 +105,19 @@ export default function NoteDetailScreen() {
   const [chatOpen, setChatOpen] = useState(false);
   /** The transcript line a passage number pointed at. It stays lit until another one is tapped. */
   const [highlightId, setHighlightId] = useState<string>();
+
+  const { languageCode, setLanguage } = useProfile();
+  /** Which picker is open, if either. */
+  const [picker, setPicker] = useState<'mine' | 'translate'>();
+  /** The translation held for each tab. Each tab translates its own words. */
+  const [translated, setTranslated] = useState<Partial<Record<Tab, TabTranslation>>>({});
+  /** Tabs where the person has asked to see the original words again. */
+  const [showOriginal, setShowOriginal] = useState<Partial<Record<Tab, boolean>>>({});
+  /** The language being fetched right now, so the list cannot be tapped twice. */
+  const [translateBusy, setTranslateBusy] = useState<string>();
+  const [translateError, setTranslateError] = useState<string>();
+  /** A quiet note, such as "already in that language". Not a problem, so not red. */
+  const [translateNote, setTranslateNote] = useState<string>();
 
   const pageRef = useRef<ComponentRef<typeof ScrollView>>(null);
   /** How far down the page each transcript line starts, so we can scroll to it. */
@@ -179,6 +214,85 @@ export default function NoteDetailScreen() {
   // A note can be asked about as soon as it has words, whether somebody spoke them or typed them.
   const canAsk = lines.length > 0 || passages.length > 0;
 
+  const summary = load.state === 'ready' ? load.summary : undefined;
+  // The Summary tab can be translated once a summary exists. The Transcript tab, once it has words.
+  const canTranslate = tab === 'Summary' ? !!summary : canAsk;
+  /** The language the words on this tab are already in. */
+  const originalLanguage =
+    tab === 'Summary'
+      ? (summary?.language ?? 'en')
+      : (load.state === 'ready' ? load.note.spoken_language : undefined);
+
+  const tabTranslation = translated[tab];
+  const showingTranslation = !!tabTranslation && !showOriginal[tab];
+
+  /** Switches the whole app to a language: summaries and chat answers are written in it. */
+  async function pickMyLanguage(code: string) {
+    setPicker(undefined);
+    const result = await setLanguage(code);
+    if (result.error) setTranslateError(result.error);
+  }
+
+  /**
+   * Translates the open tab into one language.
+   * It looks in the database first, so a translation somebody already paid for appears at once and
+   * costs nothing. Only when there is none saved does it ask the server to make one.
+   */
+  async function pickTranslation(code: string) {
+    if (!id) return;
+    const kind = KIND_FOR_TAB[tab];
+    const language = baseCode(code);
+    setPicker(undefined);
+    setTranslateError(undefined);
+    setTranslateNote(undefined);
+
+    // Nothing to do when the words are already in that language.
+    if (sameLanguage(language, originalLanguage)) {
+      setTranslated((current) => ({ ...current, [tab]: undefined }));
+      setTranslateNote(SAME_LANGUAGE_NOTE);
+      return;
+    }
+
+    setTranslateBusy(language);
+    try {
+      const saved = await getSavedTranslation(id, kind, language);
+      const content = saved ?? (await askServerToTranslate(id, kind, language));
+      if (content) {
+        setTranslated((current) => ({ ...current, [tab]: { language, content } }));
+        setShowOriginal((current) => ({ ...current, [tab]: false }));
+      }
+    } catch {
+      setTranslateError(TRANSLATE_MESSAGES.problem);
+    }
+    setTranslateBusy(undefined);
+  }
+
+  /** Asks the server function for a translation. Sets the error and gives back nothing if it fails. */
+  async function askServerToTranslate(
+    noteId: string,
+    kind: TranslateKind,
+    language: string,
+  ): Promise<TranslationContent | undefined> {
+    const result = await translate(noteId, kind, language);
+    if (result.ok) return result.content;
+    setTranslateError(result.message);
+    return undefined;
+  }
+
+  const translationBar = tabTranslation || translateBusy || translateError ? (
+    <TranslationBar
+      language={translateBusy ?? tabTranslation?.language ?? languageCode}
+      busy={!!translateBusy}
+      error={translateError}
+      showing={showingTranslation}
+      onToggle={() => setShowOriginal((current) => ({ ...current, [tab]: !current[tab] }))}
+      onClear={() => {
+        setTranslateError(undefined);
+        setTranslated((current) => ({ ...current, [tab]: undefined }));
+      }}
+    />
+  ) : null;
+
   return (
     <View style={{ flex: 1 }}>
       <Screen scrollRef={pageRef}>
@@ -233,30 +347,35 @@ export default function NoteDetailScreen() {
                     setHighlightId(undefined);
                   }}
                 />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Ask about this note"
-                  accessibilityState={{ disabled: !canAsk }}
-                  disabled={!canAsk}
-                  onPress={() => setChatOpen(true)}
-                  style={{
-                    minHeight: MinTouchTarget,
-                    justifyContent: 'center',
-                    paddingHorizontal: Spacing.four,
-                    borderRadius: Radius.pill,
-                    borderWidth: 1,
-                    borderColor: canAsk ? Colors.brand : Colors.glassBorder,
-                    backgroundColor: Colors.glass,
-                    opacity: canAsk ? 1 : 0.5,
-                  }}>
-                  <Body color="link" style={{ fontWeight: '600' }}>
-                    Ask
-                  </Body>
-                </Pressable>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flexWrap: 'wrap' }}>
+                  <Pill
+                    label={`Language: ${languageName(languageCode)}`}
+                    accessibilityLabel={`Your language: ${languageName(languageCode)}`}
+                    tone="quiet"
+                    onPress={() => setPicker('mine')}
+                  />
+                  <Pill
+                    label="Translate"
+                    accessibilityLabel={`Translate this ${tab.toLowerCase()}`}
+                    enabled={canTranslate}
+                    onPress={() => setPicker('translate')}
+                  />
+                  <Pill
+                    label="Ask"
+                    accessibilityLabel="Ask about this note"
+                    enabled={canAsk}
+                    onPress={() => setChatOpen(true)}
+                  />
+                </View>
               </View>
               {!canAsk ? (
                 <Body small color="textSecondary">
                   {isText ? NO_WORDS_MESSAGE : NO_TRANSCRIPT_MESSAGE}
+                </Body>
+              ) : null}
+              {translateNote ? (
+                <Body small color="textSecondary" accessibilityRole="alert">
+                  {translateNote}
                 </Body>
               ) : null}
             </View>
@@ -272,6 +391,9 @@ export default function NoteDetailScreen() {
                 onStart={() => start('summary')}
                 starting={starting}
                 startError={startError}
+                translation={showingTranslation ? (tabTranslation?.content as SummaryTranslation) : undefined}
+                translationLanguage={tabTranslation?.language}
+                translationBar={translationBar}
               />
             ) : (
               <TranscriptTab
@@ -285,6 +407,9 @@ export default function NoteDetailScreen() {
                 onLineLayout={(lineId, y) => {
                   lineTops.current[lineId] = y;
                 }}
+                translation={showingTranslation ? (tabTranslation?.content as TranscriptTranslation) : undefined}
+                translationLanguage={tabTranslation?.language}
+                translationBar={translationBar}
               />
             )}
           </>
@@ -292,7 +417,72 @@ export default function NoteDetailScreen() {
       </Screen>
 
       {id ? <ChatPanel meetingId={id} visible={chatOpen} onClose={() => setChatOpen(false)} onJump={jumpTo} /> : null}
+
+      <LanguagePicker
+        title="Your language"
+        hint="Gyan writes your summaries, your to-dos and its chat answers in this language."
+        selected={languageCode}
+        visible={picker === 'mine'}
+        onPick={pickMyLanguage}
+        onClose={() => setPicker(undefined)}
+        helpId="translation"
+      />
+      <LanguagePicker
+        title={`Translate this ${tab.toLowerCase()}`}
+        hint="Pick a language. Gyan keeps the names, numbers and times exactly as they are."
+        selected={tabTranslation?.language ?? ''}
+        visible={picker === 'translate'}
+        onPick={pickTranslation}
+        onClose={() => setPicker(undefined)}
+        busyCode={translateBusy}
+        helpId="translation"
+      />
     </View>
+  );
+}
+
+/**
+ * One of the small round-ended buttons next to the tabs.
+ *
+ * `tone` is information, not decoration. Translate and Ask DO something to the note, so they are
+ * outlined in brand blue. Language only shows what you are set to and lets you change it, so it is
+ * quiet: three identical buttons would say these are three of the same thing, and they are not.
+ */
+function Pill({
+  label,
+  accessibilityLabel,
+  onPress,
+  enabled = true,
+  tone = 'action',
+}: {
+  label: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+  enabled?: boolean;
+  tone?: 'action' | 'quiet';
+}) {
+  const quiet = tone === 'quiet';
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled: !enabled }}
+      disabled={!enabled}
+      onPress={onPress}
+      style={{
+        minHeight: MinTouchTarget,
+        justifyContent: 'center',
+        paddingHorizontal: Spacing.three,
+        borderRadius: Radius.pill,
+        borderWidth: 1,
+        borderColor: !enabled || quiet ? Colors.glassBorder : Colors.brand,
+        backgroundColor: quiet ? 'transparent' : Colors.glass,
+        opacity: enabled ? 1 : 0.5,
+      }}>
+      <Body color={quiet ? 'textSecondary' : 'link'} style={quiet ? undefined : { fontWeight: '600' }}>
+        {label}
+      </Body>
+    </Pressable>
   );
 }
 
@@ -305,6 +495,9 @@ function TranscriptTab({
   startError,
   highlightId,
   onLineLayout,
+  translation,
+  translationLanguage,
+  translationBar,
 }: {
   note: NoteDetail;
   lines: TranscriptLine[];
@@ -315,6 +508,11 @@ function TranscriptTab({
   /** The line a passage number pointed at. It gets a blue border and a brighter fill. */
   highlightId?: string;
   onLineLayout?: (lineId: string, y: number) => void;
+  /** The translated lines, when a translation is on screen instead of the spoken words. */
+  translation?: TranscriptTranslation;
+  translationLanguage?: string;
+  /** Goes above the lines: the "Translated by AI" label and the Show original button. */
+  translationBar?: React.ReactNode;
 }) {
   const hasWords = lines.length > 0 || passages.length > 0;
   // A note that failed while writing its summary still has its words. Keep showing them, and
@@ -379,8 +577,14 @@ function TranscriptTab({
     );
   }
 
+  // A translated line keeps its own speaker and its own time. Only the words change, and they
+  // line up by position: the first translated line belongs to the first spoken line.
+  const language = translation ? (translationLanguage ?? 'en') : 'en';
+  const wordsFor = (index: number, original: string) => translation?.lines[index] ?? original;
+
   return (
     <View style={{ gap: Spacing.three }}>
+      {translationBar}
       {failedWithTranscript ? (
         <GlassPanel style={{ borderColor: Colors.dangerBorder }}>
           <Body color="danger" accessibilityRole="alert">
@@ -403,22 +607,22 @@ function TranscriptTab({
             key={p.id}
             onLayout={(e) => onLineLayout?.(p.id, e.nativeEvent.layout.y)}
             style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
-            accessibilityLabel={`Paragraph ${i + 1}. ${p.text}${lit ? '. Highlighted' : ''}`}>
+            accessibilityLabel={`Paragraph ${i + 1}. ${wordsFor(i, p.text)}${lit ? '. Highlighted' : ''}`}>
             <Body color="link" style={{ fontWeight: '600' }}>
               Paragraph {i + 1}
             </Body>
-            <Body>{p.text}</Body>
+            <ScriptText language={language}>{wordsFor(i, p.text)}</ScriptText>
           </GlassPanel>
         );
       })}
-      {lines.map((l) => {
+      {lines.map((l, i) => {
         const lit = l.id === highlightId;
         return (
           <GlassPanel
             key={l.id}
             onLayout={(e) => onLineLayout?.(l.id, e.nativeEvent.layout.y)}
             style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
-            accessibilityLabel={`${l.speaker_label ?? 'Speaker'}, ${formatTime(l.start_ms)}. ${l.text}${lit ? '. Highlighted' : ''}`}>
+            accessibilityLabel={`${l.speaker_label ?? 'Speaker'}, ${formatTime(l.start_ms)}. ${wordsFor(i, l.text)}${lit ? '. Highlighted' : ''}`}>
             <View style={{ flexDirection: 'row', gap: Spacing.three, alignItems: 'baseline' }}>
               <Body color="link" style={{ fontWeight: '600' }}>
                 {l.speaker_label ?? 'Speaker'}
@@ -427,7 +631,7 @@ function TranscriptTab({
                 {formatTime(l.start_ms)}
               </Body>
             </View>
-            <Body>{l.text}</Body>
+            <ScriptText language={language}>{wordsFor(i, l.text)}</ScriptText>
           </GlassPanel>
         );
       })}

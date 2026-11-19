@@ -54,6 +54,16 @@ export const FontFamily = {
   body: 'IBMPlexSans_400Regular',
   bodyMedium: 'IBMPlexSans_500Medium',
   bodySemiBold: 'IBMPlexSans_600SemiBold',
+  /**
+   * Translated text. IBM Plex Sans covers Latin, Cyrillic and Greek, but not Arabic or the
+   * Devanagari script that Hindi uses, so those two scripts get their own IBM Plex family: same
+   * designer, same look. Japanese, Chinese and Korean use the device's own font instead, because
+   * each of those font files is about 17 MB, far too big to ship inside the app.
+   */
+  arabic: 'IBMPlexSansArabic_400Regular',
+  arabicSemiBold: 'IBMPlexSansArabic_600SemiBold',
+  devanagari: 'IBMPlexSansDevanagari_400Regular',
+  devanagariSemiBold: 'IBMPlexSansDevanagari_600SemiBold',
 } as const;
 
 export const Fonts = Platform.select({

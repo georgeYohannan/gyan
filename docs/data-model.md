@@ -141,9 +141,10 @@ Translate the content into {{target_language}}.
 
 RULES
 - Translate meaning faithfully. Do not add, remove, or explain anything.
-- Keep names, numbers, dates, times, links, speaker labels, and timestamps unchanged.
+- Translate every ordinary word, including technical, legal, financial, and business terms. A word being technical is not a reason to leave it in English.
+- Leave unchanged only these: people's names, company, product and brand names, file names, code, web addresses, numbers, dates, times, speaker labels, and timestamps.
 - If the input is JSON, translate only the text values. Keep every key and the structure exactly the same.
-- If a word has no good translation, keep the original word.
+- Somebody who reads {{target_language}} and no English at all must be able to understand every sentence you write.
 - Return only the translation.
 
 USER
@@ -151,6 +152,8 @@ USER
 ```
 
 After a translation, the server function saves it in translations under the note, kind, source id, and language. The app labels it "Translated by AI" and offers "Show original".
+
+The saved words carry the version of these rules that made them (`"v"` inside the saved content). When the rules above are changed, the version goes up by 1, and a translation saved under an older version is made again the next time somebody asks for it. Without that, a change to these rules would never reach anybody who had already translated a note.
 
 ## Open decisions
 

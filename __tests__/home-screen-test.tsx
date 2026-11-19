@@ -7,6 +7,9 @@ const mockSignOut = jest.fn();
 const mockPush = jest.fn();
 const mockListNotes = jest.fn();
 const mockGetUsage = jest.fn();
+const mockSetLanguage = jest.fn();
+/** The preferred language the fake profile reports. Tests change it. */
+let mockMyLanguage = 'en';
 
 jest.mock('@/lib/auth', () => ({
   useAuth: () => ({ session: { user: { email: 'fake.person@example.com' } }, signOut: mockSignOut }),
@@ -24,6 +27,14 @@ jest.mock('@/lib/notes', () => ({
   listNotes: () => mockListNotes(),
   getUsage: () => mockGetUsage(),
 }));
+jest.mock('@/lib/profile', () => ({
+  useProfile: () => ({
+    languageCode: mockMyLanguage,
+    language: jest.requireActual('@/constants/languages').languageFor(mockMyLanguage),
+    isLoading: false,
+    setLanguage: (...a: unknown[]) => mockSetLanguage(...a),
+  }),
+}));
 
 const note = (over: object = {}) => ({
   id: '1', title: 'Weekly team check-in', source: 'text', status: 'Queued', error_message: null, created_at: '2026-11-15T12:00:00Z', ...over,
@@ -36,6 +47,8 @@ describe('<HomeScreen />', () => {
     mockListNotes.mockReset();
     mockGetUsage.mockReset();
     mockGetUsage.mockResolvedValue({ accountId: 'a', planName: 'Free', used: 2, limit: 5 });
+    mockMyLanguage = 'en';
+    mockSetLanguage.mockReset().mockResolvedValue({});
   });
 
   test('shows loading first, then the notes newest first with title, date, source, and status', async () => {
@@ -150,5 +163,63 @@ describe('<HomeScreen />', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+describe('<HomeScreen /> your language', () => {
+  beforeEach(() => {
+    mockListNotes.mockReset().mockResolvedValue([]);
+    mockGetUsage.mockReset().mockResolvedValue({ accountId: 'a', planName: 'Free', used: 0, limit: 5 });
+    mockMyLanguage = 'en';
+    mockSetLanguage.mockReset().mockResolvedValue({});
+  });
+
+  test('the account panel says which language you are on, and what it is used for', async () => {
+    await act(async () => {
+      await render(<HomeScreen />);
+    });
+    expect(await screen.findByRole('header', { name: 'Your account' })).toBeTruthy();
+    expect(screen.getByText('English')).toBeTruthy();
+    expect(
+      screen.getByText('Your summaries, your to-dos and the chat answers are written in this language.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Change language' })).toBeTruthy();
+  });
+
+  test('Change language opens the list and saves what you pick', async () => {
+    await act(async () => {
+      await render(<HomeScreen />);
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Change language' }));
+    });
+    expect(screen.getByRole('header', { name: 'Your language' })).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Hindi, हिन्दी' }));
+    });
+    expect(mockSetLanguage).toHaveBeenCalledWith('hi');
+  });
+
+  test('a language you saved before shows when Home opens', async () => {
+    mockMyLanguage = 'ar';
+    await act(async () => {
+      await render(<HomeScreen />);
+    });
+    expect(await screen.findByText('Arabic')).toBeTruthy();
+  });
+
+  test('if saving fails, it says so in plain words', async () => {
+    mockSetLanguage.mockResolvedValue({ error: 'Gyan could not save your language. Please check your connection and try again.' });
+    await act(async () => {
+      await render(<HomeScreen />);
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('button', { name: 'Change language' }));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Spanish, Español' }));
+    });
+    expect(screen.getByText(/could not save your language/)).toBeTruthy();
   });
 });

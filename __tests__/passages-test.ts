@@ -1,12 +1,16 @@
 /**
  * Pasted text has no transcript, so its words are cut into numbered paragraphs instead.
  *
- * The cutting happens in TWO places: in the app (src/lib/passages.ts), which draws the paragraphs
- * on screen, and on the server (supabase/functions/chat/chat.ts), which sends them to the AI.
- * If the two ever cut the text differently, a number in an answer would point at the wrong
- * paragraph. The last test in this file is the one that stops that happening.
+ * The cutting happens in THREE places: in the app (src/lib/passages.ts), which draws the
+ * paragraphs on screen; in the chat server function (supabase/functions/chat/chat.ts), which sends
+ * them to the AI to answer from; and in the translate server function
+ * (supabase/functions/translate/translate.ts), which sends them to be translated.
+ * If any of the three cut the text differently, a number in an answer would point at the wrong
+ * paragraph, or a translated paragraph would sit next to the wrong original. The last test in this
+ * file is the one that stops that happening.
  */
 import { splitPassages as splitOnServer } from '../supabase/functions/chat/chat';
+import { splitPassages as splitForTranslation } from '../supabase/functions/translate/translate';
 import { splitPassages as splitInApp } from '@/lib/passages';
 
 describe('cutting text into numbered paragraphs', () => {
@@ -63,8 +67,9 @@ describe('cutting text into numbered paragraphs', () => {
   });
 });
 
-describe('the app and the server cut text the same way', () => {
-  // If this ever fails, a number in a chat answer would point at the wrong paragraph.
+describe('the app and both server functions cut text the same way', () => {
+  // If this ever fails, a number in a chat answer would point at the wrong paragraph, or a
+  // translated paragraph would end up next to the wrong original.
   const samples = [
     '',
     '   ',
@@ -78,7 +83,8 @@ describe('the app and the server cut text the same way', () => {
     'Unicode: café, 日本語, emoji 🎉\n\nSecond paragraph.',
   ];
 
-  test.each(samples.map((s, i) => [i, s]))('sample %i is cut identically on both sides', (_i, sample) => {
+  test.each(samples.map((s, i) => [i, s]))('sample %i is cut identically in all 3 places', (_i, sample) => {
     expect(splitOnServer(sample as string)).toEqual(splitInApp(sample as string));
+    expect(splitForTranslation(sample as string)).toEqual(splitInApp(sample as string));
   });
 });
