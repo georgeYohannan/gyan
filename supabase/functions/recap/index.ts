@@ -1,13 +1,16 @@
 // Supabase server function: emails one note's recap to people on the same account.
-// Runs on Supabase's servers, so the Resend key never reaches the app.
-// Needs the server secret RESEND_API_KEY (see docs/testing/prompt-9.md).
+//
+// The emails go out through Gyan's OWN Hostinger mailbox, gyan@gyantechai.com, over the normal
+// outgoing mail server. Runs on Supabase's servers, so the mailbox password never reaches the
+// app. Needs the server secret SMTP_PASSWORD (see docs/testing/prompt-9.md).
+import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 import {
   MESSAGES,
   RecapError,
   fromHeader,
-  messageForStatus,
+  messageForSendError,
 } from './email.ts';
 import {
   previewRecap,
@@ -21,9 +24,8 @@ import {
   APP_URL_FALLBACK,
   MAX_RECIPIENTS,
   MAX_TRANSLATIONS_PER_SEND,
-  RESEND_ENDPOINT,
   SENDER,
-  USER_AGENT,
+  SMTP,
 } from './settings.ts';
 
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Response | Promise<Response>): void };
@@ -64,41 +66,65 @@ function isOurOwnServer(authHeader: string, secretKey: string): boolean {
   return token !== '' && token === secretKey;
 }
 
-/** Hands one email to Resend and gives back the id it was given. */
-function makeSender(apiKey: string) {
-  return async function send(message: OutgoingEmail): Promise<string> {
-    let res: Response;
-    try {
-      res = await fetch(RESEND_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          // Resend refuses a request with no User-Agent. This names the software only.
-          'User-Agent': USER_AGENT,
+/**
+ * Posts the emails through Gyan's own Hostinger mailbox.
+ *
+ * ONE connection is opened for the whole send, not one per person: a mail server treats a fresh
+ * sign in for every message as something close to abuse, and it is far slower. `close` must be
+ * called when the sending is done, which is why this hands back both halves.
+ *
+ * The mailbox Gyan signs in as IS the address it sends from, so there is still only one place
+ * the address is written down.
+ */
+function makeMailer(password: string) {
+  let client: SMTPClient | undefined;
+
+  function open(): SMTPClient {
+    if (!client) {
+      client = new SMTPClient({
+        connection: {
+          hostname: SMTP.hostname,
+          port: SMTP.port,
+          // Port 465 is encrypted from the very first byte, rather than starting in the clear
+          // and turning encryption on afterwards. The password is never sent in the open.
+          tls: true,
+          auth: { username: SENDER.email, password },
         },
-        body: JSON.stringify({
-          from: fromHeader(SENDER),
-          to: [message.to],
-          reply_to: SENDER.replyTo,
-          subject: message.subject,
-          html: message.html,
-          text: message.text,
-        }),
       });
+    }
+    return client;
+  }
+
+  async function send(message: OutgoingEmail): Promise<string> {
+    try {
+      await open().send({
+        from: fromHeader(SENDER),
+        to: message.to,
+        replyTo: SENDER.replyTo,
+        subject: message.subject,
+        // denomailer calls the plain words `content` and the pretty version `html`.
+        content: message.text,
+        html: message.html,
+      });
+    } catch (e) {
+      // Log the KIND of problem only. Never log the password, an address, or the note's words.
+      console.error('recap send refused by the mail server', e instanceof Error ? e.name : 'error');
+      throw new RecapError(messageForSendError(e));
+    }
+    // A mail server gives back no id we can keep, unlike a web service. The email is still
+    // written down in email_log; there is simply nothing to look it up by at the other end.
+    return '';
+  }
+
+  async function close(): Promise<void> {
+    try {
+      await client?.close();
     } catch {
-      throw new RecapError(MESSAGES.service);
+      // Already shut, or never opened. Nothing to do, and nothing worth failing a send over.
     }
+  }
 
-    if (!res.ok) {
-      // Log the KIND of problem only. Never log the key, the address, or the words of the note.
-      console.error('recap send refused with status', res.status);
-      throw new RecapError(messageForStatus(res.status));
-    }
-
-    const body = (await res.json().catch(() => ({}))) as { id?: string };
-    return body.id ?? '';
-  };
+  return { send, close };
 }
 
 /**
@@ -134,7 +160,7 @@ Deno.serve(async (req) => {
   const url = Deno.env.get('SUPABASE_URL');
   const publicKey = pickKey('SUPABASE_ANON_KEY', 'SUPABASE_PUBLISHABLE_KEYS');
   const secretKey = pickKey('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEYS');
-  const resendKey = Deno.env.get('RESEND_API_KEY');
+  const smtpPassword = Deno.env.get('SMTP_PASSWORD');
   const appUrl = Deno.env.get('GYAN_APP_URL') || APP_URL_FALLBACK;
   const authHeader = req.headers.get('Authorization');
   if (!url || !publicKey || !secretKey) return reply({ error: 'server_not_set_up' }, 500);
@@ -189,7 +215,14 @@ Deno.serve(async (req) => {
   if (body.preview === true) {
     try {
       const seen = await previewRecap({ admin, meetingId: body.meeting_id, userId, auto: false });
-      return reply({ ok: true, ...seen, can_send: !!resendKey });
+      // Working out who WOULD get a recap needs no email key, so this still answers without one.
+      // But say plainly why nothing can be sent, rather than leaving the screen to guess.
+      return reply({
+        ok: true,
+        ...seen,
+        can_send: !!smtpPassword,
+        send_problem: smtpPassword ? null : MESSAGES.notSetUp,
+      });
     } catch (e) {
       if (e instanceof RecapNotAllowedError) return reply({ error: 'not_allowed' }, 403);
       const message = e instanceof RecapError ? e.message : MESSAGES.unknown;
@@ -197,10 +230,11 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 3. No key means Gyan cannot send email at all. Say so in plain words rather than hanging.
-  if (!resendKey) return reply({ ok: false, message: MESSAGES.notSetUp });
+  // 3. No password means Gyan cannot get into its mailbox at all. Say so in plain words.
+  if (!smtpPassword) return reply({ ok: false, message: MESSAGES.notSetUp });
 
   // 4. Send. The app is waiting on a hand-pressed send, so this is not put in the background.
+  const mailer = makeMailer(smtpPassword);
   try {
     const result = await runRecap({
       admin,
@@ -212,7 +246,7 @@ Deno.serve(async (req) => {
       sender: SENDER,
       maxRecipients: MAX_RECIPIENTS,
       maxTranslations: MAX_TRANSLATIONS_PER_SEND,
-      send: makeSender(resendKey),
+      send: mailer.send,
       translate: makeTranslator(url, secretKey, body.meeting_id),
     });
     return reply({ ok: true, ...result });
@@ -224,5 +258,9 @@ Deno.serve(async (req) => {
     console.error('recap failed for note', body.meeting_id, e instanceof Error ? e.name : 'error');
     const message = e instanceof RecapError ? e.message : MESSAGES.unknown;
     return reply({ ok: false, message });
+  } finally {
+    // Always hang up, including when a send went wrong. A mail connection left open keeps the
+    // function alive until Supabase stops it.
+    await mailer.close();
   }
 });

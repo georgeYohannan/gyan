@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS: RecapSettings = { toOwner: true, toMembers: false
 
 export const MESSAGES = {
   problem: 'Gyan could not send the recap just now. Please try again.',
+  notSetUp: 'Gyan cannot send emails yet. The email service is not set up on the server.',
   notAllowed: 'You cannot send a recap for this note.',
   loadProblem: 'Gyan could not work out who would get this recap. Please try again.',
   nobody: 'Nobody is picked. Tick at least one person.',
@@ -48,7 +49,14 @@ export type RecapOutcome = {
 };
 
 export type PreviewResult =
-  | { ok: true; recipients: Recipient[]; settings: RecapSettings; canSend: boolean }
+  | {
+      ok: true;
+      recipients: Recipient[];
+      settings: RecapSettings;
+      canSend: boolean;
+      /** Set when canSend is false: why nothing can be sent, in plain words from the server. */
+      sendProblem?: string;
+    }
   | { ok: false; message: string };
 
 export type SendResult =
@@ -127,6 +135,7 @@ export async function previewRecap(meetingId: string): Promise<PreviewResult> {
       recipients: readRecipients(data.recipients),
       settings: readSettings(data.settings),
       canSend: data.can_send !== false,
+      sendProblem: typeof data.send_problem === 'string' ? data.send_problem : undefined,
     };
   }
   return { ok: false, message: typeof data?.message === 'string' ? data.message : MESSAGES.loadProblem };

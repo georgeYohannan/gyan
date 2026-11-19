@@ -2,18 +2,17 @@
 
 Use the Supabase TEST project and fake recordings only. No real customer calls.
 
-Recaps are sent from **gyan@gyantechai.com**, the app's own mailbox, and a reply comes back to
-it. Your own **hello@gyantechai.com** is never used by the app, so app email and your own
-conversations stay apart. Both are Hostinger mailboxes on the same domain; nothing about your
-existing mail changes.
+Recaps are sent **through your own Hostinger mailbox**, gyan@gyantechai.com. Gyan signs in to it
+and posts the message, exactly as a mail program on your computer would. A reply comes back to
+the same mailbox. Your own **hello@gyantechai.com** is never used by the app, so app email and
+your own conversations stay apart.
 
-**While you are testing, only send emails to addresses you own.** Resend also gives you a bin
-address, `delivered@resend.dev`, which accepts a message and throws it away.
+**While you are testing, only send emails to addresses you own.**
 
-What this costs: Resend's free plan allows **100 emails a day and 3,000 a month**, so testing is
-free. Sending itself costs nothing. The only money is translation: when somebody on the account
-reads a language nobody has translated this note into yet, Gyan buys that translation for about a
-cent, and then keeps it for good.
+What this costs: nothing to send. Hostinger allows **1,000 emails a day** on Business Starter and
+3,000 on Business Premium, counted per mailbox over a rolling 24 hours. The only money is
+translation: when somebody on the account reads a language nobody has translated this note into
+yet, Gyan buys that translation for about a cent, and then keeps it for good.
 
 ---
 
@@ -21,43 +20,42 @@ cent, and then keeps it for good.
 
 Work through these in order. Steps 1 to 6 are one-offs.
 
-1. **Check your sending domain is ready.** Open [resend.com](https://resend.com) and go to
-   **Domains**. `gyantechai.com` should say **Verified**.
+1. **Check the mailbox exists and works.** In Hostinger's hPanel, open **Emails** and check
+   that **gyan@gyantechai.com** is there. From any other email account, send it a short message
+   and check it arrives. Gyan sends *as* this mailbox and replies come back *to* it, so both
+   halves need to work.
 
-   I checked your live DNS while planning this, and all three records Resend needs are already
-   there and correct: an MX record and an SPF record on `send.gyantechai.com`, and a DKIM key on
-   `resend._domainkey.gyantechai.com`. **So there is no DNS work to do.** Nothing needs adding,
-   changing or deleting.
+   **There is no DNS work to do, and nothing to change.** Your domain already tells the world
+   that Hostinger may send for it (the SPF record saying `include:_spf.mail.hostinger.com`), and
+   Hostinger already signs its mail with its own key. Sending this way uses records that have
+   been there all along.
 
-   Your Hostinger email is not affected by any of them, because they sit at different names.
-   Mail to anyone@gyantechai.com still goes to Hostinger exactly as before.
+2. **Have the mailbox password to hand.** It is the password you set when you made
+   gyan@gyantechai.com. If you do not know it, reset it in hPanel under **Emails**.
 
-   If it does *not* say Verified, stop and tell me, and I will compare what Resend shows against
-   what is really in your DNS. **Do not change a DNS record until we have looked.**
-
-2. **Make a Resend key.** In Resend, go to **API Keys** and click **Create API Key**.
-   - Name it something like `gyan test`.
-   - Permission: **Sending access** only. It does not need anything else.
-   - Copy the key. It starts with `re_`. You will only be shown it once.
-
-3. **Put the key in your own file.** Open `.env.local` in the gyan folder and add this line,
-   with your real key after the `=`:
+3. **Put the password in your own file.** Open `.env.local` in the gyan folder and add this
+   line, with the real password after the `=`:
 
    ```
-   EXPO_RESEND_KEY=re_your_key_here
+   EXPO_SMTP_PASSWORD=the_mailbox_password
    ```
 
-   `.env.local` is never committed, so the key never leaves your computer.
-   **Never paste a key into a chat, a document, or a screenshot.**
+   `.env.local` is never committed, so it never leaves your computer.
+   **Never paste the password into a chat, a document, or a screenshot.** If the password has a
+   `#` or a space in it, put it in quotes: `EXPO_SMTP_PASSWORD="the password"`.
 
-4. **Put the key on the server.** In the gyan folder, run:
+4. **Put the password on the server.** In the gyan folder, run this as one line:
 
    ```
-   supabase secrets set RESEND_API_KEY="$(grep '^EXPO_RESEND_KEY=' .env.local | cut -d= -f2-)"
+   grep -q '^EXPO_SMTP_PASSWORD=.' .env.local && supabase secrets set SMTP_PASSWORD="$(grep '^EXPO_SMTP_PASSWORD=' .env.local | cut -d= -f2- | sed 's/^\"//; s/\"$//')" || echo 'STOP: .env.local has no EXPO_SMTP_PASSWORD= line with a value. Do step 3 first.'
    ```
 
-   Check it with `supabase secrets list`. You should see the name `RESEND_API_KEY` and a
-   scrambled value. You will never see the real key.
+   The `grep` at the front is there on purpose. Without it, if step 3 was missed, the command
+   sets the password to **nothing at all** and says it worked. `supabase secrets list` would
+   then show the name `SMTP_PASSWORD` as if everything were fine, and sending would still fail.
+
+   Check it with `supabase secrets list`. You should see the name `SMTP_PASSWORD` and a
+   scrambled value. You will never see the real password.
 
 5. **Tell the emails where the app lives**, so the buttons inside them work while you test:
 
@@ -77,7 +75,8 @@ Work through these in order. Steps 1 to 6 are one-offs.
    table (`email_log`), four database functions, and one index. **It deletes nothing, and it
    changes no existing rule.**
 
-7. **Put the functions on Supabase.** Three, in this order:
+7. **Put the functions on Supabase.** Three, in this order. The first will take a little longer
+   than you are used to, because it downloads the small piece of code that talks to mail servers:
 
    ```
    supabase functions deploy recap
@@ -123,12 +122,15 @@ Work through these in order. Steps 1 to 6 are one-offs.
    never used by the app.
 10. **Tap Turn off recaps** in the email. It should open the Recap emails page in the app.
 11. **Tap Open this note in gyan.** It should open that note.
-12. **Check the app's own mailbox works.** From any other email account, send a short message to
-    gyan@gyantechai.com and check it arrives in Hostinger. Recaps are sent *as* that address by
-    Resend, but a reply comes back to it through Hostinger, so both halves need to work.
+12. **Check the sent copy.** Open gyan@gyantechai.com in Hostinger's webmail and look in
+    **Sent**. Because Gyan posts through the real mailbox, the recap should be sitting there, the
+    same as if you had sent it by hand. That is a useful habit: it is the quickest way to see
+    what actually went out.
 
-> If the email has not arrived after a few minutes, look in your spam folder first, then in
-> Resend under **Emails**, which shows every message and what happened to it.
+> If the email has not arrived after a few minutes, look in your spam folder first, then in the
+> **Sent** folder of gyan@gyantechai.com. If it is in Sent, Hostinger accepted it and the delay
+> is at the other end. If it is not, look at `email_log` in Supabase: every attempt is there,
+> with the reason when one fails.
 
 ---
 
@@ -207,11 +209,41 @@ yet, skip this part and tell me, and we will set one up when the Team screen is 
 
 ## Part H: When something goes wrong
 
-1. **A wrong key.** In `.env.local`, change your Resend key to `re_not_a_real_key`, run the
-   `supabase secrets set` line from Part A step 4 again, then try to send a recap.
-   - You should see a plain message, not a crash.
-   - `email_log` should get a row with `result` = `failed` and a reason.
-   - Put your real key back and run the `supabase secrets set` line again.
+**"Gyan cannot send emails yet. The email mailbox is not set up on the server."**
+The password has not reached the server. Everything else is working: the note, the account and
+the list of people were all read properly, or you would have seen a different message. Run
+`supabase secrets list`. If `SMTP_PASSWORD` is missing, do Part A steps 2 to 4. If it is listed
+but sending still fails, it was almost certainly set to an empty value, so run the Part A step 4
+command again now that `.env.local` really has the password in it.
+
+**"Gyan could not sign in to its own email mailbox, so nothing was sent."**
+The password reached the server but Hostinger refused it. Check you can sign in to
+gyan@gyantechai.com at Hostinger's webmail with that exact password, then do Part A step 4
+again. A password with a space or a `#` in it needs the quotes shown in step 3.
+
+**"Gyan could not reach the mail service. Please try again later."**
+This is the one to tell me about. It means the message never got to Hostinger at all, and the
+likeliest cause is that Supabase has closed the mail port this uses. Hostinger offers two ports
+and Supabase blocks the other one, so there is no second port to try: the fix would be to send
+through an email service over the web instead. Check `email_log` in Supabase; if every row says
+`failed` with this reason, that is what has happened.
+
+**"The mailbox has sent as much as it is allowed to today."**
+Hostinger's daily limit for that mailbox. It clears on a rolling 24 hours.
+
+**"Gyan could not work out who would get this recap."**
+The `recap` function is not deployed, or the app cannot reach it. Run
+`supabase functions deploy recap`.
+
+**"Something went wrong sending the recap."**
+The database file has not been sent. Run `supabase db push`.
+
+
+1. **A wrong password.** In `.env.local`, change `EXPO_SMTP_PASSWORD` to `not-the-real-one`,
+   run the `supabase secrets set` line from Part A step 4 again, then try to send a recap.
+   - You should see **"Gyan could not sign in to its own email mailbox"**, not a crash.
+   - `email_log` should get a row with `result` = `failed` and that reason.
+   - Put the real password back and run the `supabase secrets set` line again.
 2. **Nobody ticked.** Open Send recap and untick everybody. The **Send recap** button should go
    dim and do nothing.
 3. **A note that is not finished.** Open a note that is still Transcribing or Summarizing. The
@@ -232,3 +264,8 @@ Your domain has a DMARC record set to `v=DMARC1; p=none` with no reporting addre
 `rua=mailto:gyan@gyantechai.com` to it would start sending you weekly reports about who is
 sending email as your domain. It is not required and nothing here depends on it. It means
 **changing an existing DNS record**, so I have not touched it. Say the word if you want it.
+
+There are also three DNS records left over from when this was going to use Resend, on
+`send.gyantechai.com` and `resend._domainkey.gyantechai.com`. Nothing uses them now. They are
+harmless and I have **not** removed them, because removing a DNS record is your call, not mine.
+Leaving them costs nothing, and they would be needed again if we ever switch.

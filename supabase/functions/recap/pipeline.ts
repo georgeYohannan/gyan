@@ -87,7 +87,10 @@ export type Claim = {
 /** One email on its way out. */
 export type OutgoingEmail = { to: string; subject: string; html: string; text: string };
 
-/** Hands the email to the service and gives back the id it was given. */
+/**
+ * Hands the email over to be sent, and gives back the id it was given, if any.
+ * A mail server gives none, so this is often empty; the email is still written down either way.
+ */
 export type SendEmail = (message: OutgoingEmail) => Promise<string>;
 
 /**
@@ -366,12 +369,14 @@ export async function runRecap(o: RecapOptions): Promise<RecapRunResult> {
     let providerId: string | null = null;
     let problem: string | null = null;
     try {
-      providerId = await o.send({
+      const id = await o.send({
         to: person.email,
         subject: email.subject,
         html: email.html,
         text: email.text,
       });
+      // Nothing to look it up by is "nothing", not an empty word sitting in the log.
+      providerId = id.trim() === '' ? null : id;
     } catch (e) {
       problem = e instanceof Error ? e.message : MESSAGES.unknown;
     }

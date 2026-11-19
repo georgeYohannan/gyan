@@ -432,6 +432,13 @@ describe('EVERY EMAIL IS WRITTEN DOWN', () => {
     });
   });
 
+  test('a way of sending that gives back no id writes down nothing, not an empty word', async () => {
+    const r = rig();
+    await run(r, { send: async () => '' });
+    expect(logs(r)[0].args.p_result).toBe('sent');
+    expect(logs(r)[0].args.p_provider_id).toBeNull();
+  });
+
   test('a send that FAILS is written down too, with why', async () => {
     const r = rig();
     await run(r, { send: send(r, [OWNER.email]) });

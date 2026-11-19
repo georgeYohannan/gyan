@@ -210,6 +210,17 @@ describe('the Send recap dialog', () => {
     expect(await screen.findByText('Did not go. Try this one again.')).toBeTruthy();
   });
 
+  test('WHEN EMAIL IS NOT SET UP it says so, and never claims a send failed', async () => {
+    const reason = 'Gyan cannot send emails yet. The email service is not set up on the server.';
+    mockPreview.mockResolvedValue(okPreview({ canSend: false, sendProblem: reason }));
+    await openDialog();
+    expect(await screen.findByText(reason)).toBeTruthy();
+    // Nothing was attempted, so nothing may claim it failed to send.
+    expect(screen.queryByText(MESSAGES.problem)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Send recap' })).toBeNull();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
   test('a problem working out the list offers to try again', async () => {
     mockPreview.mockResolvedValue({ ok: false, message: MESSAGES.loadProblem });
     await openDialog();

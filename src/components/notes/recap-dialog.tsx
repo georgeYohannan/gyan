@@ -114,7 +114,13 @@ export function RecapDialog({ meetingId, visible, onClose, noteLanguage, onOpenS
     }
     setPeople(result.recipients);
     setTicked(result.recipients.filter((person) => person.defaultOn).map((person) => person.userId));
-    setStage(result.canSend ? { kind: 'picking' } : { kind: 'loadFailed', message: MESSAGES.problem });
+    // The list is worth showing even when nothing can be sent, but say why rather than
+    // claiming a send failed when nothing was ever attempted.
+    setStage(
+      result.canSend
+        ? { kind: 'picking' }
+        : { kind: 'loadFailed', message: result.sendProblem ?? MESSAGES.notSetUp },
+    );
   }, []);
 
   /** Try again, from a button. This one shows the waiting state first. */

@@ -7,17 +7,12 @@
  * is where a reply lands. They are the same address today, which is why keeping them in one
  * object matters: change one and you will see the other right next to it.
  *
- * gyan@gyantechai.com is the app's OWN mailbox, kept apart from hello@gyantechai.com, which is
- * the founder's own address for talking to people. A recap is sent by the app, so it says so,
- * and a reply lands in the app's mailbox rather than in the middle of human conversations.
+ * gyan@gyantechai.com is the app's OWN Hostinger mailbox, kept apart from hello@gyantechai.com,
+ * which is the founder's own address for talking to people. A recap is sent by the app, so it
+ * says so, and a reply lands in the app's mailbox rather than among human conversations.
  *
- * Sending: gyantechai.com is verified with Resend, which covers EVERY address at the domain, so
- * no DNS record changes when this address does. Receiving: gyantechai.com's mail still goes to
- * Hostinger, so a reply to this address arrives in the Hostinger inbox as normal.
- *
- * To move to a sending subdomain later (for example gyan@mail.gyantechai.com, which keeps the
- * product's sending reputation apart from the founder's own mailbox), change `email` here and
- * add that subdomain in Resend. Nothing else in the code has to change.
+ * This address is also the mailbox Gyan signs in to in order to send, so it has to be a real
+ * mailbox with a real password, not a made up address.
  */
 export const SENDER = {
   name: 'gyan',
@@ -25,14 +20,24 @@ export const SENDER = {
   replyTo: 'gyan@gyantechai.com',
 } as const;
 
-/** Resend's send endpoint (resend.com/docs/api-reference/emails/send-email, checked 2026-11-19). */
-export const RESEND_ENDPOINT = 'https://api.resend.com/emails';
-
 /**
- * Resend refuses a request with no User-Agent (a 403 with code 1010). This one names the
- * software and nothing else: never a person's name, email or project.
+ * THE MAILBOX GYAN SENDS THROUGH: Hostinger's outgoing mail server.
+ *
+ * Port 465 is not a free choice. Hostinger offers 465 (SSL) and 587 (STARTTLS), and Supabase
+ * says plainly that its server functions may not make outgoing connections on ports 25 and 587
+ * (supabase.com/docs/guides/functions/limits, checked 2026-11-19). That leaves 465, which the
+ * same page no longer lists as blocked. 465 uses TLS from the very first byte, which is what
+ * `tls: true` means where this is used.
+ *
+ * If a send ever fails with nothing reaching the mailbox at all, this port is the first thing
+ * to suspect: Supabase could close it, and it is the one part of this that their documentation
+ * does not promise. The fall back would be an email service that works over the web instead of
+ * a mail port, which is a change to index.ts alone.
  */
-export const USER_AGENT = 'gyan-recap/1';
+export const SMTP = {
+  hostname: 'smtp.hostinger.com',
+  port: 465,
+} as const;
 
 /**
  * Where the app lives, for the "Open in gyan" button and the "Turn off recaps" link.
@@ -42,9 +47,9 @@ export const USER_AGENT = 'gyan-recap/1';
 export const APP_URL_FALLBACK = 'https://app.gyantechai.com';
 
 /**
- * The most people one recap may go to. Resend allows 50 addresses in one request; we send one
- * email each (so every person's own language and name is right), so this is really a guard
- * against a runaway send.
+ * The most people one recap may go to.
+ * Everybody gets their own email, so their own language and name is right, which means this is
+ * really a guard against a runaway send rather than a limit of the mail server.
  */
 export const MAX_RECIPIENTS = 50;
 
@@ -59,8 +64,10 @@ export const MAX_RECIPIENTS = 50;
 export const MAX_TRANSLATIONS_PER_SEND = 5;
 
 /**
- * Resend's free plan allows 100 emails a day and 3,000 a month (resend.com/pricing, checked
- * 2026-11-19). Nothing in the code enforces that; it is here so the number is written down
- * somewhere when a send starts failing.
+ * How many emails the mailbox may send in a day.
+ * Hostinger counts this per mailbox over a rolling 24 hours: 1,000 a day on Business Starter
+ * and 3,000 on Business Premium, with at most 100 recipients on one message
+ * (hostinger.com Parameters and Limits, checked 2026-11-19). Nothing in the code enforces it;
+ * it is written down here so the number is somewhere when sends start being refused.
  */
-export const PROVIDER_DAILY_LIMIT = 100;
+export const MAILBOX_DAILY_LIMIT = 1_000;

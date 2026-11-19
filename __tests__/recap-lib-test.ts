@@ -75,6 +75,26 @@ describe('showing who would get a recap', () => {
     expect(result.canSend).toBe(true);
   });
 
+  test('WHEN EMAIL IS NOT SET UP, it says so instead of blaming a send', async () => {
+    mockInvoke.mockResolvedValue({
+      data: {
+        ok: true,
+        recipients: [],
+        settings: {},
+        can_send: false,
+        send_problem: 'Gyan cannot send emails yet. The email service is not set up on the server.',
+      },
+      error: null,
+    });
+    const result = await previewRecap('note-1');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.canSend).toBe(false);
+    expect(result.sendProblem).toBe(
+      'Gyan cannot send emails yet. The email service is not set up on the server.',
+    );
+  });
+
   test('a note somebody may not see says so, rather than giving a vague error', async () => {
     mockInvoke.mockResolvedValue({ data: null, error: { message: 'no' }, response: { status: 403 } });
     expect(await previewRecap('note-1')).toEqual({ ok: false, message: MESSAGES.notAllowed });

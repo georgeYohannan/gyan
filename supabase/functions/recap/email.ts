@@ -57,29 +57,65 @@ export function sameLanguage(a: string | null | undefined, b: string | null | un
   return left !== '' && left === right;
 }
 
-/** Problems a person may read. No jargon, and never a key or an address. */
+/** Problems a person may read. No jargon, and never a password or an address. */
 export const MESSAGES = {
-  notSetUp: 'Gyan cannot send emails yet. The email service is not set up on the server.',
+  notSetUp: 'Gyan cannot send emails yet. The email mailbox is not set up on the server.',
   problem: 'Gyan could not send the recap just now. Please try again.',
   notAllowed: 'You cannot send a recap for this note.',
   notReady: 'This note is not finished yet, so there is nothing to send.',
   noSummary: 'This note has no summary yet, so there is nothing to send.',
   nobody: 'Nobody is picked to receive this recap. Tick at least one person.',
-  badAddress:
-    'Gyan is not allowed to send from its own address yet. The sending domain needs to be verified.',
-  busy: 'The email service is busy. Please try again in a minute.',
-  service: 'Gyan could not reach the email service. Please try again later.',
+  signIn: 'Gyan could not sign in to its own email mailbox, so nothing was sent.',
+  badRecipient: 'The mail service would not accept that email address.',
+  tooMany: 'The mailbox has sent as much as it is allowed to today. Please try again tomorrow.',
+  busy: 'The mail service is busy. Please try again in a minute.',
+  service: 'Gyan could not reach the mail service. Please try again later.',
   unknown: 'Something went wrong sending the recap. Please try again.',
 } as const;
 
 /** A problem worth showing a person, as opposed to a bug. */
 export class RecapError extends Error {}
 
-/** Turns an email service answer into a plain message. */
-export function messageForStatus(status: number): string {
-  if (status === 401 || status === 403) return MESSAGES.service;
-  if (status === 422 || status === 400) return MESSAGES.badAddress;
-  if (status === 429 || status === 408 || status === 504 || status >= 500) return MESSAGES.busy;
+/**
+ * Turns whatever the mail server complained about into a plain message.
+ *
+ * A mail server answers with a 3 digit code and some words of its own, and every server words
+ * them differently, so this reads both and is deliberately generous about what it matches.
+ * Anything it does not recognise becomes the plain "could not send" message rather than a line
+ * of somebody else's jargon being shown to a person.
+ */
+export function messageForSendError(problem: unknown): string {
+  const said = (problem instanceof Error ? problem.message : String(problem ?? '')).toLowerCase();
+
+  // Wrong password, or the mailbox will not let us in.
+  if (/\b(535|530|534|538)\b/.test(said) || said.includes('authentication') || said.includes('credential')) {
+    return MESSAGES.signIn;
+  }
+  // Sending too much, too fast. Worth telling apart from a server simply being busy.
+  if (said.includes('quota') || said.includes('rate limit') || said.includes('too many')) {
+    return MESSAGES.tooMany;
+  }
+  // That one address was refused.
+  if (/\b(550|551|553|554)\b/.test(said) || said.includes('recipient') || said.includes('no such user')) {
+    return MESSAGES.badRecipient;
+  }
+  // Busy, or asked to come back later.
+  if (/\b(421|450|451|452)\b/.test(said) || said.includes('try again') || said.includes('temporarily')) {
+    return MESSAGES.busy;
+  }
+  // Never got there at all. The blocked-port case lands here.
+  if (
+    said.includes('connect') ||
+    said.includes('timed out') ||
+    said.includes('timeout') ||
+    said.includes('refused') ||
+    said.includes('network') ||
+    said.includes('tls') ||
+    said.includes('certificate') ||
+    said.includes('dns')
+  ) {
+    return MESSAGES.service;
+  }
   return MESSAGES.problem;
 }
 

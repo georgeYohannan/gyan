@@ -13,7 +13,7 @@ import {
   itemNote,
   LANGUAGE_NAMES,
   languageName,
-  messageForStatus,
+  messageForSendError,
   MESSAGES,
   noteUrlFor,
   plainDate,
@@ -250,20 +250,48 @@ describe('safety and good manners', () => {
 });
 
 describe('plain words when something goes wrong', () => {
-  test('no message mentions a key, a status code, or anything technical', () => {
+  test('no message mentions a password, a code, or anything technical', () => {
     for (const message of Object.values(MESSAGES)) {
-      expect(message).not.toMatch(/token|api|http|[0-9]{3}|resend|supabase/i);
+      expect(message).not.toMatch(/token|api|http|smtp|port|password|[0-9]{3}|hostinger|supabase/i);
       expect(message.endsWith('.')).toBe(true);
     }
   });
 
-  test('each kind of problem gets the right plain message', () => {
-    expect(messageForStatus(401)).toBe(MESSAGES.service);
-    expect(messageForStatus(403)).toBe(MESSAGES.service);
-    expect(messageForStatus(422)).toBe(MESSAGES.badAddress);
-    expect(messageForStatus(429)).toBe(MESSAGES.busy);
-    expect(messageForStatus(500)).toBe(MESSAGES.busy);
-    expect(messageForStatus(418)).toBe(MESSAGES.problem);
+  test('a wrong password reads as not being able to sign in', () => {
+    // Every mail server words this differently, so both the code and the words are read.
+    expect(messageForSendError(new Error('535 5.7.8 Authentication credentials invalid'))).toBe(MESSAGES.signIn);
+    expect(messageForSendError(new Error('530 Must issue a STARTTLS command first'))).toBe(MESSAGES.signIn);
+    expect(messageForSendError('Authentication failed')).toBe(MESSAGES.signIn);
+  });
+
+  test('a refused address is told apart from everything else', () => {
+    expect(messageForSendError(new Error('550 5.1.1 No such user here'))).toBe(MESSAGES.badRecipient);
+    expect(messageForSendError(new Error('553 Requested action not taken: mailbox name not allowed'))).toBe(
+      MESSAGES.badRecipient,
+    );
+  });
+
+  test('sending too much for one day says to come back tomorrow, not "try again"', () => {
+    expect(messageForSendError(new Error('Daily sending quota exceeded'))).toBe(MESSAGES.tooMany);
+    expect(messageForSendError(new Error('too many messages'))).toBe(MESSAGES.tooMany);
+  });
+
+  test('a busy server says to try again in a minute', () => {
+    expect(messageForSendError(new Error('421 Service not available, closing channel'))).toBe(MESSAGES.busy);
+    expect(messageForSendError(new Error('451 Temporarily deferred'))).toBe(MESSAGES.busy);
+  });
+
+  test('NEVER REACHING THE MAIL SERVER AT ALL has its own message', () => {
+    // This is what a blocked port looks like, which is the one real risk in sending this way.
+    expect(messageForSendError(new Error('connection refused'))).toBe(MESSAGES.service);
+    expect(messageForSendError(new Error('Connection timed out'))).toBe(MESSAGES.service);
+    expect(messageForSendError(new TypeError('error sending request: tls handshake eof'))).toBe(MESSAGES.service);
+  });
+
+  test('anything it does not recognise becomes plain words, never the server\'s own jargon', () => {
+    expect(messageForSendError(new Error('�� 999 weird'))).toBe(MESSAGES.problem);
+    expect(messageForSendError(undefined)).toBe(MESSAGES.problem);
+    expect(messageForSendError(null)).toBe(MESSAGES.problem);
   });
 });
 
