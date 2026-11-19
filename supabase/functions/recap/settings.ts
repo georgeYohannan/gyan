@@ -7,18 +7,22 @@
  * is where a reply lands. They are the same address today, which is why keeping them in one
  * object matters: change one and you will see the other right next to it.
  *
- * gyantechai.com is verified with Resend, so this address can be sent from as it is. The DNS
- * records sit on send.gyantechai.com and resend._domainkey.gyantechai.com, so the Hostinger
- * mailbox on gyantechai.com itself is untouched.
+ * gyan@gyantechai.com is the app's OWN mailbox, kept apart from hello@gyantechai.com, which is
+ * the founder's own address for talking to people. A recap is sent by the app, so it says so,
+ * and a reply lands in the app's mailbox rather than in the middle of human conversations.
  *
- * To move to a sending subdomain later (for example notes@mail.gyantechai.com, which keeps the
+ * Sending: gyantechai.com is verified with Resend, which covers EVERY address at the domain, so
+ * no DNS record changes when this address does. Receiving: gyantechai.com's mail still goes to
+ * Hostinger, so a reply to this address arrives in the Hostinger inbox as normal.
+ *
+ * To move to a sending subdomain later (for example gyan@mail.gyantechai.com, which keeps the
  * product's sending reputation apart from the founder's own mailbox), change `email` here and
  * add that subdomain in Resend. Nothing else in the code has to change.
  */
 export const SENDER = {
   name: 'gyan',
-  email: 'hello@gyantechai.com',
-  replyTo: 'hello@gyantechai.com',
+  email: 'gyan@gyantechai.com',
+  replyTo: 'gyan@gyantechai.com',
 } as const;
 
 /** Resend's send endpoint (resend.com/docs/api-reference/emails/send-email, checked 2026-11-19). */

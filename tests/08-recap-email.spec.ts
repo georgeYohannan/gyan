@@ -15,7 +15,7 @@ import { renderRecap, type RecapBody, type Sender } from '../supabase/functions/
 const IMAGES = 'docs/help/images';
 
 /** A made up sender. The real one lives in supabase/functions/recap/settings.ts. */
-const SENDER: Sender = { name: 'gyan', email: 'recaps@example.com', replyTo: 'hello@example.com' };
+const SENDER: Sender = { name: 'gyan', email: 'gyan@example.com', replyTo: 'gyan@example.com' };
 
 const BODY: RecapBody = {
   title: 'Team call',

@@ -2,6 +2,11 @@
 
 Use the Supabase TEST project and fake recordings only. No real customer calls.
 
+Recaps are sent from **gyan@gyantechai.com**, the app's own mailbox, and a reply comes back to
+it. Your own **hello@gyantechai.com** is never used by the app, so app email and your own
+conversations stay apart. Both are Hostinger mailboxes on the same domain; nothing about your
+existing mail changes.
+
 **While you are testing, only send emails to addresses you own.** Resend also gives you a bin
 address, `delivered@resend.dev`, which accepts a message and throws it away.
 
@@ -107,15 +112,20 @@ Work through these in order. Steps 1 to 6 are one-offs.
 6. Tap **Send recap** again, then **Send recap** to confirm.
 7. You should see **"Recap sent to 1 person."** and, under your address, **"Sent in English"**.
 8. **Check your inbox.** The email should:
-   - come from **gyan**, at hello@gyantechai.com;
+   - come from **gyan**, at gyan@gyantechai.com;
    - have the subject **Recap: <your note's title>**;
    - show the title, the date, the overview, the key points, the decisions and the action items;
    - have a blue **Open this note in gyan** button;
    - have a footer saying why you got it, a **Turn off recaps** link, and that a reply reaches
-     hello@gyantechai.com.
-9. **Press Reply** (do not send it). It should be addressed to hello@gyantechai.com.
+     gyan@gyantechai.com.
+9. **Press Reply** (do not send it). It should be addressed to gyan@gyantechai.com, and that
+   reply should land in the gyan@gyantechai.com inbox on Hostinger. Your own hello@ inbox is
+   never used by the app.
 10. **Tap Turn off recaps** in the email. It should open the Recap emails page in the app.
 11. **Tap Open this note in gyan.** It should open that note.
+12. **Check the app's own mailbox works.** From any other email account, send a short message to
+    gyan@gyantechai.com and check it arrives in Hostinger. Recaps are sent *as* that address by
+    Resend, but a reply comes back to it through Hostinger, so both halves need to work.
 
 > If the email has not arrived after a few minutes, look in your spam folder first, then in
 > Resend under **Emails**, which shows every message and what happened to it.
@@ -219,6 +229,6 @@ yet, skip this part and tell me, and we will set one up when the Team screen is 
 ## One optional thing, your call
 
 Your domain has a DMARC record set to `v=DMARC1; p=none` with no reporting address. Adding
-`rua=mailto:hello@gyantechai.com` to it would start sending you weekly reports about who is
+`rua=mailto:gyan@gyantechai.com` to it would start sending you weekly reports about who is
 sending email as your domain. It is not required and nothing here depends on it. It means
 **changing an existing DNS record**, so I have not touched it. Say the word if you want it.

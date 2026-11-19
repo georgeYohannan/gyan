@@ -65,10 +65,12 @@ describe('who the email comes from', () => {
       'utf8',
     );
     // The real sender appears in settings.ts and nowhere else in the code that builds the email.
+    // Checked against whatever the address IS, so this keeps working if it ever changes again.
+    expect(layout).not.toContain(SENDER.email);
+    expect(layout).not.toContain(SENDER.replyTo);
     expect(layout).not.toContain('gyantechai.com');
-    expect(layout).not.toContain('hello@');
-    expect(SENDER.email).toBe('hello@gyantechai.com');
-    expect(SENDER.replyTo).toBe('hello@gyantechai.com');
+    expect(SENDER.email).toBe('gyan@gyantechai.com');
+    expect(SENDER.replyTo).toBe('gyan@gyantechai.com');
     expect(SENDER.name).toBe('gyan');
   });
 
