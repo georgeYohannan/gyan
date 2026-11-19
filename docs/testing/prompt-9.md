@@ -44,6 +44,11 @@ Work through these in order. Steps 1 to 6 are one-offs.
    **Never paste the password into a chat, a document, or a screenshot.** If the password has a
    `#` or a space in it, put it in quotes: `EXPO_SMTP_PASSWORD="the password"`.
 
+   > **This step on its own does nothing.** `.env.local` is a file on your computer. Supabase's
+   > servers cannot read it, and the app never reads it either. It is only a convenient place to
+   > keep the password so that step 4 can copy it across. **If you stop here, sending will fail
+   > with "the email mailbox is not set up on the server."** Step 4 is the one that counts.
+
 4. **Put the password on the server.** In the gyan folder, run this as one line:
 
    ```
@@ -54,8 +59,10 @@ Work through these in order. Steps 1 to 6 are one-offs.
    sets the password to **nothing at all** and says it worked. `supabase secrets list` would
    then show the name `SMTP_PASSWORD` as if everything were fine, and sending would still fail.
 
-   Check it with `supabase secrets list`. You should see the name `SMTP_PASSWORD` and a
-   scrambled value. You will never see the real password.
+   Check it with `supabase secrets list`. You should see the name `SMTP_PASSWORD` in the list.
+   The value shown next to it is a scramble, not the password; you will never see the real one.
+   **If `SMTP_PASSWORD` is not in that list, the password has not reached the server**, whatever
+   `.env.local` says, and sending will fail.
 
 5. **Tell the emails where the app lives**, so the buttons inside them work while you test:
 
