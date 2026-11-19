@@ -25,6 +25,16 @@ export type TranslationContent = SummaryTranslation | TranscriptTranslation;
 /** The label that goes on every translated text. CLAUDE.md hard rule 7. */
 export const TRANSLATED_LABEL = 'Translated by AI';
 
+/**
+ * The version of the translating rules that saved words must have been made by.
+ * A translation saved by older rules is treated as if it were not there, so the app asks the
+ * server for a new one instead of showing out of date words.
+ *
+ * This must match PROMPT_VERSION in supabase/functions/translate/translate.ts.
+ * __tests__/translate-claude-test.ts keeps the two in step.
+ */
+export const PROMPT_VERSION = 2;
+
 export const MESSAGES = {
   problem: 'Gyan could not translate this note just now. Please try again.',
   notAllowed: 'You cannot translate this note.',
@@ -38,8 +48,17 @@ function asStringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
-/** Reads a saved translation back into the shape the screen draws. Anything odd becomes nothing. */
-export function readContent(kind: TranslateKind, raw: unknown): TranslationContent | undefined {
+/**
+ * Reads a saved translation back into the shape the screen draws. Anything odd becomes nothing.
+ * `checkVersion` is true for words read straight out of the database, which may have been saved a
+ * long time ago by older rules. Words that have just come back from the server are already made by
+ * today's rules, so they are not checked again.
+ */
+export function readContent(
+  kind: TranslateKind,
+  raw: unknown,
+  checkVersion = false,
+): TranslationContent | undefined {
   let value: unknown = raw;
   if (typeof raw === 'string') {
     try {
@@ -50,6 +69,7 @@ export function readContent(kind: TranslateKind, raw: unknown): TranslationConte
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const row = value as Record<string, unknown>;
+  if (checkVersion && row.v !== PROMPT_VERSION) return undefined;
 
   if (kind === 'transcript') {
     const lines = asStringList(row.lines);
@@ -91,7 +111,7 @@ export async function getSavedTranslation(
     .maybeSingle();
   if (error) throw error;
   if (!data) return undefined;
-  return readContent(kind, data.content);
+  return readContent(kind, data.content, true);
 }
 
 /** Asks the server to translate this note's summary or transcript into one language. */

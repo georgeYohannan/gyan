@@ -119,15 +119,32 @@ export const TRANSCRIPT_TRANSLATION_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+/**
+ * The version of the translating rules below.
+ * Translated words are saved with this number inside them. When the rules change, this number goes
+ * up by 1, and anything saved under an older number is translated again the next time somebody
+ * asks for it. Without this, a change to the rules would never reach a note that had already been
+ * translated, because a translation is only ever bought once.
+ *
+ * 1: the first rules.
+ * 2: 2026-11-18. Ordinary technical and business words were being left in English. The rules now
+ *    say to translate every ordinary word, and name exactly what may stay in English.
+ *
+ * src/lib/translations.ts holds the app's copy of this number, and
+ * __tests__/translate-claude-test.ts keeps the two in step.
+ */
+export const PROMPT_VERSION = 2;
+
 /** The SYSTEM half of the prompt, from docs/data-model.md, word for word. */
 export function buildSystem(language: string): string {
   return `Translate the content into ${language}.
 
 RULES
 - Translate meaning faithfully. Do not add, remove, or explain anything.
-- Keep names, numbers, dates, times, links, speaker labels, and timestamps unchanged.
+- Translate every ordinary word, including technical, legal, financial, and business terms. A word being technical is not a reason to leave it in English.
+- Leave unchanged only these: people's names, company, product and brand names, file names, code, web addresses, numbers, dates, times, speaker labels, and timestamps.
 - If the input is JSON, translate only the text values. Keep every key and the structure exactly the same.
-- If a word has no good translation, keep the original word.
+- Somebody who reads ${language} and no English at all must be able to understand every sentence you write.
 - Return only the translation.`;
 }
 

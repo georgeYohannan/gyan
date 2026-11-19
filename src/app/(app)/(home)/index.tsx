@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
+import { LanguagePicker } from '@/components/notes/language-picker';
 import { NoteRow } from '@/components/notes/note-row';
 import { UsagePanel } from '@/components/notes/usage-panel';
 import { Body } from '@/components/ui/body';
@@ -11,9 +12,11 @@ import { GlassPanel } from '@/components/ui/glass-panel';
 import { Heading } from '@/components/ui/heading';
 import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
+import { languageName } from '@/constants/languages';
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { getUsage, listNotes, type NoteRow as Note, type Usage } from '@/lib/notes';
+import { useProfile } from '@/lib/profile';
 
 const BUSY = ['Uploading', 'Queued', 'Transcribing', 'Summarizing'];
 const POLL_MS = 3000;
@@ -27,6 +30,9 @@ export default function HomeScreen() {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [busy, setBusy] = useState(false);
   const [logOutError, setLogOutError] = useState<string>();
+  const { languageCode, setLanguage } = useProfile();
+  const [languageOpen, setLanguageOpen] = useState(false);
+  const [languageError, setLanguageError] = useState<string>();
 
   const refresh = useCallback((quiet = false) => {
     if (!quiet) setLoad({ state: 'loading' });
@@ -98,10 +104,27 @@ export default function HomeScreen() {
       )}
 
       <GlassPanel>
+        <Heading level={3}>Your account</Heading>
+
         <Body small color="textSecondary">
           Logged in as
         </Body>
         <Body>{session?.user.email}</Body>
+
+        <Body small color="textSecondary">
+          Your language
+        </Body>
+        <Body>{languageName(languageCode)}</Body>
+        <Body small color="textSecondary">
+          Gyan writes your summaries, your to-dos and its chat answers in this language.
+        </Body>
+        {languageError ? (
+          <Body small color="danger" accessibilityRole="alert">
+            {languageError}
+          </Body>
+        ) : null}
+        <Button label="Change language" variant="secondary" onPress={() => setLanguageOpen(true)} />
+
         {logOutError ? (
           <Body small color="danger" accessibilityRole="alert">
             {logOutError}
@@ -109,6 +132,21 @@ export default function HomeScreen() {
         ) : null}
         <Button label="Log out" variant="secondary" loading={busy} onPress={logOut} />
       </GlassPanel>
+
+      <LanguagePicker
+        title="Your language"
+        hint="Gyan writes your summaries, your to-dos and its chat answers in this language."
+        selected={languageCode}
+        visible={languageOpen}
+        helpId="translation"
+        onClose={() => setLanguageOpen(false)}
+        onPick={async (code) => {
+          setLanguageOpen(false);
+          setLanguageError(undefined);
+          const result = await setLanguage(code);
+          if (result.error) setLanguageError(result.error);
+        }}
+      />
     </Screen>
   );
 }

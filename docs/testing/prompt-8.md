@@ -35,17 +35,19 @@ for the same language a second time is instant and free.
 
 ## Part B: Choosing your language
 
-1. Open a **Ready** note. Next to the Summary and Transcript tabs there are now three buttons:
-   **Language: English**, **Translate** and **Ask**.
-2. Tap **Language: English**. A list slides in from the right on a wide window, or up from the
+1. On **Home**, scroll to the bottom. There is a box called **Your account**. It shows your email,
+   then **Your language**, then a **Change language** button. This is the main place to set it.
+2. Tap **Change language**. A list slides in from the right on a wide window, or up from the
    bottom on a narrow one. Each language shows **its own name first**, in its own letters, then its
    English name underneath.
-3. Tap **Español**. The button should change to **Language: Spanish** straight away.
-4. **Refresh the page** (F5, or Cmd+R). The button should still say **Language: Spanish**. That
-   proves it was really saved, not just remembered on screen.
+3. Tap **Español**. The box should say **Spanish** straight away.
+4. **Refresh the page** (F5, or Cmd+R). It should still say **Spanish**. That proves it was really
+   saved, not just remembered on screen.
 5. Open the Supabase dashboard, go to **Table Editor**, then **profiles**, and find your row. The
    `preferred_language` column should say `es`.
-6. Put it back to **English** before the next part, so the rest of the test reads easily.
+6. Open any note. There is also a **Language: Spanish** button next to the tabs, which opens the
+   same list. Either place works; the one on Home is the one to remember.
+7. Put it back to **English** before the next part, so the rest of the test reads easily.
 
 ## Part C: What your language actually changes
 
@@ -67,10 +69,18 @@ for the same language a second time is instant and free.
 2. The heading says **Translate this summary**. Tap **Español**.
 3. After a few seconds the whole Summary tab should be in Spanish: the overview, the key points,
    the decisions, the open questions, and the to-do list.
+   - **Read it properly.** Ordinary words must all be in Spanish, including technical and business
+     ones. If you see English words sitting in the middle of a Spanish sentence, something that is
+     not a name has been left behind, and I want to know.
 4. Above it there is a bar that says **Spanish · Translated by AI**. That label must be on every
    translated text. If you ever see translated words without it, tell me.
 5. Check these things carefully:
    - The **names** are unchanged. Priya is still Priya, not "Priya" translated.
+   - **Product names** are unchanged. React, TypeScript, Slack, Zoom and your own product's name
+     should all still be in English. Those are names, not words.
+   - **Ordinary words are translated**, even the technical ones. Things like "ledger",
+     "chain of custody", "workpapers", "frontend" or "forensic accountant" should be in the new
+     language, not left in English.
    - The **numbers**, **dates** and **times** are unchanged.
    - The **tick boxes still work**. Tick a translated to-do, refresh, and it should still be ticked.
    - The **Copy** button copies the Spanish, not the English.
@@ -110,13 +120,25 @@ for the same language a second time is instant and free.
    with the translated words in `content`.
 6. Try the same with the **Transcript** tab. One row, one charge.
 
-## Part H: Picking the language the note is already in
+## Part H: A note you translated before this change
+
+Translations made before today were done under looser rules and left too many English words in.
+They are saved, and a saved translation is normally never made again.
+
+1. Open a note you had already translated and translate it into the same language again.
+2. It should take a few seconds, **not** come back instantly: Gyan noticed the saved words were
+   made by the old rules and made them again properly.
+3. Check **ai_usage**. There is one new row for that one re-translation. That is the one-off cost
+   of the fix. From now on that note is instant and free again.
+4. You do **not** have to delete anything by hand. This happens by itself, and only once.
+
+## Part I: Picking the language the note is already in
 
 1. On an English note's Summary tab, tap **Translate** and pick **English**.
 2. Gyan should say *"This note is already in that language, so there is nothing to translate."*
 3. Check **ai_usage** again. **No new row.** Nothing was paid for.
 
-## Part I: The help entry, and the automatic checks
+## Part J: The help entry, and the automatic checks
 
 1. Tap **Translate** to open the language list, then tap the **?** button in its corner.
 2. The help panel opens on **Languages and translating**. Read it: it should explain the label, the
@@ -167,8 +189,9 @@ for the same language a second time is instant and free.
   the word: it would be one new column on the plans table, like the daily chat limit.
 - **No Translate button on a chat answer yet.** Answers already come in your preferred language,
   which closes most of the gap. A button to translate one answer afterwards is a later step.
-- **The preferred language picker lives on the note page for now.** It moves to the Settings screen
-  in prompt 10, where it belongs.
+- **The language setting lives in the Your account box on Home for now.** It moves to the proper
+  Settings screen in prompt 10, along with your name and deleting your account. The button on the
+  note page stays, because it is handy there.
 - **A summary that is already written does not change language by itself.** Your setting is used
   for new summaries. Tap **Regenerate** to rewrite one in your language, or use **Translate**,
   which is cheaper and keeps the English too.

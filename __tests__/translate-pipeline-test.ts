@@ -5,7 +5,12 @@
  * The most important test in this file is "PAID ONCE": asking for the same translation a second
  * time must not call Claude and must not write a cost row.
  */
-import { MESSAGES, TranslateError, type SummaryContent } from '../supabase/functions/translate/translate';
+import {
+  MESSAGES,
+  PROMPT_VERSION,
+  TranslateError,
+  type SummaryContent,
+} from '../supabase/functions/translate/translate';
 import {
   runTranslate,
   TranslateNotAllowedError,
@@ -32,6 +37,10 @@ const LINES = [
   { id: 'a', start_ms: 500, text: 'Thanks for joining.' },
   { id: 'b', start_ms: 4200, text: 'It still feels slow on my phone.' },
 ];
+
+/** The same words as they would be SAVED: with the version of the rules that made them. */
+const saved = (content: Record<string, unknown>, version = PROMPT_VERSION) =>
+  JSON.stringify({ v: version, ...content });
 
 const SPANISH_SUMMARY = JSON.stringify({
   overview: 'El equipo acordó lanzar la nueva pantalla de registro el viernes.',
@@ -216,7 +225,13 @@ describe('translating a summary', () => {
 describe('PAID ONCE: the same translation is never bought twice', () => {
   test('a saved translation comes straight back, with no Claude call and no cost row', async () => {
     const { admin, calls } = fakeAdmin({
-      claim: { account_id: 'acc1', source_id: 's1', existing: SPANISH_SUMMARY, note_source: 'upload', file_path: null },
+      claim: {
+        account_id: 'acc1',
+        source_id: 's1',
+        existing: saved(JSON.parse(SPANISH_SUMMARY)),
+        note_source: 'upload',
+        file_path: null,
+      },
     });
     const { call } = fakeClaude([{ text: 'should never be used' }]);
 
@@ -247,6 +262,40 @@ describe('PAID ONCE: the same translation is never bought twice', () => {
     expect(first.calls.filter((c) => c.name === 'save_translation')).toHaveLength(1);
     expect(second.calls.filter((c) => c.name === 'save_translation')).toHaveLength(0);
     expect(again.reused).toBe(true);
+  });
+
+  test('BUT words saved by OLDER rules are made again, so a rule change really reaches a note', async () => {
+    const { admin, calls } = fakeAdmin({
+      claim: {
+        account_id: 'acc1',
+        source_id: 's1',
+        // Saved before the rules were tightened: these words are out of date.
+        existing: saved(JSON.parse(SPANISH_SUMMARY), PROMPT_VERSION - 1),
+        note_source: 'upload',
+        file_path: null,
+      },
+    });
+    const { call } = fakeClaude([{ text: SPANISH_SUMMARY }]);
+
+    const result = await runTranslate({ ...base, kind: 'summary', admin, call });
+
+    expect(result.reused).toBe(false);
+    expect(call).toHaveBeenCalledTimes(1);
+    // The row is written over, so it is only out of date once.
+    const row = calls.find((c) => c.name === 'save_translation')!;
+    expect(JSON.parse(String(row.args.p_content)).v).toBe(PROMPT_VERSION);
+  });
+
+  test('the version is saved with the words, never shown as part of them', async () => {
+    const { admin, calls } = fakeAdmin();
+    const { call } = fakeClaude([{ text: SPANISH_SUMMARY }]);
+    const result = await runTranslate({ ...base, kind: 'summary', admin, call });
+
+    const written = JSON.parse(String(calls.find((c) => c.name === 'save_translation')!.args.p_content));
+    expect(written.v).toBe(PROMPT_VERSION);
+    expect(written.overview).toContain('viernes');
+    // What goes back to the screen is only the words.
+    expect(result.content).not.toHaveProperty('v');
   });
 
   test('a saved translation that cannot be read is simply made again', async () => {

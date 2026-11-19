@@ -10,6 +10,7 @@ import {
   MESSAGES,
   parseSummaryTranslation,
   parseTranscriptTranslation,
+  PROMPT_VERSION,
   splitPassages,
   TranslateError,
   TranslateShapeError,
@@ -179,13 +180,20 @@ async function readTranscript(o: TranslateOptions, claim: Claim): Promise<Transc
   return { lines };
 }
 
-/** A translation that is already saved, read back. An unreadable one counts as not saved. */
+/**
+ * A translation that is already saved, read back.
+ * It counts as saved only when it is readable AND it was made by the rules we use today. One made
+ * by older rules is treated as not there, so it is made again with the rules we have now.
+ * An unreadable one is also treated as not there.
+ */
 function reuse(existing: string | null): TranslatedContent | null {
   if (typeof existing !== 'string' || existing.trim() === '') return null;
   try {
     const parsed = JSON.parse(existing);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as TranslatedContent;
-    return null;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const { v, ...content } = parsed as Record<string, unknown>;
+    if (v !== PROMPT_VERSION) return null;
+    return content as TranslatedContent;
   } catch {
     return null;
   }
@@ -259,7 +267,8 @@ export async function runTranslate(o: TranslateOptions): Promise<TranslateResult
     p_kind: o.kind,
     p_source_id: claim.source_id,
     p_language: language,
-    p_content: JSON.stringify(translated),
+    // The version goes in with the words, so a later change to the rules reaches this note.
+    p_content: JSON.stringify({ v: PROMPT_VERSION, ...translated }),
     p_tokens: tokensIn + tokensOut,
     p_cost: costFor(tokensIn, tokensOut, o.usdPerMtokIn, o.usdPerMtokOut),
   });

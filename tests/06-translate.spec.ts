@@ -8,6 +8,7 @@ import {
   installFakes,
   noteRow,
   openNote,
+  PROMPT_VERSION,
   signIn,
   SUMMARY_TRANSLATIONS,
   TEXT_NOTE_ID,
@@ -22,6 +23,42 @@ async function openTranslate(page: Page, tab: 'summary' | 'transcript' = 'summar
   await page.getByRole('button', { name: `Translate this ${tab}` }).click();
   await expect(page.getByRole('heading', { name: `Translate this ${tab}` })).toBeVisible();
 }
+
+test('Home is where you set your language, and it is remembered after a refresh', async ({ page }) => {
+  const recorder = await installFakes(page);
+  await signIn(page);
+
+  // The account box at the bottom of Home is where a person looks for their own settings.
+  await expect(page.getByRole('heading', { name: 'Your account' })).toBeVisible();
+  await expect(page.getByText('Your language')).toBeVisible();
+  await expect(page.getByText('English', { exact: true }).first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'Change language' }).click();
+  await page.getByRole('radio', { name: 'Spanish, Español' }).click();
+
+  const saved = recorder.updates.filter((u) => u.table === 'profiles');
+  expect(saved).toHaveLength(1);
+  expect(saved[0].body).toEqual({ preferred_language: 'es' });
+
+  // Now the server remembers it, so a refresh still shows Spanish.
+  await installFakes(page, { preferredLanguage: 'es' });
+  await page.reload();
+  await expect(page.getByText('Spanish', { exact: true }).first()).toBeVisible();
+});
+
+test('a saved translation made by OLDER rules is not shown, so a rule change reaches you', async ({ page }) => {
+  // The words below have no version in them, which is what a translation saved before the rules
+  // were tightened looks like. The app must ask the server for a fresh one instead of showing it.
+  const recorder = await installFakes(page, {
+    savedTranslations: { 'summary:es': SUMMARY_TRANSLATIONS.es },
+  });
+  await signIn(page);
+  await openTranslate(page);
+  await page.getByRole('radio', { name: 'Spanish, Español' }).click();
+
+  await expect(page.getByText('Spanish · Translated by AI')).toBeVisible();
+  expect(recorder.functionCalls.filter((c) => c.name === 'translate')).toHaveLength(1);
+});
 
 test('the note page shows which language you are on', async ({ page }) => {
   await installFakes(page);
@@ -103,7 +140,8 @@ test('Show original brings the English back, and you can go back to the translat
 
 test('PAID ONCE: a translation that is already saved never calls the server', async ({ page }) => {
   const recorder = await installFakes(page, {
-    savedTranslations: { 'summary:es': SUMMARY_TRANSLATIONS.es },
+    // Saved by the rules we use today, so it is used as it is.
+    savedTranslations: { 'summary:es': { v: PROMPT_VERSION, ...SUMMARY_TRANSLATIONS.es } },
   });
   await signIn(page);
   await openTranslate(page);

@@ -55,6 +55,7 @@ export const HELP: Record<string, HelpEntry> = {
       'Home shows all your notes, newest first.',
       'Tap New note to add a conversation.',
       'The box at the top shows how many meetings you have used this month, and how many your plan allows.',
+      'Your account, at the bottom, is where you change the language Gyan writes in.',
     ],
     lists: [
       {
@@ -363,7 +364,7 @@ export const HELP: Record<string, HelpEntry> = {
     id: 'translation',
     title: 'Languages and translating',
     sentences: [
-      'Tap Language to choose the language you want Gyan to write in. Your summaries, your to-dos and the chat answers all use it.',
+      'Your account, at the bottom of Home, is where you choose the language Gyan writes in. Your summaries, your to-dos and the chat answers all use it.',
       'Tap Translate to turn the note you are reading into any other language, without changing your own setting.',
       'Translated words always say "Translated by AI", because a person did not write them.',
       'Tap Show original at any time to put the first words back.',
@@ -381,6 +382,7 @@ export const HELP: Record<string, HelpEntry> = {
       {
         heading: 'Good to know',
         items: [
+          'You can also change your language from the Language button on any note.',
           'A language you have asked for before opens straight away and costs nothing.',
           'A very long recording cannot be translated in one go yet. Its summary still can.',
           'Arabic reads from right to left on the page, the way it is written.',

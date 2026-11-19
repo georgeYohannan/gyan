@@ -14,6 +14,7 @@ import {
   messageForStatus,
   parseSummaryTranslation,
   parseTranscriptTranslation,
+  PROMPT_VERSION,
   SUMMARY_TRANSLATION_SCHEMA,
   TRANSCRIPT_TRANSLATION_SCHEMA,
   TranslateShapeError,
@@ -21,6 +22,7 @@ import {
   type SummaryContent,
   type TranscriptContent,
 } from '../supabase/functions/translate/translate';
+import { PROMPT_VERSION as APP_PROMPT_VERSION } from '@/lib/translations';
 
 const SUMMARY: SummaryContent = {
   overview: 'The team agreed to ship the new sign up screen on Friday.',
@@ -56,9 +58,9 @@ describe('the translation prompt', () => {
     const system = buildSystem('Spanish');
     for (const line of [
       '- Translate meaning faithfully. Do not add, remove, or explain anything.',
-      '- Keep names, numbers, dates, times, links, speaker labels, and timestamps unchanged.',
+      '- Translate every ordinary word, including technical, legal, financial, and business terms. A word being technical is not a reason to leave it in English.',
+      "- Leave unchanged only these: people's names, company, product and brand names, file names, code, web addresses, numbers, dates, times, speaker labels, and timestamps.",
       '- If the input is JSON, translate only the text values. Keep every key and the structure exactly the same.',
-      '- If a word has no good translation, keep the original word.',
       '- Return only the translation.',
     ]) {
       expect(doc).toContain(line);
@@ -67,6 +69,33 @@ describe('the translation prompt', () => {
     // The document writes the language as a fill-in; the prompt we send has it filled in.
     expect(doc).toContain('Translate the content into {{target_language}}.');
     expect(system).toContain('Translate the content into Spanish.');
+    expect(doc).toContain('Somebody who reads {{target_language}} and no English at all must be able to understand every sentence you write.');
+    expect(system).toContain('Somebody who reads Spanish and no English at all must be able to understand every sentence you write.');
+  });
+
+  test('IT TELLS THE MODEL TO TRANSLATE TECHNICAL WORDS TOO', () => {
+    // A real translation came back with ordinary words like "ledger", "workpapers" and
+    // "engagement shell" left in English, because the old rules said to keep a word when there was
+    // no good translation. These are the rules that replaced it.
+    const system = buildSystem('Hindi');
+    expect(system).toContain('A word being technical is not a reason to leave it in English.');
+    expect(system).not.toContain('If a word has no good translation, keep the original word.');
+    // It still protects the things that really must not change.
+    expect(system).toContain("people's names, company, product and brand names");
+    expect(system).toContain('numbers, dates, times, speaker labels, and timestamps');
+  });
+
+  test('the rules carry a version, and all 3 copies of it agree', () => {
+    // A translation is only ever bought once, so without a version a change to the rules above
+    // would never reach a note somebody had already translated. The number lives in 3 places: the
+    // server, the app, and the browser scripts (which cannot import app code).
+    expect(PROMPT_VERSION).toBe(APP_PROMPT_VERSION);
+    expect(PROMPT_VERSION).toBeGreaterThanOrEqual(2);
+
+    const fixture = fs.readFileSync(path.join(__dirname, '..', 'tests', 'fixtures', 'fake-api.ts'), 'utf8');
+    const inScripts = fixture.match(/export const PROMPT_VERSION = (\d+);/);
+    expect(inScripts).not.toBeNull();
+    expect(Number(inScripts![1])).toBe(PROMPT_VERSION);
   });
 
   test('it asks for each of the 5 test languages by name', () => {

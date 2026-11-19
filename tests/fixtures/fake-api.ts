@@ -9,6 +9,14 @@
  */
 import type { Page, Route } from '@playwright/test';
 
+/**
+ * The version of the translating rules, copied from
+ * supabase/functions/translate/translate.ts. These scripts cannot import app code, because it
+ * needs React Native to load. __tests__/translate-claude-test.ts reads this line and fails if it
+ * ever drifts from the real one.
+ */
+export const PROMPT_VERSION = 2;
+
 export const FAKE_USER = { id: '11111111-1111-4111-8111-111111111111', email: 'test.a@example.com' };
 export const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 export const NOTE_ID = '33333333-3333-4333-8333-333333333333';
