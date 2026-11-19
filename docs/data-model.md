@@ -23,8 +23,9 @@ A "meeting" is 1 note. An "account" is the paying workspace that owns notes and 
 | chunks | Searchable pieces of transcript | id, meeting_id, account_id, start_ms, end_ms, text, embedding (vector) |
 | chat_threads | Side chat conversations | id, account_id, user_id, meeting_id (empty means all notes), created_at |
 | chat_messages | Messages in a thread | id, thread_id, role (user or assistant), content, language, sources, created_at |
-| integrations | Slack, Teams, and email settings | id, account_id, kind, settings, created_at. Keep any token encrypted |
+| integrations | Slack, Teams, and email settings | id, account_id, kind, settings, created_at. Unique on account_id, kind. Keep any token encrypted. Recap emails use kind `recap_email`, with settings `{ to_owner, to_members, auto_send }`. Missing means the safe default: the owner only, and no automatic sending |
 | ai_usage | Cost tracking for the admin page | id, account_id, meeting_id, kind, provider, units, cost, created_at |
+| email_log | One row per email Gyan tried to send | id, account_id, meeting_id, kind, recipient_user_id, recipient_email, language, translated, result (sent or failed), provider_id, error_message, sent_by (empty for an automatic send), auto, created_at |
 
 The search column on chunks needs a vector size. The size depends on which embedding model you pick, and notes can be in any language, so pick a multilingual one. This is an open decision. Ask Claude Code to check the current docs before creating the column.
 
@@ -34,7 +35,8 @@ Turn on Row Level Security for every table, and write these rules in plain terms
 
 - A signed in user can read rows only when the row's account is one of their own accounts, through account_members. This covers meetings, transcripts, summaries, action items, mind maps, translations, chunks, chats, and invites.
 - Everyone on an account can read all of that account's notes. Only the owner can manage invites, billing, and integrations.
-- Users cannot write to plans, usage, ai_usage, translations, summaries, mind_maps, chunks, or transcript_segments. Only server functions write to these.
+- Recap emails follow that rule: anybody on the account can send a recap of a note they can already read, but only the account owner can change who gets recaps and whether they send themselves. A recap can only ever go to a member of the same account; an email address is never an input, only a user id, and an id that is not on the account is dropped.
+- Users cannot write to plans, usage, ai_usage, translations, summaries, mind_maps, chunks, transcript_segments, or email_log. Only server functions write to these. Everyone on an account can READ email_log, so anybody can check what was sent and to whom.
 - Only profiles where is_admin is true can open the admin page. The is_admin value is set by you in the Supabase dashboard and never by the app.
 - Files go in a private storage bucket. The path starts with the account id, and the storage rules check it.
 
@@ -48,6 +50,7 @@ All steps run in Supabase server functions, so secret keys never reach the app.
 4. The transcript is cut into chunks of about 1 to 2 minutes of speech. Each chunk gets an embedding and is saved in chunks, for search and side chat.
 5. The status becomes Ready. Only now does the meeting count toward the monthly limit.
 6. Every call to Deepgram, Claude, and the embedding model writes a row in ai_usage, so the admin page can show cost per user.
+7. If the account owner has the automatic send switched on, the recap email goes out at this point, to whoever the settings name, each person in their own language. Every email, sent or failed, writes a row in email_log. A note only ever sends itself once, so writing a new summary does not email everybody again.
 
 If any step fails, set the status to Failed, save a plain error message, and do not count the meeting. For meeting bot notes, Recall.ai sends the recording and transcript, and the steps start from step 3 or step 2. Ask Claude Code to read the current Recall.ai docs for the exact flow.
 

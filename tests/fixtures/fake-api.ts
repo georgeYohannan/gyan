@@ -22,6 +22,8 @@ export const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 export const NOTE_ID = '33333333-3333-4333-8333-333333333333';
 export const FAILED_NOTE_ID = '44444444-4444-4444-8444-444444444444';
 export const TEXT_NOTE_ID = '55555555-5555-4555-8555-555555555555';
+/** A made up teammate, so the Send recap dialog has more than one person in it. */
+export const TEAMMATE = { id: '66666666-6666-4666-8666-666666666666', email: 'test.b@example.com' };
 
 type Row = Record<string, unknown>;
 
@@ -56,6 +58,19 @@ export type FakeData = {
   translations: Record<string, unknown>;
   /** A plain message the translate function answers with instead of a translation. */
   translateProblem?: string;
+
+  /** Who the Send recap dialog lists. Everybody here is "on the account". */
+  recapPeople: Row[];
+  /** The account's saved recap settings, as get_recap_settings would hand them back. */
+  recapSettings: { to_owner: boolean; to_members: boolean; auto_send: boolean };
+  /** false makes this person a team member rather than the owner, so the settings lock. */
+  isOwner: boolean;
+  /** A plain message the recap function answers with instead of sending. */
+  recapProblem?: string;
+  /** Make one address fail, to check that one person failing does not stop the others. */
+  recapFailsFor?: string[];
+  /** An error message save_recap_settings answers with, for example 'not_owner'. */
+  saveSettingsError?: string;
 };
 
 /** One made up answer from the chat function. `ok: false` is a problem with a Retry. */
@@ -244,6 +259,28 @@ export const CHAT_MESSAGES: Row[] = [
   { id: 'cm2', role: 'assistant', content: CHAT_ANSWER, sources: CHAT_SOURCES, created_at: '2026-11-18T10:00:06Z' },
 ];
 
+/** Everybody on the fake account. The owner is the person who logs in. */
+export const RECAP_PEOPLE: Row[] = [
+  {
+    user_id: FAKE_USER.id,
+    email: FAKE_USER.email,
+    name: 'Test Person A',
+    role: 'owner',
+    language: 'en',
+    default_on: true,
+    is_you: true,
+  },
+  {
+    user_id: TEAMMATE.id,
+    email: TEAMMATE.email,
+    name: 'Test Person B',
+    role: 'member',
+    language: 'hi',
+    default_on: false,
+    is_you: false,
+  },
+];
+
 export const DEFAULTS: FakeData = {
   notes: [noteRow()],
   segments: SEGMENTS,
@@ -256,6 +293,9 @@ export const DEFAULTS: FakeData = {
   preferredLanguage: 'en',
   savedTranslations: {},
   translations: ALL_TRANSLATIONS,
+  recapPeople: RECAP_PEOPLE,
+  recapSettings: { to_owner: true, to_members: false, auto_send: false },
+  isOwner: true,
 };
 
 /** Everything the scripts can ask about after the fact: which calls the app made. */
@@ -355,6 +395,48 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
       return json(route, { ok: true, kind: asked?.kind, language: asked?.language, content, reused: false });
     }
 
+    // The recap function. NO EMAIL IS EVER SENT: this only answers as if one had been.
+    if (name === 'recap') {
+      if (status !== 202) return json(route, { error: 'problem' }, status);
+      const asked = body as { preview?: boolean; recipient_user_ids?: string[] } | undefined;
+
+      // A preview lists everybody on the account and which of them the settings pick.
+      if (asked?.preview === true) {
+        return json(route, {
+          ok: true,
+          recipients: data.recapPeople,
+          settings: data.recapSettings,
+          noteTitle: 'Team call',
+          can_send: true,
+        });
+      }
+
+      if (data.recapProblem) return json(route, { ok: false, message: data.recapProblem });
+
+      // Only ids that are really on the account count, the same rule the real server follows.
+      const picked = (asked?.recipient_user_ids ?? []).filter((id) =>
+        data.recapPeople.some((person) => person.user_id === id),
+      );
+      const failing = data.recapFailsFor ?? [];
+      const outcomes = picked.map((id) => {
+        const person = data.recapPeople.find((p) => p.user_id === id)!;
+        const translated = person.language !== 'en';
+        return {
+          email: person.email as string,
+          name: person.name as string,
+          language: translated ? 'Hindi' : 'English',
+          translated,
+          ok: !failing.includes(person.email as string),
+        };
+      });
+      return json(route, {
+        ok: true,
+        sent: outcomes.filter((o) => o.ok).length,
+        failed: outcomes.filter((o) => !o.ok).length,
+        outcomes,
+      });
+    }
+
     return json(route, status === 202 ? { status: 'accepted' } : { error: 'problem' }, status);
   });
 
@@ -388,7 +470,37 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
       return route.fulfill({ status: 204, body: '' });
     }
 
-    if (table.startsWith('rpc/')) return json(route, null);
+    if (table.startsWith('rpc/')) {
+      const fn = table.replace('rpc/', '');
+      let body: unknown;
+      try {
+        body = request.postDataJSON();
+      } catch {
+        body = undefined;
+      }
+
+      if (fn === 'get_recap_settings') {
+        const row = { account_id: ACCOUNT_ID, is_owner: data.isOwner, settings: data.recapSettings };
+        return json(route, wantsOne ? row : [row]);
+      }
+
+      if (fn === 'save_recap_settings') {
+        recorder.updates.push({ table: fn, body });
+        if (data.saveSettingsError) {
+          return json(route, { message: data.saveSettingsError, code: 'P0001' }, 400);
+        }
+        const asked = (body as { p_settings?: Record<string, unknown> } | undefined)?.p_settings ?? {};
+        // Remember it, so the page shows what was saved when it is read again.
+        data.recapSettings = {
+          to_owner: asked.to_owner === true,
+          to_members: asked.to_members === true,
+          auto_send: asked.auto_send === true,
+        };
+        return json(route, data.recapSettings);
+      }
+
+      return json(route, null);
+    }
 
     const noteId = url.searchParams.get('id')?.replace('eq.', '');
     const rows: Row[] = (() => {

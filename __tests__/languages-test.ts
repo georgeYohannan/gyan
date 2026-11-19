@@ -1,27 +1,39 @@
 /**
- * The list of languages exists in 3 places: the app, the chat server function, and the translate
- * server function. If they ever drifted, a person could pick a language the server cannot name in
- * its prompt, and the answer would quietly come back in English. These tests keep all 3 in step.
+ * The list of languages exists in 4 places: the app, the chat server function, the translate
+ * server function, and the recap server function (which names the language on a translated
+ * email). If they ever drifted, a person could pick a language one of them cannot name, and the
+ * words would quietly come back in English. These tests keep all 4 in step.
  */
 import { languageName as nameInChat } from '../supabase/functions/chat/chat';
+import {
+  LANGUAGE_NAMES as RECAP_LANGUAGE_NAMES,
+  languageName as nameInRecap,
+  RTL_LANGUAGES,
+} from '../supabase/functions/recap/email';
 import { LANGUAGE_NAMES, languageName as nameInTranslate } from '../supabase/functions/translate/translate';
 import { baseCode, DEFAULT_LANGUAGE, LANGUAGES, languageFor, languageName, sameLanguage } from '@/constants/languages';
 
 describe('the list of languages', () => {
-  test('the app and the two server functions know exactly the same languages', () => {
+  test('the app and all three server functions know exactly the same languages', () => {
     const inApp = LANGUAGES.map((l) => l.code).sort();
-    const onServer = Object.keys(LANGUAGE_NAMES).sort();
-    expect(inApp).toEqual(onServer);
+    expect(Object.keys(LANGUAGE_NAMES).sort()).toEqual(inApp);
+    expect(Object.keys(RECAP_LANGUAGE_NAMES).sort()).toEqual(inApp);
   });
 
-  test('every language the app offers can be named by both server functions', () => {
+  test('every language the app offers can be named by every server function', () => {
     for (const language of LANGUAGES) {
       // A code the server does not know is passed straight through, so the name would equal the
       // code. Getting a real name back proves the server knows it.
       expect(nameInChat(language.code)).toBe(language.name);
       expect(nameInTranslate(language.code)).toBe(language.name);
+      expect(nameInRecap(language.code)).toBe(language.name);
       expect(nameInChat(language.code)).not.toBe(language.code);
     }
+  });
+
+  test('the recap function agrees with the app about which languages read right to left', () => {
+    const rtlInApp = LANGUAGES.filter((l) => l.rtl).map((l) => l.code).sort();
+    expect([...RTL_LANGUAGES].sort()).toEqual(rtlInApp);
   });
 
   test('every language has a name in its own letters, and no two share a code', () => {

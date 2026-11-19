@@ -5,6 +5,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { HelpButton } from '@/components/help/help-button';
 import { ChatPanel } from '@/components/notes/chat-panel';
 import { LanguagePicker } from '@/components/notes/language-picker';
+import { RecapDialog } from '@/components/notes/recap-dialog';
 import { SummaryTab } from '@/components/notes/summary-tab';
 import { TranslationBar } from '@/components/notes/translation-bar';
 import { Body } from '@/components/ui/body';
@@ -103,6 +104,7 @@ export default function NoteDetailScreen() {
   const [savingItemId, setSavingItemId] = useState<string>();
   const [itemError, setItemError] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [recapOpen, setRecapOpen] = useState(false);
   /** The transcript line a passage number pointed at. It stays lit until another one is tapped. */
   const [highlightId, setHighlightId] = useState<string>();
 
@@ -217,6 +219,8 @@ export default function NoteDetailScreen() {
   const summary = load.state === 'ready' ? load.summary : undefined;
   // The Summary tab can be translated once a summary exists. The Transcript tab, once it has words.
   const canTranslate = tab === 'Summary' ? !!summary : canAsk;
+  // There is only something worth emailing once the note is finished and has a summary.
+  const canSendRecap = load.state === 'ready' && load.note.status === 'Ready' && !!summary;
   /** The language the words on this tab are already in. */
   const originalLanguage =
     tab === 'Summary'
@@ -347,7 +351,16 @@ export default function NoteDetailScreen() {
                     setHighlightId(undefined);
                   }}
                 />
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flexWrap: 'wrap' }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: Spacing.two,
+                    flexWrap: 'wrap',
+                    // Without this the group keeps its content width and pushes the page
+                    // sideways on a phone. With it, the pills wrap onto a second line.
+                    flexShrink: 1,
+                  }}>
                   <Pill
                     label={`Language: ${languageName(languageCode)}`}
                     accessibilityLabel={`Your language: ${languageName(languageCode)}`}
@@ -365,6 +378,12 @@ export default function NoteDetailScreen() {
                     accessibilityLabel="Ask about this note"
                     enabled={canAsk}
                     onPress={() => setChatOpen(true)}
+                  />
+                  <Pill
+                    label="Send recap"
+                    accessibilityLabel="Send a recap of this note by email"
+                    enabled={canSendRecap}
+                    onPress={() => setRecapOpen(true)}
                   />
                 </View>
               </View>
@@ -417,6 +436,16 @@ export default function NoteDetailScreen() {
       </Screen>
 
       {id ? <ChatPanel meetingId={id} visible={chatOpen} onClose={() => setChatOpen(false)} onJump={jumpTo} /> : null}
+
+      {id ? (
+        <RecapDialog
+          meetingId={id}
+          visible={recapOpen}
+          onClose={() => setRecapOpen(false)}
+          noteLanguage={summary?.language ?? 'en'}
+          onOpenSettings={() => router.push('/recap-emails')}
+        />
+      ) : null}
 
       <LanguagePicker
         title="Your language"

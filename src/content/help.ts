@@ -425,6 +425,71 @@ export const HELP: Record<string, HelpEntry> = {
     ],
   },
 
+  recapEmail: {
+    id: 'recapEmail',
+    title: 'Sending a recap by email',
+    sentences: [
+      'A recap is an email with a note\u2019s summary and action items in it.',
+      'Tap Send recap on a note to send one. It shows you exactly who will get it, and asks before anything goes.',
+      'Gyan only emails people who are on your account. You can never type in an address.',
+      'The account owner picks who gets recaps, and whether they go out on their own.',
+    ],
+    lists: [
+      {
+        heading: 'What is in the email',
+        items: [
+          'The note\u2019s title and the date',
+          'The overview, the key points and the decisions',
+          'The action items, with who they are for and when they are due',
+          'A button that opens the note in Gyan',
+        ],
+      },
+      {
+        heading: 'Good to know',
+        items: [
+          'Everybody gets the recap in the language they have chosen, and translated words say "Translated by AI".',
+          'Every email has a Turn off recaps link at the bottom.',
+          'A note only ever sends itself once, so writing a new summary does not email everybody again.',
+          'Only the account owner can change who gets recaps. Everybody else can see the setting.',
+          'Every email Gyan sends is written down, so you can always check what went where.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // Metro needs require() for local images.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/recap-dialog-390.png'),
+        alt: 'The Send recap box open on a phone, listing two made up addresses with a tick box each.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/recap-email-390.png'),
+        alt: 'A recap email on a phone, with the note title, the key points, the action items and a blue button.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/recap-settings-390.png'),
+        alt: 'The Recap emails page on a phone, with switches for who gets a recap and when it is sent.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/recap-dialog-1280.png'),
+        alt: 'The Send recap box on a wide window, as a panel on the right.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/recap-email-1280.png'),
+        alt: 'The same recap email on a wide window.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/recap-settings-1280.png'),
+        alt: 'The Recap emails page on a wide window, with the same switches laid out wider.',
+      },
+    ],
+  },
+
   signUp: {
     id: 'signUp',
     title: 'Sign up',

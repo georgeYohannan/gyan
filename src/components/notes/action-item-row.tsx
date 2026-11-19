@@ -1,9 +1,10 @@
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { Body } from '@/components/ui/body';
 import { ScriptText } from '@/components/ui/script-text';
+import { TickBox } from '@/components/ui/tick-box';
 import { DEFAULT_LANGUAGE } from '@/constants/languages';
-import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
+import { MinTouchTarget, Spacing } from '@/constants/theme';
 import type { ActionItem } from '@/lib/summaries';
 import { formatTime } from '@/lib/transcripts';
 
@@ -33,25 +34,7 @@ export function ActionItemRow({ item, onToggle, saving, language = DEFAULT_LANGU
       disabled={saving}
       onPress={() => onToggle(item)}
       style={{ flexDirection: 'row', gap: Spacing.three, alignItems: 'flex-start', minHeight: MinTouchTarget, paddingVertical: Spacing.one }}>
-      <View
-        // The box itself is 24 wide, but it sits in a 44 high row, so the whole row is the target.
-        style={{
-          width: 24,
-          height: 24,
-          marginTop: Spacing.two,
-          borderRadius: Radius.panel / 4,
-          borderWidth: 1,
-          borderColor: item.done ? Colors.successFill : Colors.glassBorder,
-          backgroundColor: item.done ? Colors.successFill : 'transparent',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-        {item.done ? (
-          // The tick mark is drawn in the device's own font, because IBM Plex Sans makes it look
-          // like a letter V. The color still comes from the theme.
-          <Text style={{ color: Colors.success, fontSize: 16, lineHeight: 20, fontWeight: '700' }}>{'✓'}</Text>
-        ) : null}
-      </View>
+      <TickBox checked={item.done} nudgeDown />
       <View style={{ flex: 1, gap: Spacing.half }}>
         <ScriptText
           language={language}

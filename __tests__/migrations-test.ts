@@ -14,15 +14,15 @@ const tables = [...sql.matchAll(/create table public\.(\w+)/g)].map((m) => m[1])
 /** Tables that only server functions may write to. */
 const serverOnly = [
   'plans', 'usage', 'ai_usage', 'translations', 'summaries', 'mind_maps', 'transcript_segments',
-  'accounts', 'account_members', 'meetings', 'chat_threads', 'chat_messages',
+  'accounts', 'account_members', 'meetings', 'chat_threads', 'chat_messages', 'email_log',
 ];
 
 describe('database migration files', () => {
-  test('create the 16 tables from the data model (chunks waits for the embedding model)', () => {
+  test('create the 17 tables from the data model (chunks waits for the embedding model)', () => {
     expect(tables.sort()).toEqual([
       'account_members', 'accounts', 'action_items', 'ai_usage', 'chat_messages', 'chat_threads',
-      'integrations', 'invites', 'meetings', 'mind_maps', 'plans', 'profiles', 'summaries',
-      'transcript_segments', 'translations', 'usage',
+      'email_log', 'integrations', 'invites', 'meetings', 'mind_maps', 'plans', 'profiles',
+      'summaries', 'transcript_segments', 'translations', 'usage',
     ]);
   });
 
@@ -335,5 +335,140 @@ describe('translation migration', () => {
   test('every new function pins the search path', () => {
     expect(t.match(/security definer/g)).toHaveLength(2);
     expect(t.match(/set search_path = ''/g)).toHaveLength(2);
+  });
+});
+
+describe('recap email migration', () => {
+  const file = fs.readdirSync(dir).find((f) => f.includes('recap_email'))!;
+  const t = fs.readFileSync(path.join(dir, file), 'utf8');
+
+  test('it deletes no table, column, or row of data', () => {
+    expect(t).not.toMatch(/drop (table|column|schema|function)/i);
+    expect(t).not.toMatch(/truncate/i);
+    expect(t).not.toMatch(/delete from/i);
+    expect(t).toContain('This file only ADDS things. It deletes nothing');
+  });
+
+  test('it changes no existing rule on any table that already had one', () => {
+    expect(t).not.toMatch(/drop policy/i);
+    // The only policy it writes is the read rule for its own new table.
+    expect(t.match(/create policy/gi)).toHaveLength(1);
+    expect(t).toContain('create policy "Read email_log of own accounts" on public.email_log');
+  });
+
+  test('every email is written down, and the app can read the log but never write it', () => {
+    expect(t).toContain('create table public.email_log');
+    for (const col of [
+      'account_id', 'meeting_id', 'recipient_user_id', 'recipient_email', 'language',
+      'translated', 'result', 'provider_id', 'error_message', 'sent_by', 'auto', 'created_at',
+    ]) {
+      expect(t).toContain(col);
+    }
+    expect(t).toContain("result text not null check (result in ('sent', 'failed'))");
+    expect(t).toContain('grant select on public.email_log to authenticated');
+    expect(t).not.toMatch(/grant [^;]*(insert|update|delete)[^;]* on public\.email_log/);
+  });
+
+  test('only people on the same account can read the log', () => {
+    expect(t).toContain('private.is_account_member(account_id)');
+    expect(t).toContain('revoke all on public.email_log from anon, authenticated');
+  });
+
+  test('the settings have ONE row per account, so saving them overwrites cleanly', () => {
+    expect(t).toContain('create unique index if not exists integrations_account_kind_idx');
+    expect(t).toContain('on public.integrations (account_id, kind)');
+  });
+
+  test('the defaults are the owner only, with no automatic sending', () => {
+    // Written in 3 places on purpose: the gate, the read door and the save door. All agree.
+    expect(t.match(/'to_owner', coalesce\(\(/g)).toHaveLength(2);
+    expect(t.match(/coalesce\(\(saved ->> 'to_owner'\)::boolean, true\)/g)).toHaveLength(2);
+    expect(t).toContain("coalesce((saved ->> 'to_members')::boolean, false)");
+    expect(t).toContain("coalesce((saved ->> 'auto_send')::boolean, false)");
+  });
+
+  test('a recap is refused unless the person is on the account and the note is finished', () => {
+    const claim = t.slice(t.indexOf('create function public.claim_recap'), t.indexOf('create function public.log_email'));
+    expect(claim).toContain('public.account_members');
+    expect(claim).toContain("raise exception 'not_allowed'");
+    expect(claim).toContain("if note.status <> 'ready' then");
+    expect(claim).toContain("raise exception 'not_ready'");
+    expect(claim).toContain("raise exception 'no_summary'");
+    // The person is checked before anything is read or handed back.
+    expect(claim.indexOf('public.account_members am')).toBeLessThan(
+      claim.indexOf('select * into the_summary from public.summaries s'),
+    );
+  });
+
+  test('THE TO-DOS COME BACK IN THE SAME ORDER THE APP AND THE TRANSLATOR USE', () => {
+    // A translated to-do is lined up against its original by position. If this order differed
+    // from the one in supabase/functions/translate/pipeline.ts, a translated to-do would be
+    // shown against the wrong person's name, and nothing would look broken.
+    const claim = t.slice(t.indexOf('create function public.claim_recap'), t.indexOf('create function public.log_email'));
+    expect(claim).toContain('order by a.start_ms nulls last, a.id');
+
+    const translator = fs.readFileSync(
+      path.join(__dirname, '..', 'supabase', 'functions', 'translate', 'pipeline.ts'),
+      'utf8',
+    );
+    expect(translator).toContain(".order('start_ms', { ascending: true })");
+    expect(translator).toContain(".order('id', { ascending: true })");
+  });
+
+  test('the automatic send only runs when it is switched on, and only once per note', () => {
+    const claim = t.slice(t.indexOf('create function public.claim_recap'), t.indexOf('create function public.log_email'));
+    expect(claim).toContain("raise exception 'auto_off'");
+    expect(claim).toContain("raise exception 'already_sent'");
+    expect(claim).toMatch(/from public\.email_log e[\s\S]*e\.auto and e\.result = 'sent'/);
+  });
+
+  test('the only addresses that exist come from the account, never from anything typed in', () => {
+    const claim = t.slice(t.indexOf('create function public.claim_recap'), t.indexOf('create function public.log_email'));
+    expect(claim).toContain('from public.account_members am');
+    expect(claim).toContain('join auth.users u on u.id = am.user_id');
+    expect(claim).toContain('where am.account_id = note.account_id');
+    // Each person comes back with their own language, so the email can be in it.
+    expect(claim).toContain("'language', coalesce(nullif(btrim(coalesce(pr.preferred_language, '')), ''), 'en')");
+  });
+
+  test('ONLY THE ACCOUNT OWNER can change the settings, and it says so out loud', () => {
+    const save = t.slice(t.indexOf('create function public.save_recap_settings'));
+    expect(save).toContain("am.role = 'owner'");
+    expect(save).toContain("raise exception 'not_owner'");
+    expect(save).toContain('auth.uid()');
+    // Only the three switches are ever stored. Anything else sent in is thrown away.
+    expect(save).toContain('clean := jsonb_build_object(');
+    expect(save).toContain("on conflict (account_id, kind) do update set settings = excluded.settings");
+  });
+
+  test('a team member can still SEE the settings, without being able to read a token', () => {
+    const read = t.slice(t.indexOf('create function public.get_recap_settings'), t.indexOf('create function public.save_recap_settings'));
+    expect(read).toContain('is_owner');
+    expect(read).toContain('auth.uid()');
+    // It hands back the 3 switches only, never the whole integrations row.
+    expect(read).not.toMatch(/select i\.\*/);
+    expect(read).toContain('select i.settings into saved');
+  });
+
+  test.each([
+    'claim_recap(uuid, uuid, boolean)',
+    'log_email(uuid, uuid, uuid, text, text, boolean, text, text, text, uuid, boolean)',
+  ])('only the server can run %s', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon, authenticated`);
+    expect(t).toContain(`grant execute on function public.${fn} to service_role`);
+    expect(t).not.toMatch(new RegExp(`grant execute on function public\\.${fn.replace(/[()]/g, '\\$&')} to (anon|authenticated)`));
+  });
+
+  test.each(['get_recap_settings()', 'save_recap_settings(jsonb)'])(
+    'the settings screen can run %s, and a signed out visitor cannot',
+    (fn) => {
+      expect(t).toContain(`grant execute on function public.${fn} to authenticated`);
+      expect(t).toContain(`revoke execute on function public.${fn} from public, anon`);
+    },
+  );
+
+  test('every new function pins the search path', () => {
+    expect(t.match(/security definer/g)).toHaveLength(4);
+    expect(t.match(/set search_path = ''/g)).toHaveLength(4);
   });
 });
