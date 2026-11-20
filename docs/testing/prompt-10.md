@@ -66,6 +66,26 @@ Work through these in order. Steps 1 to 5 are one-offs.
 
    > Invite links are built from this. If it is wrong, the link in the email goes nowhere.
 
+   **If you are going to open the invite email on your phone, do NOT use `localhost`.**
+   `localhost` means "the device I am holding". On your computer that is the computer, and the
+   link works. On your phone it is the phone, which is not running Gyan, so the phone says
+   **"site can't be reached"**. Nothing is broken: the phone is looking in the wrong place.
+
+   Use your computer's address on your home wifi instead. `npx expo start` prints it, on the
+   line that says something like `Metro waiting on exp://192.168.1.23:8081`. Or run
+   `ipconfig getifaddr en0`. Then:
+
+   ```
+   supabase secrets set GYAN_APP_URL=http://192.168.1.23:8081
+   ```
+
+   Both the phone and the computer have to be on the same wifi. This address changes when you
+   move to a different network, so re-check it if links stop working.
+
+   **An invite email already sent keeps the old address inside it.** You do not have to waste
+   the invite: open the link on your phone and edit the address bar, replacing `localhost`
+   with your computer's address. Everything after `/join?token=` stays exactly as it is.
+
 4. **Make yourself an admin, so you can use the test-only plan switch.** In the Supabase
    dashboard, open **SQL Editor** and run this, with your own test address:
 
