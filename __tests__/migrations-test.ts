@@ -472,3 +472,265 @@ describe('recap email migration', () => {
     expect(t.match(/set search_path = ''/g)).toHaveLength(4);
   });
 });
+
+describe('settings and team migration', () => {
+  const file = fs.readdirSync(dir).find((f) => f.includes('settings_and_team'))!;
+  const t = fs.readFileSync(path.join(dir, file), 'utf8');
+  /**
+   * The same file with the explaining comments taken out.
+   * Used where the test is about what the SQL does, not about what it says: a comment naming
+   * a token or a limit is the point, a second copy in the code is the problem.
+   */
+  const code = (text: string) => text.replace(/^\s*--.*$/gm, '');
+
+  test('IT IS HONEST ABOUT THE TWO THINGS IT CHANGES, and changes nothing else', () => {
+    expect(t).toContain('THIS FILE BREAKS THE RULE THAT MIGRATIONS ONLY ADD THINGS, IN TWO PLACES');
+    expect(t).not.toMatch(/drop (table|schema)/i);
+    expect(t).not.toMatch(/truncate/i);
+    expect(t).not.toMatch(/drop column/i);
+    // The only constraint it touches is the one that made account deletion impossible.
+    expect(t.match(/drop constraint/gi)).toHaveLength(1);
+    expect(t).toContain('alter table public.meetings drop constraint if exists meetings_created_by_fkey');
+  });
+
+  test('A NOTE CAN NOW OUTLIVE THE PERSON WHO MADE IT, which is what lets anybody delete their account', () => {
+    expect(t).toContain('alter column created_by drop not null');
+    expect(t).toContain('foreign key (created_by) references public.profiles (id) on delete set null');
+    // Nothing in this file ever changes who made a note, or hands a note to somebody else.
+    expect(code(t)).not.toMatch(/update public\.meetings set/);
+    // The one place a note is deleted at all is delete_note, which a person asks for by name.
+    expect(code(t).match(/delete from public\.meetings/g)).toHaveLength(1);
+    const deleteNote = t.slice(t.indexOf('create function public.delete_note'));
+    expect(deleteNote).toContain('delete from public.meetings where id = p_meeting_id');
+  });
+
+  test('invites can only be made through the door that counts seats', () => {
+    expect(t).toContain('revoke insert, update, delete on public.invites from authenticated');
+    for (const name of ['Owner adds invites', 'Owner edits invites', 'Owner deletes invites']) {
+      expect(t).toContain(`drop policy if exists "${name}" on public.invites`);
+    }
+    // Reading is deliberately left alone: a member can still see who has been invited.
+    expect(t).not.toMatch(/drop policy if exists "Read invites of own accounts"/);
+  });
+
+  test('there is one owner per account, and the database is what keeps it that way', () => {
+    expect(t).toContain('create unique index if not exists account_members_one_owner_idx');
+    expect(t).toContain("where role = 'owner'");
+  });
+
+  test('handing the account over steps the old owner DOWN first, and keeps both records in step', () => {
+    const fn = t.slice(
+      t.indexOf('create function public.change_member_role'),
+      t.indexOf('create function public.remove_member'),
+    );
+    expect(fn).toContain("raise exception 'not_owner'");
+    expect(fn).toContain("raise exception 'bad_role'");
+    expect(fn).toContain("raise exception 'last_owner'");
+    expect(fn).toContain('update public.accounts set owner_id = p_user_id');
+    expect(fn.indexOf("set role = 'member'")).toBeLessThan(fn.indexOf("set role = 'owner'"));
+  });
+
+  test('A REMOVED PERSON KEEPS THEIR WAY IN TO GYAN, and leaves their notes behind', () => {
+    const fn = t.slice(
+      t.indexOf('create function public.remove_member'),
+      t.indexOf('create function public.accept_invite'),
+    );
+    expect(fn).toContain("raise exception 'cannot_remove_owner'");
+    expect(fn).toContain("raise exception 'cannot_remove_yourself'");
+    // Their notes and their chats are not touched at all.
+    expect(fn).not.toMatch(/meetings/);
+    expect(fn).not.toMatch(/chat_threads/);
+    // And they are never left with no account, which would be an app with no way out.
+    expect(fn).toContain('insert into public.accounts (owner_id, plan_id)');
+    expect(fn).toContain("where p.name = 'Free' and p.is_active");
+  });
+
+  test('AN INVITE BELONGS TO AN ADDRESS, not to whoever is holding the link', () => {
+    const fn = t.slice(
+      t.indexOf('create function public.accept_invite'),
+      t.indexOf('create function public.delete_note'),
+    );
+    expect(fn).toContain('from auth.users u where u.id = me');
+    expect(fn).toContain('lower(btrim(inv.email)) <> my_email');
+    expect(fn).toContain("raise exception 'wrong_email'");
+    expect(fn).toContain("raise exception 'invite_expired'");
+    expect(fn).toContain("interval '14 days'");
+    expect(fn).toContain("raise exception 'seats_full'");
+    // Four separate reasons a workspace is worth keeping, all checked BEFORE it is removed.
+    for (const code of ['own_notes', 'own_team', 'own_invites', 'own_plan']) {
+      expect(fn).toContain(`raise exception '${code}'`);
+      expect(fn.indexOf(`'${code}'`)).toBeLessThan(fn.indexOf('delete from public.accounts'));
+    }
+  });
+
+  test('the sign up trigger is NOT changed, so joining always needs the link', () => {
+    // Joining on the sign up address alone would let somebody type a colleague's address into
+    // the form and walk into their workspace without ever holding the invite.
+    expect(t).not.toMatch(/function public\.handle_new_user/);
+    expect(t).not.toMatch(/on_auth_user_created/);
+    // And nothing here ever trusts what somebody typed into the sign up form.
+    expect(code(t)).not.toMatch(/raw_user_meta_data/);
+    expect(code(t)).not.toMatch(/new\.email/);
+  });
+
+  test('AN INVITE TOKEN IS MADE BY THE SERVER AND NEVER LEAVES IT', () => {
+    const fn = t.slice(
+      t.indexOf('create function public.claim_invite'),
+      t.indexOf('create function public.discard_invite'),
+    );
+    // Core Postgres, so this works in a brand new project with no extension turned on.
+    expect(fn).toContain('pg_catalog.gen_random_uuid()');
+    expect(fn).not.toMatch(/gen_random_bytes/);
+    for (const code of ['not_owner', 'bad_email', 'already_member', 'already_invited', 'seats_full']) {
+      expect(fn).toContain(`raise exception '${code}'`);
+    }
+    // The seat check happens BEFORE the invite exists.
+    expect(fn.indexOf('seats_full')).toBeLessThan(fn.indexOf('insert into public.invites'));
+
+    // And the team list never hands a token back to the app.
+    const list = code(
+      t.slice(t.indexOf('create function public.list_team'), t.indexOf('create function public.claim_invite')),
+    );
+    expect(list).not.toMatch(/\btoken\b/);
+  });
+
+  test('the team list reads addresses the one way this project reads addresses', () => {
+    const list = t.slice(t.indexOf('create function public.list_team'), t.indexOf('create function public.claim_invite'));
+    expect(list).toContain('join public.profiles pr on pr.id = am.user_id');
+    expect(list).toContain('join auth.users u on u.id = am.user_id');
+    expect(list).toContain("'is_you', am.user_id = me");
+  });
+
+  test('ONE DOOR ANSWERS THE WHOLE PLAN SCREEN, and no limit is written in it', () => {
+    const fn = t.slice(
+      t.indexOf('create function public.get_plan_and_usage'),
+      t.indexOf('create function public.set_test_plan'),
+    );
+    for (const col of [
+      'p.meetings_per_month', 'p.chat_messages_per_day', 'p.seats_included',
+      'p.max_meeting_minutes', 'p.features', 'p.is_test',
+    ]) {
+      expect(fn).toContain(col);
+    }
+    expect(fn).toContain('private.chat_questions_left(my_account, me)');
+    expect(fn).toContain('private.seats_used(my_account)');
+    // Not one limit is written into this function.
+    expect(fn).not.toMatch(/\b(5|20|50|100|200|500)\b/);
+  });
+
+  test('THE DAY AND THE MONTH ARE COUNTED EXACTLY AS THE GATES COUNT THEM', () => {
+    const fn = t.slice(
+      t.indexOf('create function public.get_plan_and_usage'),
+      t.indexOf('create function public.set_test_plan'),
+    );
+    expect(fn).toContain("date_trunc('day', now() at time zone 'utc')");
+    expect(fn).toContain("date_trunc('month', now() at time zone 'utc')::date");
+  });
+
+  test('a waiting invite holds a seat', () => {
+    const fn = t.slice(
+      t.indexOf('create function private.seats_used'),
+      t.indexOf('create function public.get_plan_and_usage'),
+    );
+    expect(fn).toContain('from public.account_members am');
+    expect(fn).toContain("i.status = 'pending'");
+  });
+
+  test('THE TEST-ONLY PLAN SWITCH CANNOT REACH A REAL PAID PLAN, by anybody, in any project', () => {
+    const fn = t.slice(
+      t.indexOf('create function public.set_test_plan'),
+      t.indexOf('create function public.list_team'),
+    );
+    expect(fn).toContain("raise exception 'not_owner'");
+    // The lock that does not travel inside this file: no migration ever sets is_admin.
+    expect(fn).toContain('pr.is_admin');
+    expect(fn).toContain("raise exception 'not_admin'");
+    // You may only move TO a stand-in plan...
+    expect(fn).toContain('target.is_test');
+    expect(fn).toContain("raise exception 'not_a_test_plan'");
+    // ...and only FROM one, so a real paid account is out of reach for good.
+    expect(fn).toContain("raise exception 'real_plan'");
+    expect(fn).toContain("raise exception 'too_many_people'");
+    // Every lock is checked BEFORE the plan is changed.
+    expect(fn.indexOf("raise exception 'real_plan'")).toBeLessThan(fn.indexOf('update public.accounts'));
+    // And nothing in this file ever turns somebody into an admin.
+    expect(t).not.toMatch(/update public\.profiles[^;]*is_admin/);
+  });
+
+  test('the stand-in plans say in their own words that they are stand-ins', () => {
+    expect(t).toContain('add column if not exists is_test boolean not null default false');
+    expect(t.match(/STAND-IN NUMBERS/g)).toHaveLength(2);
+  });
+
+  test('NO LIMIT IS EVER WRITTEN TWICE: a feature line names its column instead of repeating the number', () => {
+    const seed = code(
+      t.slice(t.indexOf("set description = 'For one person"), t.indexOf('-- 2. invites:')),
+    );
+    for (const name of ['{meetings_per_month}', '{chat_messages_per_day}', '{seats_included}', '{max_meeting_minutes}']) {
+      expect(seed).toContain(name);
+    }
+    // Every feature line that mentions a number uses a placeholder, never a digit.
+    for (const line of seed.match(/"[^"]+"/g) ?? []) {
+      if (/\d/.test(line)) expect(line).toContain('{');
+    }
+  });
+
+  test('deleting ONE note needs a door, because the app cannot delete a row itself', () => {
+    const fn = t.slice(t.indexOf('create function public.delete_note'), t.indexOf('create function public.can_delete_account'));
+    expect(fn).toContain('private.is_account_member(note.account_id)');
+    expect(fn).toContain('note.created_by is distinct from me');
+    expect(fn).toContain('private.is_account_owner(note.account_id)');
+    expect(fn).toContain("raise exception 'not_yours'");
+    expect(fn).toContain('note.file_path');
+    // And no grant was opened up on meetings instead.
+    expect(t).not.toMatch(/grant [^;]*delete[^;]* on public\.meetings/);
+  });
+
+  test('deleting an account says WHY NOT in plain words, and the server checks again', () => {
+    const screenCheck = t.slice(
+      t.indexOf('create function public.can_delete_account'),
+      t.indexOf('create function public.claim_account_deletion'),
+    );
+    expect(screenCheck).toContain('Remove them on the Team screen first');
+    expect(screenCheck).toContain('The notes you made stay in');
+    expect(screenCheck).toContain('This cannot be undone and gyan keeps no copy');
+
+    const gate = t.slice(
+      t.indexOf('create function public.claim_account_deletion'),
+      t.indexOf('create function public.delete_account'),
+    );
+    expect(gate).toContain("raise exception 'team_not_empty'");
+    expect(gate).toContain("raise exception 'invites_waiting'");
+    // The gate changes nothing; it only says whether this may happen.
+    expect(gate).not.toMatch(/delete from/i);
+  });
+
+  test.each([
+    'claim_invite(uuid, text)',
+    'discard_invite(uuid)',
+    'log_account_email(uuid, text, text, text, text, uuid)',
+    'claim_account_deletion(uuid)',
+    'delete_account(uuid)',
+  ])('only the server can run %s', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon, authenticated`);
+    expect(t).toContain(`grant execute on function public.${fn} to service_role`);
+    const escaped = fn.replace(/[()]/g, '\\$&');
+    expect(t).not.toMatch(new RegExp(`grant execute on function public\\.${escaped} to (anon|authenticated)`));
+  });
+
+  test.each([
+    'get_plan_and_usage()', 'set_test_plan(text)', 'list_team()', 'revoke_invite(uuid)',
+    'change_member_role(uuid, text)', 'remove_member(uuid)', 'accept_invite(text)',
+    'delete_note(uuid)', 'can_delete_account()',
+  ])('the Settings screens can run %s, and a signed out visitor cannot', (fn) => {
+    expect(t).toContain(`grant execute on function public.${fn} to authenticated`);
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon`);
+  });
+
+  test('every new function pins its search path, so nothing can be swapped under it', () => {
+    const definers = t.match(/security definer/g) ?? [];
+    const pinned = t.match(/set search_path = ''/g) ?? [];
+    expect(definers.length).toBeGreaterThan(0);
+    expect(pinned).toHaveLength(definers.length);
+  });
+});

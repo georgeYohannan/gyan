@@ -221,8 +221,10 @@ async function shootRecapSettings(
   await page.setViewportSize(size);
   await installFakes(page, data);
   await signIn(page);
-  await page.getByRole('button', { name: 'Recap emails' }).click();
-  await expect(page.getByRole('heading', { name: 'Recap emails' })).toBeVisible();
+  // The recap settings live in Settings now, so this walks the way a person would.
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('link', { name: /^Recaps\./ }).click();
+  await expect(page.getByRole('heading', { name: 'Recap emails', level: 1 })).toBeVisible();
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
   await context.clearCookies();
@@ -238,5 +240,77 @@ for (const w of WIDTHS) {
       width: w.width,
       height: w.full,
     });
+  });
+}
+
+/**
+ * The five Settings pages (prompt 10).
+ *
+ * These use their own helper, because they live on the Settings tab rather than on a note.
+ * Every name, address and number on screen is made up.
+ */
+async function shootSettings(
+  { page, context }: { page: import('@playwright/test').Page; context: import('@playwright/test').BrowserContext },
+  file: string,
+  size: { width: number; height: number },
+  row: string | null,
+  waitFor: string,
+  data: Partial<FakeData> = {},
+) {
+  await page.setViewportSize(size);
+  await installFakes(page, data);
+  await signIn(page);
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  if (row) await page.getByRole('link', { name: new RegExp(`^${row}\\.`) }).click();
+  await expect(page.getByRole('heading', { name: waitFor, level: 1 })).toBeVisible();
+  await page.waitForTimeout(600); // let the fonts settle
+  await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
+  await context.clearCookies();
+}
+
+for (const w of WIDTHS) {
+  test(`the Settings list at ${w.name} pixels`, async ({ page, context }) => {
+    // Tall enough to show the Log out box under the five rows, rather than cutting it off.
+    await shootSettings({ page, context }, `settings-${w.name}.png`, { width: w.width, height: w.full }, null, 'Settings');
+  });
+
+  test(`Profile at ${w.name} pixels`, async ({ page, context }) => {
+    await shootSettings(
+      { page, context },
+      `settings-profile-${w.name}.png`,
+      { width: w.width, height: w.full },
+      'Profile',
+      'Profile',
+    );
+  });
+
+  test(`Plan and usage at ${w.name} pixels`, async ({ page, context }) => {
+    await shootSettings(
+      { page, context },
+      `settings-plan-${w.name}.png`,
+      { width: w.width, height: w.full },
+      'Plan and usage',
+      'Plan and usage',
+    );
+  });
+
+  test(`Team at ${w.name} pixels`, async ({ page, context }) => {
+    await shootSettings(
+      { page, context },
+      `settings-team-${w.name}.png`,
+      { width: w.width, height: w.full },
+      'Team',
+      'Team',
+    );
+  });
+
+  test(`Data and privacy at ${w.name} pixels`, async ({ page, context }) => {
+    await shootSettings(
+      { page, context },
+      `settings-data-${w.name}.png`,
+      { width: w.width, height: w.full },
+      'Data and privacy',
+      'Data and privacy',
+    );
   });
 }

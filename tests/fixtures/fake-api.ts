@@ -67,6 +67,29 @@ export type FakeData = {
   isOwner: boolean;
   /** A plain message the recap function answers with instead of sending. */
   recapProblem?: string;
+  /** The person's own name, as the profiles table would hand it back. */
+  displayName: string;
+  /** The plan and usage answer, exactly as get_plan_and_usage hands it back. */
+  planAndUsage: Row;
+  /** The plans the test-only switch may offer. */
+  switchablePlans: Row[];
+  /** The team, exactly as list_team hands it back. */
+  team: Row;
+  /** A plain message the team server function answers with instead of inviting. */
+  inviteProblem?: string;
+  /** What can_delete_account answers. */
+  deleteCheck: Row;
+  /** A plain message the account server function answers with instead of deleting. */
+  deleteProblem?: string;
+  /** Make the test-only plan switch be refused, to check the message. */
+  switchPlanError?: string;
+  /** Make removing or promoting somebody be refused. */
+  teamActionError?: string;
+  /** Make joining a team be refused, to check each plain reason. */
+  acceptInviteError?: string;
+  /** Make deleting one note be refused. */
+  deleteNoteError?: string;
+
   /** Make one address fail, to check that one person failing does not stop the others. */
   recapFailsFor?: string[];
   /** An error message save_recap_settings answers with, for example 'not_owner'. */
@@ -281,6 +304,79 @@ export const RECAP_PEOPLE: Row[] = [
   },
 ];
 
+/**
+ * A Free plan the way get_plan_and_usage hands it back. Every number is in the answer, so the
+ * scripts prove the screen reads them rather than writing its own.
+ */
+export const PLAN_FREE: Row = {
+  account_id: ACCOUNT_ID,
+  is_owner: true,
+  plan_name: 'Free',
+  plan_description: 'For one person getting started.',
+  plan_features: [
+    '{meetings_per_month} meetings a month',
+    '{chat_messages_per_day} chat questions a day',
+    'Transcripts with speakers, summaries and action items',
+    '{seats_included} seat',
+  ],
+  is_test_plan: false,
+  meetings_per_month: 5,
+  chat_messages_per_day: 20,
+  seats_included: 1,
+  max_meeting_minutes: null,
+  meetings_used: 2,
+  chat_messages_used: 4,
+  chat_messages_left: 16,
+  seats_used: 1,
+  members_count: 1,
+  invites_pending: 0,
+};
+
+/** The stand-in Pro plan, with the bigger numbers the switch is there to show off. */
+export const PLAN_PRO: Row = {
+  ...PLAN_FREE,
+  plan_name: 'Pro',
+  plan_description: 'STAND-IN NUMBERS, for trying out the Plan screen. Not a real plan and not for sale.',
+  is_test_plan: true,
+  meetings_per_month: 50,
+  chat_messages_per_day: 200,
+  seats_included: 5,
+  max_meeting_minutes: 180,
+  plan_features: [
+    '{meetings_per_month} meetings a month',
+    '{chat_messages_per_day} chat questions a day',
+    'Up to {seats_included} people on the account',
+    'Notes up to {max_meeting_minutes} minutes long',
+  ],
+};
+
+/** A team of three, all made up. */
+export const TEAM: Row = {
+  account_id: ACCOUNT_ID,
+  is_owner: true,
+  seats_included: 5,
+  seats_used: 3,
+  members: [
+    { user_id: FAKE_USER.id, email: FAKE_USER.email, name: 'Sam Carter', role: 'owner', is_you: true },
+    { user_id: TEAMMATE.id, email: TEAMMATE.email, name: 'Ada Blake', role: 'member', is_you: false },
+  ],
+  pending_invites: [
+    { id: 'invite-1', email: 'test.c@example.com', created_at: '2026-11-18T09:00:00.000Z' },
+  ],
+};
+
+export const DELETE_CHECK: Row = {
+  account_id: ACCOUNT_ID,
+  is_owner: true,
+  can_delete: true,
+  reason: null,
+  what_goes:
+    'Everything goes: your login, your name, all 1 of your notes, their transcripts, summaries, to-dos, chats, and the files you uploaded. This cannot be undone and gyan keeps no copy.',
+  note_count: 1,
+  other_member_count: 0,
+  pending_invite_count: 0,
+};
+
 export const DEFAULTS: FakeData = {
   notes: [noteRow()],
   segments: SEGMENTS,
@@ -296,6 +392,15 @@ export const DEFAULTS: FakeData = {
   recapPeople: RECAP_PEOPLE,
   recapSettings: { to_owner: true, to_members: false, auto_send: false },
   isOwner: true,
+  displayName: 'Sam Carter',
+  planAndUsage: PLAN_FREE,
+  switchablePlans: [
+    { name: 'Free', is_test: false, is_active: true, meetings_per_month: 5 },
+    { name: 'Pro', is_test: true, is_active: true, meetings_per_month: 50 },
+    { name: 'Team', is_test: true, is_active: true, meetings_per_month: 200 },
+  ],
+  team: TEAM,
+  deleteCheck: DELETE_CHECK,
 };
 
 /** Everything the scripts can ask about after the fact: which calls the app made. */
@@ -381,6 +486,37 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
         });
       }
       return json(route, { ok: false, message: picked.message, message_id: `q${questionsAsked}`, remaining: 18 });
+    }
+
+    // The team function sends the invite email. NOTHING IS REALLY SENT: it answers as if it had,
+    // so a script can walk the whole invite flow without an email ever leaving the machine.
+    if (name === 'team') {
+      if (status !== 202) return json(route, { error: 'problem' }, status);
+      if (data.inviteProblem) return json(route, { ok: false, message: data.inviteProblem });
+      const asked = body as { email?: string } | undefined;
+      const email = asked?.email ?? '';
+      // Remember the invite, so the Team screen shows it waiting, holding a seat.
+      data.team = {
+        ...data.team,
+        pending_invites: [
+          { id: `invite-${(data.team.pending_invites as Row[]).length + 1}`, email, created_at: '2026-11-19T09:00:00.000Z' },
+          ...(data.team.pending_invites as Row[]),
+        ],
+        seats_used: (data.team.seats_used as number) + 1,
+      };
+      return json(route, {
+        ok: true,
+        email,
+        seats_included: data.team.seats_included,
+        seats_used: data.team.seats_used,
+      });
+    }
+
+    // The account function deletes everything. Again, nothing really happens.
+    if (name === 'account') {
+      if (status !== 202) return json(route, { error: 'problem' }, status);
+      if (data.deleteProblem) return json(route, { ok: false, message: data.deleteProblem });
+      return json(route, { ok: true, workspaces_deleted: 1, files_removed: 1 });
     }
 
     // The translate function answers with a made up translation, so the page has something to show.
@@ -499,6 +635,75 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
         return json(route, data.recapSettings);
       }
 
+      if (fn === 'get_plan_and_usage') {
+        return json(route, wantsOne ? data.planAndUsage : [data.planAndUsage]);
+      }
+
+      if (fn === 'set_test_plan') {
+        recorder.updates.push({ table: fn, body });
+        const asked = (body as { p_plan_name?: string } | undefined)?.p_plan_name ?? 'Free';
+        if (data.switchPlanError) {
+          return json(route, { message: data.switchPlanError, code: 'P0001' }, 400);
+        }
+        // Remember it, so the numbers on the screen really follow the plan.
+        data.planAndUsage = asked === 'Free' ? PLAN_FREE : { ...PLAN_PRO, plan_name: asked };
+        const row = { plan_name: asked, is_test_plan: asked !== 'Free', seats_included: data.planAndUsage.seats_included };
+        return json(route, wantsOne ? row : [row]);
+      }
+
+      if (fn === 'list_team') {
+        return json(route, wantsOne ? data.team : [data.team]);
+      }
+
+      if (fn === 'revoke_invite') {
+        recorder.updates.push({ table: fn, body });
+        const id = (body as { p_invite_id?: string } | undefined)?.p_invite_id;
+        const invites = (data.team.pending_invites as Row[]).filter((i) => i.id !== id);
+        data.team = { ...data.team, pending_invites: invites, seats_used: (data.team.seats_used as number) - 1 };
+        return json(route, null);
+      }
+
+      if (fn === 'remove_member') {
+        recorder.updates.push({ table: fn, body });
+        if (data.teamActionError) return json(route, { message: data.teamActionError, code: 'P0001' }, 400);
+        const id = (body as { p_user_id?: string } | undefined)?.p_user_id;
+        const members = (data.team.members as Row[]).filter((m) => m.user_id !== id);
+        data.team = { ...data.team, members, seats_used: (data.team.seats_used as number) - 1 };
+        return json(route, [{ new_account_id: 'new-account' }]);
+      }
+
+      if (fn === 'change_member_role') {
+        recorder.updates.push({ table: fn, body });
+        if (data.teamActionError) return json(route, { message: data.teamActionError, code: 'P0001' }, 400);
+        const id = (body as { p_user_id?: string } | undefined)?.p_user_id;
+        // Handing over swaps the two roles, exactly as the database does.
+        const members = (data.team.members as Row[]).map((m) => ({
+          ...m,
+          role: m.user_id === id ? 'owner' : 'member',
+        }));
+        data.team = { ...data.team, members, is_owner: false };
+        return json(route, [{ owner_user_id: id }]);
+      }
+
+      if (fn === 'accept_invite') {
+        recorder.updates.push({ table: fn, body });
+        if (data.acceptInviteError) return json(route, { message: data.acceptInviteError, code: 'P0001' }, 400);
+        const row = { joined_account: ACCOUNT_ID, owner_name: 'Sam Carter' };
+        return json(route, wantsOne ? row : [row]);
+      }
+
+      if (fn === 'delete_note') {
+        recorder.updates.push({ table: fn, body });
+        if (data.deleteNoteError) return json(route, { message: data.deleteNoteError, code: 'P0001' }, 400);
+        const id = (body as { p_meeting_id?: string } | undefined)?.p_meeting_id;
+        data.notes = data.notes.filter((n) => n.id !== id);
+        return json(route, `${ACCOUNT_ID}/${id}/recording.mp3`);
+      }
+
+      if (fn === 'can_delete_account') {
+        return json(route, wantsOne ? data.deleteCheck : [data.deleteCheck]);
+      }
+
       return json(route, null);
     }
 
@@ -528,9 +733,12 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
         case 'usage':
           return [{ meetings_used: data.usage.used }];
         case 'plans':
-          return [{ name: 'Free', meetings_per_month: data.usage.limit }];
+          // The Plan screen asks for every active plan, to fill the test-only switch.
+          return url.searchParams.has('is_active')
+            ? data.switchablePlans
+            : [{ name: 'Free', meetings_per_month: data.usage.limit }];
         case 'profiles':
-          return [{ preferred_language: data.preferredLanguage }];
+          return [{ preferred_language: data.preferredLanguage, display_name: data.displayName }];
         case 'translations': {
           // Only a translation that is ALREADY saved is handed back here. Anything else is a miss,
           // so the app has to ask the server function for it, exactly as it would for real.

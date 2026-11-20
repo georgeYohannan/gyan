@@ -24,15 +24,18 @@ async function openTranslate(page: Page, tab: 'summary' | 'transcript' = 'summar
   await expect(page.getByRole('heading', { name: `Translate this ${tab}` })).toBeVisible();
 }
 
-test('Home is where you set your language, and it is remembered after a refresh', async ({ page }) => {
+test('Settings is where you set your language, and it is remembered after a refresh', async ({ page }) => {
   const recorder = await installFakes(page);
   await signIn(page);
 
-  // The account box at the bottom of Home is where a person looks for their own settings.
-  await expect(page.getByRole('heading', { name: 'Your account' })).toBeVisible();
+  // Settings > Profile is where a person looks for their own settings (it moved here in
+  // prompt 10; the note page keeps the picker as a shortcut).
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('link', { name: /^Profile\./ }).click();
+  await expect(page.getByRole('heading', { name: 'Language' })).toBeVisible();
   await expect(page.getByText('English', { exact: true }).first()).toBeVisible();
   await expect(
-    page.getByText('Your summaries, your to-dos and the chat answers are written in this language.'),
+    page.getByText('Gyan writes your summaries, your to-dos and its chat answers in this language.').first(),
   ).toBeVisible();
 
   await page.getByRole('button', { name: 'Change language' }).click();

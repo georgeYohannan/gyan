@@ -15,6 +15,8 @@ type AuthValue = {
   signUp: (email: string, password: string) => Promise<AuthResult>;
   signIn: (email: string, password: string) => Promise<AuthResult>;
   signOut: () => Promise<AuthResult>;
+  /** Sets a new password for the person who is signed in. */
+  changePassword: (password: string) => Promise<AuthResult>;
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -68,6 +70,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return error ? { error: friendlyAuthError(error) } : {};
   }, []);
 
-  const value = useMemo(() => ({ session, isLoading, signUp, signIn, signOut }), [session, isLoading, signUp, signIn, signOut]);
+  /**
+   * Changes the password of whoever is signed in right now.
+   *
+   * There is no id and no email here on purpose: Supabase changes the password of the person
+   * holding the session, so this can only ever change your own. The old password is not asked
+   * for, because being signed in already proved it.
+   */
+  const changePassword = useCallback<AuthValue['changePassword']>(async (password) => {
+    const { error } = await getSupabase().auth.updateUser({ password });
+    return error ? { error: friendlyAuthError(error) } : {};
+  }, []);
+
+  const value = useMemo(
+    () => ({ session, isLoading, signUp, signIn, signOut, changePassword }),
+    [session, isLoading, signUp, signIn, signOut, changePassword],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

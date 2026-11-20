@@ -3,13 +3,13 @@
 // The emails go out through Gyan's OWN Hostinger mailbox, gyan@gyantechai.com, over the normal
 // outgoing mail server. Runs on Supabase's servers, so the mailbox password never reaches the
 // app. Needs the server secret SMTP_PASSWORD (see docs/testing/prompt-9.md).
-import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+
+import { makeMailer } from '../_shared/mailer.ts';
 
 import {
   MESSAGES,
   RecapError,
-  fromHeader,
   messageForSendError,
 } from './email.ts';
 import {
@@ -25,7 +25,6 @@ import {
   MAX_RECIPIENTS,
   MAX_TRANSLATIONS_PER_SEND,
   SENDER,
-  SMTP,
 } from './settings.ts';
 
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Response | Promise<Response>): void };
@@ -69,43 +68,16 @@ function isOurOwnServer(authHeader: string, secretKey: string): boolean {
 /**
  * Posts the emails through Gyan's own Hostinger mailbox.
  *
- * ONE connection is opened for the whole send, not one per person: a mail server treats a fresh
- * sign in for every message as something close to abuse, and it is far slower. `close` must be
- * called when the sending is done, which is why this hands back both halves.
- *
- * The mailbox Gyan signs in as IS the address it sends from, so there is still only one place
- * the address is written down.
+ * The sending itself lives in _shared/mailer.ts, because the invite email goes through the same
+ * mailbox. All that is left here is turning a refusal from the mail server into words a person
+ * can read, which is the recap's own job and nobody else's.
  */
-function makeMailer(password: string) {
-  let client: SMTPClient | undefined;
-
-  function open(): SMTPClient {
-    if (!client) {
-      client = new SMTPClient({
-        connection: {
-          hostname: SMTP.hostname,
-          port: SMTP.port,
-          // Port 465 is encrypted from the very first byte, rather than starting in the clear
-          // and turning encryption on afterwards. The password is never sent in the open.
-          tls: true,
-          auth: { username: SENDER.email, password },
-        },
-      });
-    }
-    return client;
-  }
+function makeRecapMailer(password: string) {
+  const mailer = makeMailer(password);
 
   async function send(message: OutgoingEmail): Promise<string> {
     try {
-      await open().send({
-        from: fromHeader(SENDER),
-        to: message.to,
-        replyTo: SENDER.replyTo,
-        subject: message.subject,
-        // denomailer calls the plain words `content` and the pretty version `html`.
-        content: message.text,
-        html: message.html,
-      });
+      await mailer.send(message);
     } catch (e) {
       // Log the KIND of problem only. Never log the password, an address, or the note's words.
       console.error('recap send refused by the mail server', e instanceof Error ? e.name : 'error');
@@ -116,15 +88,7 @@ function makeMailer(password: string) {
     return '';
   }
 
-  async function close(): Promise<void> {
-    try {
-      await client?.close();
-    } catch {
-      // Already shut, or never opened. Nothing to do, and nothing worth failing a send over.
-    }
-  }
-
-  return { send, close };
+  return { send, close: mailer.close };
 }
 
 /**
@@ -234,7 +198,7 @@ Deno.serve(async (req) => {
   if (!smtpPassword) return reply({ ok: false, message: MESSAGES.notSetUp });
 
   // 4. Send. The app is waiting on a hand-pressed send, so this is not put in the background.
-  const mailer = makeMailer(smtpPassword);
+  const mailer = makeRecapMailer(smtpPassword);
   try {
     const result = await runRecap({
       admin,

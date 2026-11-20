@@ -187,9 +187,7 @@ export function escapeHtml(value: string): string {
  * The real address is never written here. It lives only in settings.ts, and a test checks
  * that this file does not hold a copy of it.
  */
-export function fromHeader(sender: Sender): string {
-  return `${sender.name} <${sender.email}>`;
-}
+export { fromHeader } from '../_shared/sender.ts';
 
 /** "Priya Shah, by Friday" - the quiet line under a to-do, when there is anything to say. */
 export function itemNote(item: RecapItem): string {
@@ -383,5 +381,5 @@ export function noteUrlFor(appUrl: string, meetingId: string): string {
 
 /** The web address of the page where recaps are switched off. */
 export function settingsUrlFor(appUrl: string): string {
-  return `${appUrl.replace(/\/+$/, '')}/recap-emails`;
+  return `${appUrl.replace(/\/+$/, '')}/settings/recaps`;
 }

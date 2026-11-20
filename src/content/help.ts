@@ -490,6 +490,184 @@ export const HELP: Record<string, HelpEntry> = {
     ],
   },
 
+  settings: {
+    id: 'settings',
+    title: 'Settings',
+    sentences: [
+      'Settings is where you change things about you and about your account.',
+      'Each row says what it is set to now, so you can often check something without opening it.',
+      'Tap a row to open it. The ? button on every page explains that page.',
+    ],
+    lists: [
+      {
+        heading: 'What is in each section',
+        items: [
+          'Profile: your name, your email, the language Gyan writes in, and your password.',
+          'Plan and usage: which plan you are on, and how much of it you have used.',
+          'Team: the people who share this account, and inviting more of them.',
+          'Recaps: who gets a recap email, and when.',
+          'Data and privacy: deleting a note, or deleting your account.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-390.png'),
+        alt: 'The Settings list on a phone, with five rows: Profile, Plan and usage, Team, Recaps, and Data and privacy.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-1280.png'),
+        alt: 'The same Settings list on a wide web window.',
+      },
+    ],
+  },
+  settingsProfile: {
+    id: 'settingsProfile',
+    title: 'Your profile',
+    sentences: [
+      'This page is about you, not about your account. Only you can change it.',
+      'Your name is what your team sees next to the notes you make.',
+      'The language you pick here is the one Gyan writes your summaries, your to-dos and its chat answers in.',
+      'You can change your password here. Type the new one twice, and you stay signed in.',
+    ],
+    lists: [
+      {
+        heading: 'Good to know',
+        items: [
+          'You can also change the language from any note, without coming here.',
+          'Your email is how you sign in, so it cannot be changed here. Ask us if you need to.',
+          'A password needs at least 8 characters.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-profile-390.png'),
+        alt: 'The Profile page on a phone, with a name box, an email, the language, and two password boxes.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-profile-1280.png'),
+        alt: 'The same Profile page on a wide web window.',
+      },
+    ],
+  },
+  settingsPlan: {
+    id: 'settingsPlan',
+    title: 'Plan and usage',
+    sentences: [
+      'This shows which plan your account is on, and how much of it has been used.',
+      'The bar is the meetings you have used this month. It starts again on the 1st.',
+      'Every number here comes from your plan, so it changes by itself when your plan does.',
+    ],
+    lists: [
+      {
+        heading: 'Two different counts',
+        items: [
+          'Meetings are counted for the whole account. Everybody on it shares them.',
+          'Chat questions are counted for you alone, and start again every day.',
+          'Pasted text never counts as a meeting, and still works when you are at the limit.',
+          'A note that failed does not count either.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-plan-390.png'),
+        alt: 'Plan and usage on a phone, with a meter showing meetings used this month and a list of what the plan includes.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-plan-1280.png'),
+        alt: 'The same Plan and usage page on a wide web window.',
+      },
+    ],
+  },
+  settingsTeam: {
+    id: 'settingsTeam',
+    title: 'Your team',
+    sentences: [
+      'A team is the people who share one account. They can all read the same notes.',
+      'The account owner invites people by email. Everybody else can see the team but not change it.',
+      'A seat is taken by somebody on the account, and by an invite that is still waiting.',
+      'When the seats are full, free one up by removing somebody or taking an invite back.',
+    ],
+    lists: [
+      {
+        heading: 'Inviting somebody',
+        items: [
+          'Type their email address and tap Send invite.',
+          'They get an email with a link. The link only works for that address.',
+          'The link stops working after 14 days. Send a new one if it runs out.',
+          'Until they join, their invite is holding a seat. Take it back to free the seat.',
+        ],
+      },
+      {
+        heading: 'Removing somebody',
+        items: [
+          'The notes they made stay here, with the account.',
+          'Their own chats go with them, because only they could ever read those.',
+          'They keep their Gyan login, with a workspace of their own.',
+          'You can invite them back at any time.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-team-390.png'),
+        alt: 'The Team page on a phone, showing seats used, a box to invite somebody by email, and a list of made up people.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-team-1280.png'),
+        alt: 'The same Team page on a wide web window.',
+      },
+    ],
+  },
+  settingsData: {
+    id: 'settingsData',
+    title: 'Data and privacy',
+    sentences: [
+      'This is where you make something go away for good.',
+      'Deleting a note removes its recording, its transcript, its summary, its to-dos and its chat.',
+      'Deleting your account removes everything, and Gyan keeps no copy.',
+      'Both ask you first, and neither can be undone.',
+    ],
+    lists: [
+      {
+        heading: 'Before you delete a note',
+        items: [
+          'It does not give you the meeting back this month. It was already counted.',
+          'Only the person who made a note, or the account owner, can delete it.',
+        ],
+      },
+      {
+        heading: 'Before you delete your account',
+        items: [
+          'If other people are still on your account, remove them on the Team page first.',
+          'You have to type DELETE, so it cannot happen by accident.',
+          'If you are on somebody else\u2019s team, the notes you made stay with them.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-data-390.png'),
+        alt: 'Data and privacy on a phone, with a list of made up notes to delete and a red Delete account panel.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-data-1280.png'),
+        alt: 'The same Data and privacy page on a wide web window.',
+      },
+    ],
+  },
   signUp: {
     id: 'signUp',
     title: 'Sign up',

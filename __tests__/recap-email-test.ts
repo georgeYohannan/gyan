@@ -52,7 +52,7 @@ function render(over: Partial<Parameters<typeof renderRecap>[0]> = {}) {
     translated: false,
     ownerName: 'Sam Carter',
     noteUrl: 'https://app.example.test/note/abc',
-    settingsUrl: 'https://app.example.test/recap-emails',
+    settingsUrl: 'https://app.example.test/settings/recaps',
     sender: SENDER_FOR_TESTS,
     ...over,
   });
@@ -156,7 +156,7 @@ describe('what is in the email', () => {
   test('the app addresses are built from one app address', () => {
     expect(noteUrlFor('https://app.example.test', 'abc')).toBe('https://app.example.test/note/abc');
     expect(noteUrlFor('https://app.example.test/', 'abc')).toBe('https://app.example.test/note/abc');
-    expect(settingsUrlFor('https://app.example.test/')).toBe('https://app.example.test/recap-emails');
+    expect(settingsUrlFor('https://app.example.test/')).toBe('https://app.example.test/settings/recaps');
   });
 });
 
@@ -166,13 +166,13 @@ describe('the footer', () => {
     for (const version of [html, text]) {
       expect(version).toContain("Sam Carter's workspace in gyan");
       expect(version).toContain('Turn off recaps');
-      expect(version).toContain('https://app.example.test/recap-emails');
+      expect(version).toContain('https://app.example.test/settings/recaps');
       expect(version).toContain('hello@example.test');
     }
   });
 
   test('the Turn off recaps link really is a link, pointing at a page in the app', () => {
-    expect(render().html).toContain('href="https://app.example.test/recap-emails"');
+    expect(render().html).toContain('href="https://app.example.test/settings/recaps"');
   });
 
   test('it is there even when the note is almost empty', () => {

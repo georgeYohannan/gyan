@@ -11,7 +11,12 @@ import { defineConfig, devices } from '@playwright/test';
  * Run them with:  npm run e2e
  * The real end to end check (with real AI) is the hand checklist in docs/testing/prompt-6.md.
  */
-const PORT = 8081;
+/**
+ * The port the scripts run the web app on.
+ * 8081 is Expo's usual one. Set GYAN_E2E_PORT to something else to run the scripts while your
+ * own `npx expo start` is already using 8081.
+ */
+const PORT = Number(process.env.GYAN_E2E_PORT ?? 8081);
 
 export default defineConfig({
   testDir: './tests',
