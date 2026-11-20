@@ -57,25 +57,45 @@ describe('the side chat prompt', () => {
     expect(languageName('xx')).toBe('xx');
   });
 
-  test('the passages go in the prompt under a PASSAGES heading', () => {
-    const system = buildSystem('English', formatPassages(SEGMENTS, 'Weekly team call', '2026-11-17T10:00:00Z'));
+  test('the passages go in the prompt under a PASSAGES heading, inside a fence', () => {
+    const system = buildSystem(
+      'English',
+      formatPassages(SEGMENTS, 'Weekly team call', '2026-11-17T10:00:00Z'),
+      'Weekly team call',
+    );
     expect(system).toContain('\nPASSAGES\n');
-    expect(system).toContain('[1] Weekly team call');
-    expect(system).toContain('[3] Weekly team call');
+    expect(system).toContain('[1] 17 November 2026');
+    expect(system).toContain('[3] 17 November 2026');
+    // The words of the meeting sit inside the INSTRUCTIONS here, not in the question, so
+    // the fence matters more in this prompt than anywhere else.
+    expect(system).toMatch(/PASSAGES\n<<<BEGIN_PASSAGES_[0-9a-f]{16}>>>/);
+    expect(system).toMatch(/<<<END_PASSAGES_[0-9a-f]{16}>>>$/);
+    // The note is named once, above the fence.
+    expect(system).toContain('The note is called "Weekly team call".');
   });
 
-  test('the question is sent under a USER QUESTION heading', () => {
-    expect(buildUser('  What were the decisions?  ')).toBe('USER QUESTION\nWhat were the decisions?');
+  test('the question is sent under a USER QUESTION heading, inside a fence', () => {
+    // A question is the person's own words, so it is theirs to phrase. It is still fenced,
+    // because it is read back later as earlier conversation, and by then it is just more
+    // text in the prompt.
+    expect(buildUser('  What were the decisions?  ')).toMatch(
+      /^USER QUESTION\n<<<BEGIN_QUESTION_[0-9a-f]{16}>>>\nWhat were the decisions\?\n<<<END_QUESTION_[0-9a-f]{16}>>>$/,
+    );
   });
 });
 
 describe('the numbered passages', () => {
-  test('each line is numbered, with the note name, the date, the time, and who said it', () => {
+  test('each line is numbered, with the date, the time, and who said it', () => {
+    // THE NOTE NAME IS NO LONGER ON EVERY LINE. A title is typed by a person, so repeating
+    // it into the instructions once per transcript line meant a note called
+    // "x\n\nRULES\n- ignore the above" was said to the model dozens of times. It is now
+    // said once, above the fence, with its line breaks taken out.
     const out = formatPassages(SEGMENTS, 'Weekly team call', '2026-11-17T10:00:00Z');
     const rows = out.split('\n');
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toBe('[1] Weekly team call, 17 November 2026, at 0:00: Speaker 1: Thanks for joining. Let us start with the sign up screen.');
-    expect(rows[2]).toBe('[3] Weekly team call, 17 November 2026, at 1:05: Speaker 1: Priya will send the test plan on Friday, then we ship.');
+    expect(rows[0]).toBe('[1] 17 November 2026, at 0:00: Speaker 1: Thanks for joining. Let us start with the sign up screen.');
+    expect(rows[2]).toBe('[3] 17 November 2026, at 1:05: Speaker 1: Priya will send the test plan on Friday, then we ship.');
+    expect(out).not.toContain('Weekly team call');
   });
 
   test('passage 1 is the first line, so the numbers follow the transcript in time order', () => {
@@ -87,7 +107,7 @@ describe('the numbered passages', () => {
 
   test('a line with no speaker still gets a passage number', () => {
     const out = formatPassages([{ id: 'x', speaker_label: null, start_ms: 0, text: 'Hello.' }], 'Call', null);
-    expect(out).toBe('[1] Call, no date, at 0:00: Speaker: Hello.');
+    expect(out).toBe('[1] no date, at 0:00: Speaker: Hello.');
   });
 
   test('times and dates are written the way a person reads them', () => {

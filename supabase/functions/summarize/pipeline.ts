@@ -1,5 +1,6 @@
 // The slow part of a summary: read the words -> ask Claude -> save (or fail).
 // Pure code, so Jest can test it with a fake database and a fake Claude.
+import { looksLikeText, SNIFF_BYTES, WRONG_TYPE_MESSAGE } from '../_shared/filetype.ts';
 import {
   buildSystem,
   buildUser,
@@ -38,7 +39,14 @@ export type AdminLike = {
   };
   storage: {
     from(bucket: string): {
-      download(path: string): PromiseLike<{ data: { text(): Promise<string> } | null; error: unknown }>;
+      download(path: string): PromiseLike<{
+        data: {
+          text(): Promise<string>;
+          /** Just the first few thousand bytes, to work out what the file really is. */
+          slice(start?: number, end?: number): { arrayBuffer(): Promise<ArrayBuffer> };
+        } | null;
+        error: unknown;
+      }>;
     };
   };
 };
@@ -72,6 +80,18 @@ async function readWords(o: SummarizeOptions): Promise<{ words: string; hasTimes
     if (!o.filePath) throw new SummaryError(MESSAGES.empty);
     const { data, error } = await o.admin.storage.from(o.bucket).download(o.filePath);
     if (error || !data) throw new SummaryError(MESSAGES.empty);
+
+    // IS THIS REALLY WRITING? Until now Gyan believed whatever the app said a file was, and
+    // the app reads that from the file's name. A note marked as text has its raw contents
+    // put straight into the AI prompt, with no transcription step in between -- so a file
+    // claiming to be text was the shortest route from "upload anything" to "put anything I
+    // like in front of the model". The bytes decide now, not the name.
+    // Only the first few thousand bytes are looked at. The whole file is already in hand
+    // here -- a text note is small, and its words are about to be read anyway -- so there
+    // is nothing to save by asking for a range, unlike in the transcribe step.
+    const bytes = new Uint8Array(await data.slice(0, SNIFF_BYTES).arrayBuffer());
+    if (!looksLikeText(bytes)) throw new SummaryError(WRONG_TYPE_MESSAGE);
+
     const words = (await data.text()).trim();
     if (words === '') throw new SummaryError(MESSAGES.empty);
     return { words, hasTimes: false };

@@ -50,7 +50,13 @@ function fakeAdmin(
             Promise.resolve(
               options.downloadError
                 ? { data: null, error: { message: 'missing' } }
-                : { data: { text: async () => options.downloadText ?? 'Some pasted notes.' }, error: null },
+                : {
+                    // The stand-in behaves like the real thing, slice() and all. A stand-in
+                    // that is more helpful than reality is how the 2026-11-20 invite bug
+                    // passed every test and then broke in front of a real customer.
+                    data: fakeFile(options.downloadText ?? 'Some pasted notes.'),
+                    error: null,
+                  },
             ),
         };
       },
@@ -82,6 +88,20 @@ const base = {
   usdPerMtokIn: 2,
   usdPerMtokOut: 10,
 };
+
+/**
+ * Stands in for a file that comes back from storage. It answers text() like the real one,
+ * and slice().arrayBuffer() too, which is what the kind-of-file check reads.
+ */
+function fakeFile(text: string) {
+  const bytes = new TextEncoder().encode(text);
+  return {
+    text: async () => text,
+    slice: (start = 0, end = bytes.length) => ({
+      arrayBuffer: async () => bytes.slice(start, end).buffer as ArrayBuffer,
+    }),
+  };
+}
 
 describe('writing a summary end to end (fake Claude, fake database)', () => {
   beforeEach(() => jest.spyOn(console, 'error').mockImplementation(() => {}));
@@ -310,5 +330,67 @@ describe('handing the note on once it is Ready', () => {
     const { admin } = fakeAdmin();
     const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
     expect(await runSummary({ ...base, admin, call })).toBe(true);
+  });
+});
+
+describe('a file that is not what it says it is', () => {
+  beforeEach(() => jest.spyOn(console, 'error').mockImplementation(() => {}));
+  afterEach(() => jest.restoreAllMocks());
+
+  test('A PICTURE SAVED AS A TEXT NOTE NEVER REACHES CLAUDE', async () => {
+    // This is the hole the byte check closes. A note marked as text has its raw contents put
+    // straight into the AI prompt, with no transcription step in between -- so before this
+    // check, uploading a file and calling it text was the shortest route from "upload
+    // anything" to "put anything I like in front of the model".
+    const png = '\u0089PNG\r\n\u001a\n' + '\u0000\u0001\u0002binary rubbish';
+    const { admin, calls } = fakeAdmin({ downloadText: png });
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+
+    const ok = await runSummary({ ...base, admin, call, source: 'text' });
+
+    expect(ok).toBe(false);
+    // Claude was never asked anything at all.
+    expect(call).not.toHaveBeenCalled();
+    // And the note says so in plain words, with nothing about bytes or signatures in it.
+    const message = String(calls[0].args.p_message);
+    expect(message).toContain('not the kind of file it says it is');
+    expect(message).not.toMatch(/byte|signature|utf|magic|sniff/i);
+  });
+
+  test('a recording renamed to .txt never reaches Claude either', async () => {
+    // An MP3 saved as a text note would have had its raw audio bytes read as words.
+    const { admin, calls } = fakeAdmin({ downloadText: 'ID3\u0003\u0000\u0000\u0000audio frames here' });
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+
+    await runSummary({ ...base, admin, call, source: 'text' });
+
+    expect(call).not.toHaveBeenCalled();
+    expect(String(calls[0].args.p_message)).toContain('not the kind of file it says it is');
+  });
+
+  test('REAL WRITING IN ANY SCRIPT STILL WORKS', async () => {
+    // The check must not become a reason somebody's notes are refused.
+    for (const words of [
+      'Notes from the meeting. We agreed to ship on Friday.',
+      '\u4f1a\u8b70\u306e\u8a18\u9332\u3002\u91d1\u66dc\u65e5\u306b\u51fa\u8377\u3059\u308b\u3053\u3068\u3067\u5408\u610f\u3057\u307e\u3057\u305f\u3002',
+      '\u092c\u0948\u0920\u0915 \u0915\u0947 \u0928\u094b\u091f\u0964 \u0939\u092e \u0936\u0941\u0915\u094d\u0930\u0935\u093e\u0930 \u0915\u094b \u092d\u0947\u091c\u0928\u0947 \u092a\u0930 \u0938\u0939\u092e\u0924 \u0939\u0941\u0908\u0964',
+      '\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u0627\u062c\u062a\u0645\u0627\u0639. \u0627\u062a\u0641\u0642\u0646\u0627 \u0639\u0644\u0649 \u0627\u0644\u0634\u062d\u0646 \u064a\u0648\u0645 \u0627\u0644\u062c\u0645\u0639\u0629.',
+      '# Heading\n\n- a bullet\n- another\n\n\tindented, with a tab',
+    ]) {
+      const { admin } = fakeAdmin({ downloadText: words });
+      const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+      await runSummary({ ...base, admin, call, source: 'text' });
+      expect(call).toHaveBeenCalled();
+    }
+  });
+
+  test('a recording is NOT byte-checked by the summary step, because it has a transcript', async () => {
+    // An upload goes through Deepgram first, and the summary reads the saved transcript
+    // lines rather than the file. The byte check for recordings lives in the transcribe
+    // step, where the file is actually used.
+    const { admin } = fakeAdmin({});
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+    await runSummary({ ...base, admin, call, source: 'upload' });
+    expect(call).toHaveBeenCalled();
   });
 });

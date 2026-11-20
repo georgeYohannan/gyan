@@ -31,7 +31,14 @@ export async function uploadFile(
       xhr.setRequestHeader('x-upsert', 'true');
       xhr.upload.onprogress = (e) => onProgress?.(e.lengthComputable ? e.loaded / e.total : undefined);
       xhr.onload = () =>
-        xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(xhr.status === 413 ? 'too_big' : `upload_failed_${xhr.status}: ${xhr.responseText}`));
+        xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(
+              new Error(
+                // The status only. This used to paste the store's whole reply into the
+                // error, which put somebody else's internal wording (and the file path)
+                // into a message that can end up in a crash report.
+                xhr.status === 413 ? 'too_big' : `upload_failed_${xhr.status}`,
+              ),
+            );
       xhr.onerror = () => reject(new Error('network'));
       xhr.ontimeout = () => reject(new Error('timeout'));
       xhr.send(body);

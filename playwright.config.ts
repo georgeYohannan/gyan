@@ -40,9 +40,20 @@ export default defineConfig({
   webServer: {
     // --clear wipes Metro's cache first. Without it, a bundle left over from before new files
     // were added gives a "Requiring unknown module" error (see docs/testing/prompt-4.md).
-    command: `npx expo start --web --port ${PORT} --clear`,
+    // The settings are written into the command itself rather than passed alongside it,
+    // because that is the one way there is no doubt they reached the bundler: Metro writes
+    // every EXPO_PUBLIC_ value into the bundle as it builds, from its own environment.
+    command:
+      `EXPO_NO_DOTENV=1 ` +
+      `EXPO_PUBLIC_SUPABASE_URL=https://fake.supabase.co ` +
+      `EXPO_PUBLIC_SUPABASE_KEY=fake-key-for-the-browser-scripts ` +
+      `EXPO_PUBLIC_GYAN_TEST_TOOLS=0 ` +
+      `npx expo start --web --port ${PORT} --clear`,
     url: `http://localhost:${PORT}`,
-    reuseExistingServer: true,
+    // NOT reused. A server that is already running was started with somebody's own
+    // settings and possibly an older bundle, and these scripts are supposed to be testing a
+    // normal build with known settings. Set GYAN_E2E_PORT to run while a dev server is up.
+    reuseExistingServer: false,
     timeout: 180_000,
     stdout: 'ignore',
     stderr: 'ignore',

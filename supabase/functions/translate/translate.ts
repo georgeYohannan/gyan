@@ -2,6 +2,8 @@
 // No Deno-only code here, so Jest can test this file without ever calling Claude.
 // The prompt is the one in docs/data-model.md ("4. Translation"), word for word.
 
+import { untrustedJsonRules } from '../_shared/untrusted.ts';
+
 /** The two things a person can translate. */
 export const TRANSLATE_KINDS = ['summary', 'transcript'] as const;
 export type TranslateKind = (typeof TRANSLATE_KINDS)[number];
@@ -75,10 +77,29 @@ export const LANGUAGE_NAMES: Record<string, string> = {
   sv: 'Swedish',
 };
 
-/** 'en' -> 'English'. An unknown code is passed through as it is. */
+/**
+ * 'en' -> 'English'.
+ *
+ * An unknown code used to be passed straight through into the prompt. Two reasons that is
+ * gone: a code is up to eleven characters of somebody else's choosing landing in the
+ * instructions, and far more expensively, every different code bought a SEPARATE
+ * translation. Translations are saved under (kind, note, language), so 'en-AA', 'en-AB' and
+ * so on each missed the saved copy and paid for a fresh one. One person could have run up an
+ * unlimited bill with a loop.
+ *
+ * Now a code Gyan does not offer is simply not a language, and the caller refuses it.
+ */
 export function languageName(code: string | null | undefined): string {
   const key = (code ?? 'en').toLowerCase().split('-')[0];
-  return LANGUAGE_NAMES[key] ?? (code ?? 'English');
+  return LANGUAGE_NAMES[key] ?? 'English';
+}
+
+/** The 16 languages Gyan offers. Anything else is refused rather than bought. */
+export function isLanguageWeOffer(code: string | null | undefined): boolean {
+  if (!code) return false;
+  // The country part is allowed ('pt-BR'), but the language itself has to be one of ours.
+  if (!/^[a-z]{2}(-[A-Za-z0-9]{2,8})?$/.test(code)) return false;
+  return Object.prototype.hasOwnProperty.call(LANGUAGE_NAMES, code.toLowerCase().split('-')[0]);
 }
 
 /** 'en-GB' -> 'en'. Used to tell two languages apart without the country part. */
@@ -139,6 +160,8 @@ export const PROMPT_VERSION = 2;
 export function buildSystem(language: string): string {
   return `Translate the content into ${language}.
 
+${untrustedJsonRules('content')}
+
 RULES
 - Translate meaning faithfully. Do not add, remove, or explain anything.
 - Translate every ordinary word, including technical, legal, financial, and business terms. A word being technical is not a reason to leave it in English.
@@ -150,6 +173,12 @@ RULES
 
 /** The USER half of the prompt, from docs/data-model.md: just the content, as JSON. */
 export function buildUser(content: TranslatedContent): string {
+  // Stays PURE JSON, deliberately. This is the safest of the three prompts and was already
+  // so before prompt 11: JSON turns every quote and line break into an escape, so words
+  // cannot break out of the slot they sit in, the answer is held to a strict shape, and it
+  // is checked for the same number of pieces that went in. Markers round it would only have
+  // muddied "return only the translation". The warning lives in the instructions instead,
+  // in untrustedJsonRules.
   return JSON.stringify(content);
 }
 

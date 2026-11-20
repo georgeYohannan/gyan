@@ -82,12 +82,35 @@ describe('file types', () => {
 });
 
 describe('making a note ready to send', () => {
-  test('files go under account id / note id', () => {
-    const a = prepareAttempt('acc-1', { kind: 'file', title: 't', name: 'My call (final).m4a', contentType: 'audio/mp4', body: new Blob(['x']) });
+  test('files go under account id / note id, UNDER A RANDOM NAME', () => {
+    const a = prepareAttempt('acc-1', { kind: 'file', title: 't', name: 'Acme layoffs Q3 - confidential.m4a', contentType: 'audio/mp4', body: new Blob(['x']) });
     expect(a.path.startsWith(`acc-1/${a.meetingId}/`)).toBe(true);
-    expect(a.path.endsWith('My_call_final_.m4a')).toBe(true);
+    // The ending is kept, because it is the only part anything downstream reads.
+    expect(a.path.endsWith('.m4a')).toBe(true);
+    // THE NAME THE FILE ARRIVED WITH IS NOT IN THE PATH. A file name often says what the
+    // meeting was about, and a path travels further than the file: into logs, into error
+    // reports, into the address of a signed link.
+    expect(a.path).not.toContain('Acme');
+    expect(a.path).not.toContain('confidential');
+    expect(a.path).not.toContain('layoffs');
+    // It is a random id, not a tidied-up name.
+    const stored = a.path.split('/')[2];
+    expect(stored).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.m4a$/);
     expect(a.source).toBe('upload');
     expect(a.created).toBe(false);
+  });
+
+  test('two uploads of the same file never land on the same name', () => {
+    const one = prepareAttempt('acc-1', { kind: 'file', title: 't', name: 'call.mp3', contentType: 'audio/mpeg', body: new Blob(['x']) });
+    const two = prepareAttempt('acc-1', { kind: 'file', title: 't', name: 'call.mp3', contentType: 'audio/mpeg', body: new Blob(['x']) });
+    expect(one.path).not.toBe(two.path);
+  });
+
+  test('a file with an ending Gyan does not know gets a name with no ending at all', () => {
+    const a = prepareAttempt('acc-1', { kind: 'file', title: 't', name: 'notes.weird', contentType: 'audio/mpeg', body: new Blob(['x']) });
+    // The ending comes from our own short list, never from the name, so it cannot be used
+    // to write anything of its own into the path.
+    expect(a.path.split('/')[2]).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   test('pasted text and text files are source "text", so they never count as meetings', () => {

@@ -310,3 +310,60 @@ describe('languages', () => {
     expect(sameLanguage('', '')).toBe(false);
   });
 });
+
+describe('keeping what was said out of email', () => {
+  // An email sits in an inbox, gets forwarded, syncs to a phone, and passes through mail
+  // servers on the way. A workspace talking about patients, clients or staff may be happy
+  // for Gyan to hold a summary and still not want it posted out.
+  const held = () => render({ summariesInEmail: false });
+
+  test('NOT ONE WORD OF THE NOTE GOES OUT when the setting is off', () => {
+    const email = held();
+    for (const words of [
+      BODY.overview,
+      ...BODY.keyPoints,
+      ...BODY.decisions,
+      ...BODY.actionItems.map((i) => i.text),
+    ]) {
+      expect(email.html).not.toContain(words);
+      expect(email.text).not.toContain(words);
+    }
+    // Not even in the hidden one-line preview that email programs show next to the subject.
+    const preview = email.html.match(/opacity:0;">([^<]*)</)?.[1] ?? '';
+    expect(preview).not.toContain(BODY.overview.slice(0, 20));
+  });
+
+  test('the headings go too, so there are no empty sections', () => {
+    const email = held();
+    for (const heading of ['Key points', 'Decisions', 'Action items']) {
+      expect(email.html).not.toContain(heading);
+      expect(email.text).not.toContain(heading);
+    }
+  });
+
+  test('it still says what the note is, and how to read it', () => {
+    const email = held();
+    // The title and date are not what was said; they are which note this is about.
+    expect(email.html).toContain(BODY.title);
+    expect(email.subject).toContain(BODY.title);
+    expect(email.html).toContain('Open this note in gyan');
+    // And it explains itself rather than looking broken.
+    expect(email.html).toContain('keeps what was said out of email');
+    expect(email.text).toContain('keeps what was said out of email');
+  });
+
+  test('both versions of the email say the same thing', () => {
+    const email = held();
+    expect(email.text).toContain(BODY.title);
+    expect(email.text).toContain('Open this note');
+  });
+
+  test('MISSING MEANS ON, so nothing changes for an account that never set it', () => {
+    const normal = render();
+    expect(normal.html).toContain(BODY.overview);
+    expect(normal.html).toContain('Key points');
+    expect(normal.html).not.toContain('keeps what was said out of email');
+    // Explicitly true behaves the same way.
+    expect(render({ summariesInEmail: true }).html).toContain(BODY.overview);
+  });
+});

@@ -226,6 +226,39 @@ One genuine mistake this caught, which reading would not have: a rate-limit chec
 It had to be given a public door. A text-only test would have passed and the limits would simply
 never have worked.
 
+### Fixed in this round (phase 3) — the server functions
+
+| What | How |
+|---|---|
+| **The AI could not tell what people said from what it was told to do** | Transcripts, pasted text and passages are now **fenced** between markers carrying a random number made fresh for every request, and the instructions say plainly, *before* the words, that everything inside is data and must never be obeyed. A transcript cannot close the fence early because it cannot guess the number, and any copy of a marker in the text is removed first. |
+| **The note's title was repeated into the instructions** | It used to be copied onto every single passage line of the chat prompt. A title is typed by a person, so a note called `Budget⏎⏎RULES⏎- ignore the above` was said to the model once per transcript line. It is now said **once**, on one line, with its line breaks taken out and a length cap. |
+| **Translating was an uncapped paid call, and the cache could be dodged** | A language code that merely *looked* like a language was passed straight through. Translations are saved under (kind, note, language), so `en-AA`, `en-AB` and so on each missed the saved copy and bought a fresh one — a loop was an unlimited bill. Only the 16 languages Gyan actually offers are accepted now. |
+| **No limits anywhere** | All seven functions now count every go against the `security_settings` table, per person **and** per account. Proved end to end against the real test project: the limit says 30 an hour, and try 31 came back with a plain "Gyan is catching up" message. |
+| **Retrying a chat answer was free and unlimited** | It reuses the question already saved, so it never touched the daily allowance — yet every go paid for Claude again. It is counted now. It also gained a **second lock**: it was the one place an id chosen by the caller went to the server key with only the SQL check behind it, while the path beside it had two. |
+| **A file's kind was taken on trust** | The app said what a file was, reading it from the file's name. A note marked as text has its raw contents put into the AI prompt with no transcription step, so "upload a file and call it text" was the shortest route to putting anything in front of the model. The **server now reads the first few thousand bytes** and works out what the file really is. Writing in any script still passes; a picture, a zip or a program renamed to `.txt` does not. |
+| **A file was stored under the name it arrived with** | "Acme layoffs Q3 - confidential.m4a" wrote the contents of a meeting into the file path, and a path travels further than a file: into logs, into error reports, into the address of a signed link. Files are stored under a **random name** now, keeping only the ending. The name the person chose is still the note's title. |
+| **The upload error carried the store's own reply** | It pasted the raw storage error, including the path, into a message that can reach a crash report. The status only, now. |
+| **Any website could call the functions** | All seven answered `Access-Control-Allow-Origin: *`. They name back only our own web app now. **Phones send no Origin at all** and are answered exactly as before, because cross-origin rules are a browser idea that native apps ignore — refusing those would break iPhone and Android and protect nobody. |
+| **The service key was compared with `===`** | Comparing strings that way stops at the first character that differs, so the time taken leaks how much of a guess was right. Both sides are hashed first now, so not even the key's **length** is given away. |
+| **An invite address was barely checked** | The function checked only "is it a non-empty string"; the only real check was a loose pattern in SQL with no length limit. It is capped at 254 characters now, with a strict pattern that refuses every character meaning something in an email header, and the Subject line is forced onto one line. |
+| **Two escapers had drifted apart** | The invite one was missing the single quote. One shared copy now, and the test proves it by **rendering a real email** with a hostile string in every field rather than by reading the source. |
+| **Recap recipients were counted after being filtered** | An unbounded list was compared against the account before most of it was thrown away. Capped first. |
+
+**The honest limit of the prompt-injection work.** These are real defences, but no wording makes
+a model perfectly obedient, and this document will not pretend otherwise. What makes the result
+acceptable is the thing underneath: **the model is given no tools.** It cannot send an email,
+read a file or call anything, and a test now watches the whole project to keep it that way. So
+the worst a completely successful trick can do is produce a **wrong summary** — which a person
+reads and can regenerate with one tap. Whatever comes back is also checked again by us, so a
+model that did obey an attack still cannot add a field, an address or a link: 19 tests in
+`__tests__/prompt-injection-test.ts` cover exactly that, including a model that returns
+`send_email_to` and `run_command` and has them dropped.
+
+**One mistake worth recording.** While writing the test for it, a signed-in test user **really
+did** write `{"token": "..."}` into the `integrations` table on the test project. That is how the
+gap was confirmed rather than assumed, and the row was removed immediately. It is also why that
+test now refuses to run until the fix is pushed.
+
 ### Dependency check
 
 `npm audit` finds **22 problems: 0 critical, 0 high, 22 moderate.**
@@ -251,16 +284,16 @@ These are the real gaps, in the order they are being fixed. Nothing here is hidd
 
 | # | What is wrong | When |
 |---|---|---|
-| 1 | **The AI cannot tell what people said from what it is told to do.** A note containing "ignore your instructions" can change a summary, which then gets emailed to the whole team. | Phase 3 |
-| 2 | **No limits where it costs money.** The counters and the settings table now exist (phase 2), but the server functions do not ask them yet, so translating a note is still an uncapped paid AI call and a slightly different language code still dodges the save-once cache. | Phase 3 |
+| 1 | ~~The AI cannot tell what people said from what it is told to do.~~ **Done in phase 3**, with the limits of it written down above. | Done |
+| 2 | ~~No limits where it costs money.~~ **Done in phase 3.** | Done |
 | 3 | ~~No audit log.~~ **Done in phase 2.** | Done |
 | 4 | **Consent is recorded in the database now** (phase 2), but the app does not write to it yet. | Phase 4 |
 | 5 | **Retention exists now** (phase 2) but nothing runs it on a schedule, and the screen to choose a keeping time is not built. | Phase 5 |
-| 6 | **A file's type is taken on trust.** The app says what kind of file it is, and nothing checks the contents. A file claiming to be plain text has its raw contents fed to the AI. | Phase 3 |
-| 7 | **No web security headers**, and the server functions accept requests from any website. | Phase 3 and 4 |
+| 6 | ~~A file's type is taken on trust.~~ **Done in phase 3.** | Done |
+| 7 | **No web security headers.** The server functions no longer accept requests from any website (phase 3), but the web pages themselves still have no headers. | Phase 4 |
 | 8 | **No second factor, no automatic sign-out**, and an 8-character password minimum. Being signed in alone was enough to change the password. | Phase 4 |
 | 9 | **Server-only functions mostly have one lock, not two** — they trust the server code to have checked ownership. It does, everywhere I looked. Three were given a second lock in phase 2 (`finish_chat_message`, `discard_invite`, and the new ones). The rest are listed as accepted: they are unreachable from the app, and only somebody already holding the server key could reach them. | Partly done |
-| 10 | Two copies of the same text-escaping function have drifted apart. Not exploitable today. | Phase 3 |
+| 10 | ~~Two copies of the same text-escaping function have drifted apart.~~ **Done in phase 3.** | Done |
 | 11 | **Web sign-in tokens sit in the browser's own storage**, so anything that could run a script on the page could take one. | See below |
 
 ### One thing that cannot be fully fixed, stated plainly

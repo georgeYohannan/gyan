@@ -1,5 +1,7 @@
 // The slow part of a transcript: link -> Deepgram -> save (or fail). Pure code, so Jest can test it
 // with a fake database and a fake Deepgram.
+import { sniffKind, WRONG_TYPE_MESSAGE } from '../_shared/filetype.ts';
+
 import { costFor, MESSAGES, TranscribeError, transcribeUrl } from './deepgram.ts';
 
 /** The small part of the Supabase admin client that we use. */
@@ -27,6 +29,12 @@ export type PipelineOptions = {
    * Left out in tests, and in that case the note simply waits on Summarizing.
    */
   startSummary?: () => Promise<void>;
+  /**
+   * Reads the first few thousand bytes of the stored file, so its real kind can be worked
+   * out. Injected rather than called directly, so the tests stay free of storage.
+   * Undefined means "cannot check", and the note carries on as before.
+   */
+  readFirstBytes?: (filePath: string) => Promise<Uint8Array | null>;
 };
 
 /**
@@ -37,6 +45,16 @@ export type PipelineOptions = {
  */
 export async function runTranscription(o: PipelineOptions): Promise<boolean> {
   try {
+    // IS THIS REALLY A RECORDING? The kind of file was taken on trust from the app, which
+    // reads it from the file's name. Nearly every audio and video format starts with a few
+    // fixed bytes, so the first few thousand bytes are read and checked before anything
+    // else happens. A file that is not a recording fails the note with a plain message
+    // instead of being sent to a paid service.
+    if (o.readFirstBytes) {
+      const bytes = await o.readFirstBytes(o.filePath);
+      if (bytes && !sniffKind(bytes)) throw new TranscribeError(WRONG_TYPE_MESSAGE);
+    }
+
     const { data: signed, error: signError } = await o.admin.storage.from(o.bucket).createSignedUrl(o.filePath, o.signedLinkSeconds);
     if (signError || !signed?.signedUrl) throw new TranscribeError(MESSAGES.missing);
 

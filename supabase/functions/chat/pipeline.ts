@@ -147,7 +147,12 @@ export async function runChat(o: ChatOptions): Promise<ChatResult> {
   const history = await readHistory(o);
 
   const ask: Ask = {
-    system: buildSystem(languageName(o.language), formatPassages(segments, o.noteTitle, o.noteDate, hasTimes)),
+    // The note is named ONCE, above the fence, rather than repeated on every passage line.
+    system: buildSystem(
+      languageName(o.language),
+      formatPassages(segments, o.noteTitle, o.noteDate, hasTimes),
+      o.noteTitle,
+    ),
     history,
     question: buildUser(o.question),
   };

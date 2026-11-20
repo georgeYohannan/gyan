@@ -7,6 +7,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 
 import { makeMailer } from '../_shared/mailer.ts';
 
+import { RATE_LIMIT_MESSAGE, RateLimited, UUID, corsFor, isOurOwnServer, pickKey, underRateLimit } from '../_shared/guard.ts';
 import {
   MESSAGES,
   RecapError,
@@ -29,41 +30,6 @@ import {
 
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Response | Promise<Response>): void };
 
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function reply(body: Record<string, unknown>, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
-}
-
-/** Supabase gives keys either as one plain value (older) or as a small JSON list (newer). */
-function pickKey(plainName: string, jsonName: string): string | undefined {
-  const plain = Deno.env.get(plainName);
-  if (plain) return plain;
-  try {
-    return JSON.parse(Deno.env.get(jsonName) ?? '{}').default;
-  } catch {
-    return undefined;
-  }
-}
-
-const UUID = /^[0-9a-f-]{36}$/i;
-
-/**
- * True when this call came from one of our OWN server functions, not from a person.
- *
- * The only thing that carries the project's secret key is our own server code, so a request
- * holding it is ours. The automatic send uses this, because no person starts it and so there is
- * no login to read. It does NOT widen what may happen: the database still decides who may be
- * emailed, inside claim_recap.
- */
-function isOurOwnServer(authHeader: string, secretKey: string): boolean {
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  return token !== '' && token === secretKey;
-}
 
 /**
  * Posts the emails through Gyan's own Hostinger mailbox.
@@ -118,6 +84,12 @@ function makeTranslator(url: string, secretKey: string, meetingId: string): Tran
 }
 
 Deno.serve(async (req) => {
+  // Which websites may read the answer is decided per request now, not handed out to
+  // everybody with a star. A phone sends no Origin and is answered as before.
+  const cors = corsFor(req);
+  const reply = (body: Record<string, unknown>, status = 200): Response =>
+    new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return reply({ error: 'method_not_allowed' }, 405);
 
@@ -149,28 +121,39 @@ Deno.serve(async (req) => {
   let picked: string[] | undefined;
   if (body.recipient_user_ids !== undefined) {
     if (!Array.isArray(body.recipient_user_ids)) return reply({ error: 'bad_request' }, 400);
+    // Capped BEFORE the list is looked at. The list is cut down to MAX_RECIPIENTS later,
+    // but that happens after every id has been compared against the account, so an
+    // enormous list was work Gyan did before deciding to ignore most of it.
+    if (body.recipient_user_ids.length > MAX_RECIPIENTS) return reply({ error: 'too_many_people' }, 400);
     if (!body.recipient_user_ids.every((id) => typeof id === 'string' && UUID.test(id))) {
       return reply({ error: 'bad_request' }, 400);
     }
     picked = body.recipient_user_ids as string[];
   }
 
-  const internal = isOurOwnServer(authHeader, secretKey);
+  const internal = await isOurOwnServer(authHeader, secretKey);
   const auto = body.auto === true;
   // Only our own server may run the automatic send, because only it has nobody to check.
   if (auto && !internal) return reply({ error: 'not_allowed' }, 403);
 
   let userId: string | null = null;
+  let accountId: string | null = null;
   if (!internal) {
     // 1. Who is calling? Ask with THEIR login, so the database rules decide what they may see.
     const asUser = createClient(url, publicKey, { global: { headers: { Authorization: authHeader } } });
     const { data: auth, error: authError } = await asUser.auth.getUser();
     if (authError || !auth.user) return reply({ error: 'not_signed_in' }, 401);
 
-    // 2. The note must be one this person can really see, under their own login.
-    const { data: visible } = await asUser.from('meetings').select('id').eq('id', body.meeting_id).maybeSingle();
+    // 2. The note must be one this person can really see, under their own login. The account
+    //    comes back from the same question, so counting the limit per account is free.
+    const { data: visible } = await asUser
+      .from('meetings')
+      .select('id, account_id')
+      .eq('id', body.meeting_id)
+      .maybeSingle();
     if (!visible) return reply({ error: 'not_allowed' }, 403);
     userId = auth.user.id;
+    accountId = (visible as { account_id?: string }).account_id ?? null;
   }
 
   const admin = createClient(url, secretKey, { auth: { persistSession: false } });
@@ -197,7 +180,26 @@ Deno.serve(async (req) => {
   // 3. No password means Gyan cannot get into its mailbox at all. Say so in plain words.
   if (!smtpPassword) return reply({ ok: false, message: MESSAGES.notSetUp });
 
-  // 4. Send. The app is waiting on a hand-pressed send, so this is not put in the background.
+  // 4. Has this account sent enough recaps for one hour?
+  //
+  //    A hand-pressed send had NO limit at all: fifty people at a time, as often as anybody
+  //    liked. The mailbox allows 1,000 messages a day in total, shared by everybody, and a
+  //    mail service that sees a burst like that treats the sender as a spammer -- which
+  //    would quietly stop every recap and every invite Gyan sends, for everyone.
+  //
+  //    The automatic send is deliberately NOT counted here: it happens once per note, is
+  //    already guarded by claim_recap refusing a second automatic send for the same note,
+  //    and has nobody waiting to be told to try again later.
+  if (!auto) {
+    try {
+      await underRateLimit(admin, 'recap_send', userId, accountId);
+    } catch (e) {
+      if (e instanceof RateLimited) return reply({ ok: false, message: RATE_LIMIT_MESSAGE }, 429);
+      throw e;
+    }
+  }
+
+  // 5. Send. The app is waiting on a hand-pressed send, so this is not put in the background.
   const mailer = makeRecapMailer(smtpPassword);
   try {
     const result = await runRecap({

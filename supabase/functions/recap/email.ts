@@ -6,11 +6,21 @@
 //   text  - the same facts in plain words, for anyone whose email hides pictures and styling
 // A test compares the two, so one can never say something the other does not.
 
+import { escapeHtml } from '../_shared/html.ts';
+
 /** The label that goes on anything a person did not write. CLAUDE.md hard rule 7. */
 export const TRANSLATED_LABEL = 'Translated by AI';
 
 /** The sentence under that label. It answers the worry people actually have. */
 export const TRANSLATED_NOTE = 'Names, numbers and times are unchanged.';
+
+/**
+ * What a recap says instead of the summary, when the account keeps note contents out of
+ * email. It says what happened and what to do, and nothing about settings the reader may
+ * not be able to change: only the account owner can.
+ */
+export const HELD_BACK_LINE =
+  'This workspace keeps what was said out of email. Open the note in gyan to read the summary.';
 
 /**
  * The languages Gyan offers, by code.
@@ -151,6 +161,16 @@ export type RenderOptions = {
   /** Where "Turn off recaps" goes. */
   settingsUrl: string;
   sender: Sender;
+  /**
+   * False when the account has asked that note contents stay out of email. The recap then
+   * carries the title, the date and a button, and nothing of what was said.
+   *
+   * Why an account would want this: an email sits in an inbox, gets forwarded, syncs to a
+   * phone and passes through mail servers on the way. A workspace talking about patients,
+   * clients or staff may be happy for Gyan to hold a summary and still not want it posted
+   * out. Missing means true, which is how it behaved before this existed.
+   */
+  summariesInEmail?: boolean;
 };
 
 export type RenderedEmail = { subject: string; html: string; text: string };
@@ -172,15 +192,15 @@ export function plainDate(value: string | null): string {
   return `${when.getUTCDate()} ${MONTHS[when.getUTCMonth()]} ${when.getUTCFullYear()}`;
 }
 
-/** Makes any text safe to put inside a page, so a quote mark can never break the layout. */
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+/**
+ * Makes any text safe to put inside a page, so a quote mark can never break the layout.
+ *
+ * Re-exported from _shared/html.ts rather than written out again. There used to be two
+ * copies of this and they had drifted: the invite one was missing the single quote. Nothing
+ * was exploitable, because every attribute in both templates uses double quotes -- but the
+ * next person to write one with single quotes would have had a hole and no way to know.
+ */
+export { escapeHtml } from '../_shared/html.ts';
 
 /**
  * "gyan <recaps@example.com>", the way an email names who it came from.
@@ -274,7 +294,14 @@ function textSection(heading: string, inner: string): string {
  */
 export function renderRecap(o: RenderOptions): RenderedEmail {
   const dir = RTL_LANGUAGES.includes(baseCode(o.language)) ? 'rtl' : 'ltr';
-  const title = (o.body.title ?? '').trim() === '' ? 'Your note' : o.body.title.trim();
+  // When the account keeps note contents out of email, the words are dropped HERE, once,
+  // before the layout is built. Nothing below has to remember the setting, and neither the
+  // pretty version nor the plain words version can carry something the other does not.
+  const held = o.summariesInEmail === false;
+  const body: RecapBody = held
+    ? { title: o.body.title, overview: '', keyPoints: [], decisions: [], actionItems: [] }
+    : o.body;
+  const title = (body.title ?? '').trim() === '' ? 'Your note' : body.title.trim();
   const date = plainDate(o.date);
   const subject = `Recap: ${title}`;
 
@@ -293,10 +320,11 @@ export function renderRecap(o: RenderOptions): RenderedEmail {
       ? ''
       : `<tr><td style="padding-top:4px;"><div style="font-family:${BODY_FONT};font-size:14px;line-height:1.5;color:${C.quiet};">${escapeHtml(date)}</div></td></tr>`;
 
-  const overviewRow =
-    o.body.overview.trim() === ''
+  const overviewRow = held
+    ? `<tr><td style="padding-top:20px;"><div style="font-family:${BODY_FONT};font-size:16px;line-height:1.5;color:${C.text};">${escapeHtml(HELD_BACK_LINE)}</div></td></tr>`
+    : body.overview.trim() === ''
       ? ''
-      : `<tr><td style="padding-top:20px;"><div dir="${dir}" style="font-family:${BODY_FONT};font-size:16px;line-height:1.5;color:${C.text};">${escapeHtml(o.body.overview.trim())}</div></td></tr>`;
+      : `<tr><td style="padding-top:20px;"><div dir="${dir}" style="font-family:${BODY_FONT};font-size:16px;line-height:1.5;color:${C.text};">${escapeHtml(body.overview.trim())}</div></td></tr>`;
 
   const html =
     `<!doctype html><html lang="${escapeHtml(baseCode(o.language) || 'en')}"><head>` +
@@ -307,7 +335,7 @@ export function renderRecap(o: RenderOptions): RenderedEmail {
     `</head>` +
     `<body style="margin:0;padding:0;background-color:${C.page};">` +
     // A one-line preview, which many email programs show next to the subject. Hidden in the email.
-    `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(o.body.overview.trim().slice(0, 140))}</div>` +
+    `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(held ? HELD_BACK_LINE : body.overview.trim().slice(0, 140))}</div>` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.page}" style="background-color:${C.page};margin:0;padding:0;">` +
     `<tr><td align="center" style="padding:24px 16px;">` +
     `<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">` +
@@ -320,9 +348,9 @@ export function renderRecap(o: RenderOptions): RenderedEmail {
     `<tr><td><h1 dir="${dir}" style="margin:0;font-family:${HEAD_FONT};font-size:26px;line-height:1.3;color:${C.heading};font-weight:bold;">${escapeHtml(title)}</h1></td></tr>` +
     dateRow +
     overviewRow +
-    htmlSection('Key points', htmlList(o.body.keyPoints, dir)) +
-    htmlSection('Decisions', htmlList(o.body.decisions, dir)) +
-    htmlSection('Action items', htmlItems(o.body.actionItems, dir)) +
+    htmlSection('Key points', htmlList(body.keyPoints, dir)) +
+    htmlSection('Decisions', htmlList(body.decisions, dir)) +
+    htmlSection('Action items', htmlItems(body.actionItems, dir)) +
     // The button. A blue fill with white words on it, never blue words on the navy.
     `<tr><td style="padding-top:28px;">` +
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>` +
@@ -352,12 +380,12 @@ export function renderRecap(o: RenderOptions): RenderedEmail {
     `${title}\n` +
     (date === '' ? '' : `${date}\n`) +
     (o.translated ? `\n${TRANSLATED_LABEL}. ${languageName(o.language)}. ${TRANSLATED_NOTE}\n` : '') +
-    (o.body.overview.trim() === '' ? '' : `\n${o.body.overview.trim()}\n`) +
-    textSection('Key points', textList(o.body.keyPoints)) +
-    textSection('Decisions', textList(o.body.decisions)) +
+    (held ? `\n${HELD_BACK_LINE}\n` : body.overview.trim() === '' ? '' : `\n${body.overview.trim()}\n`) +
+    textSection('Key points', textList(body.keyPoints)) +
+    textSection('Decisions', textList(body.decisions)) +
     textSection(
       'Action items',
-      o.body.actionItems
+      body.actionItems
         .map((item) => {
           const note = itemNote(item);
           return note === '' ? `- ${item.text}` : `- ${item.text} (${note})`;

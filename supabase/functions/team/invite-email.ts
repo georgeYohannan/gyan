@@ -3,6 +3,7 @@
 // Pure. It builds strings and nothing else: no network, no keys, no database. That is what lets
 // a test read every sentence, and lets a browser script photograph the email without one ever
 // being sent.
+import { escapeHtml, oneLine } from '../_shared/html.ts';
 import { SENDER } from '../_shared/sender.ts';
 import { INVITE_MAX_AGE_DAYS, INVITE_PATH } from './settings.ts';
 
@@ -43,16 +44,15 @@ export type InviteWords = {
   joinUrl: string;
 };
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
+/**
+ * A Subject line is ONE line. An email header ends at a line break, so a name holding a
+ * carriage return could add headers of its own -- another recipient, say. The name comes
+ * from the database rather than from the request, which makes that unlikely rather than
+ * impossible, and "unlikely, and guarded only by somebody else's library" is not worth
+ * relying on when the fix is one call.
+ */
 export function subjectFor(ownerName: string): string {
-  return `${ownerName} invited you to gyan`;
+  return `${oneLine(ownerName, 120)} invited you to gyan`;
 }
 
 /**

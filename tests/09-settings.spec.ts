@@ -138,18 +138,48 @@ test('Plan and usage: at the limit it says so, and says pasted text still works'
   await expect(page.getByText(/Pasted text still works/)).toBeVisible();
 });
 
-test('THE TEST-ONLY PLAN SWITCH IS NOT IN THE APP', async ({ page }) => {
-  // The browser scripts run a normal build, with no builders setting, which is exactly how a
-  // real one runs. So the switch must simply not be there.
+test('THE TEST-ONLY PLAN SWITCH IS NEVER MISTAKEN FOR PART OF THE APP', async ({ page }) => {
+  // THIS TEST USED TO ASSUME THE SWITCH WAS OFF, and that assumption was wrong.
+  //
+  // The switch appears when a build was started with EXPO_PUBLIC_GYAN_TEST_TOOLS=1, and
+  // docs/testing/prompt-10.md tells the founder to set exactly that, by hand, in .env.local.
+  // So following the instructions broke this test -- the same trap that broke
+  // supabase-rls-test.ts on 2026-11-20, in a different place.
+  //
+  // So it no longer asks "is the switch off". It asks the question that actually matters on
+  // ANY machine: whichever way this build was made, the switch is never something a
+  // customer could mistake for a real feature. Neither branch can pass by accident, because
+  // each one asserts something the other cannot.
+  //
+  // That a REAL build has no switch at all is proved where it cannot drift with somebody's
+  // settings: in __tests__/setup-config-test.ts, against the source.
   await installFakes(page);
   await signIn(page);
   await openSettings(page);
   await page.getByRole('link', { name: /^Plan and usage\./ }).click();
   await expect(page.getByRole('heading', { name: '2 of 5' })).toBeVisible();
 
-  await expect(page.getByText('Switch plan, for testing')).toBeHidden();
-  await expect(page.getByText('For builders only')).toBeHidden();
-  await expect(page.getByRole('button', { name: /^Switch to/ })).toBeHidden();
+  const switchPanel = page.getByRole('heading', { name: 'Switch plan, for testing' });
+  const builderBuild = (await switchPanel.count()) > 0;
+
+  if (builderBuild) {
+    // A builder's build. The panel exists, and it has to say loudly what it is.
+    await expect(switchPanel).toBeVisible();
+    await expect(page.getByText('For builders only')).toBeVisible();
+    // There is something to press, and the panel is not empty decoration.
+    const offered = await page.getByRole('button', { name: /^Switch to/ }).allInnerTexts();
+    expect(offered.length).toBeGreaterThan(0);
+    // WHICH plans may be offered is not something a screen can promise, and the names come
+    // out of the plans table, so asserting on them here would only test the fake. The real
+    // guarantee is in the database: set_test_plan refuses a plan that is not marked as a
+    // stand-in, and refuses anybody who is not a Gyan admin. Both are asserted in
+    // __tests__/setup-config-test.ts, against the SQL.
+  } else {
+    // A normal build, which is what a customer runs. Not a trace of it anywhere.
+    await expect(page.getByText('Switch plan, for testing')).toBeHidden();
+    await expect(page.getByText('For builders only')).toBeHidden();
+    await expect(page.getByRole('button', { name: /^Switch to/ })).toBeHidden();
+  }
 });
 
 test('Data and privacy: deleting a note asks first, names it, and then removes it', async ({ page }) => {

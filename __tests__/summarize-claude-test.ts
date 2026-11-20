@@ -64,7 +64,9 @@ describe('the summary prompt', () => {
   test('the meeting type defaults to general', () => {
     expect(buildUser('line one')).toContain('Meeting type: general');
     expect(buildUser('line one', 'sales call')).toContain('Meeting type: sales call');
-    expect(buildUser('line one')).toContain('Transcript:\nline one');
+    // The transcript is fenced now, so the model can tell what people said from what it
+    // is being told to do. See __tests__/prompt-injection-test.ts.
+    expect(buildUser('line one')).toMatch(/Transcript:\n<<<BEGIN_TRANSCRIPT_[0-9a-f]{16}>>>\nline one\n<<<END_TRANSCRIPT_[0-9a-f]{16}>>>/);
   });
 
   test('transcript lines are written as [speaker, time] text', () => {

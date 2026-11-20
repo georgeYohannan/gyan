@@ -7,30 +7,11 @@
 // database (claim_account_deletion), not in this file and not in the app.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
+import { RATE_LIMIT_MESSAGE, RateLimited, corsFor, pickKey, underRateLimit } from '../_shared/guard.ts';
 import { AccountError, MESSAGES, runDeleteAccount, type Db, type Files } from './pipeline.ts';
 import { LIST_PAGE_SIZE, REMOVE_BATCH, STORAGE_BUCKET } from './settings.ts';
 
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Response | Promise<Response>): void };
-
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function reply(body: Record<string, unknown>, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
-}
-
-function pickKey(plainName: string, jsonName: string): string | undefined {
-  const plain = Deno.env.get(plainName);
-  if (plain) return plain;
-  try {
-    return JSON.parse(Deno.env.get(jsonName) ?? '{}').default;
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Every file in one workspace.
@@ -80,6 +61,12 @@ function makeFiles(client: ReturnType<typeof createClient>): Files {
 }
 
 Deno.serve(async (req) => {
+  // Which websites may read the answer is decided per request now, not handed out to
+  // everybody with a star. A phone sends no Origin and is answered as before.
+  const cors = corsFor(req);
+  const reply = (body: Record<string, unknown>, status = 200): Response =>
+    new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return reply({ error: 'method_not_allowed' }, 405);
 
@@ -105,7 +92,16 @@ Deno.serve(async (req) => {
   const { data: who } = await asPerson.auth.getUser();
   if (!who?.user) return reply({ error: 'not_signed_in' }, 401);
 
-  const admin = createClient(url, secretKey);
+  const admin = createClient(url, secretKey, { auth: { persistSession: false } });
+
+  // Deleting an account is slow and cannot be undone. Counted low on purpose: nobody does
+  // this repeatedly, so a flood of attempts is somebody probing rather than a customer.
+  try {
+    await underRateLimit(admin, 'account_delete', who.user.id, null);
+  } catch (e) {
+    if (e instanceof RateLimited) return reply({ ok: false, message: RATE_LIMIT_MESSAGE }, 429);
+    throw e;
+  }
 
   try {
     const result = await runDeleteAccount({
