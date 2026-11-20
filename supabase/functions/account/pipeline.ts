@@ -20,7 +20,9 @@ export const MESSAGES = {
 } as const;
 
 export type Db = {
-  rpc(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message?: string } | null }>;
+  // `PromiseLike`, not `Promise`: a Supabase call has `then` and nothing else, so `.catch(...)`
+  // on one throws at run time. Saying so here makes the type checker refuse that mistake.
+  rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: { message?: string } | null }>;
 };
 
 /** The two things this needs from storage. Handed in, so a test can stand in for them. */

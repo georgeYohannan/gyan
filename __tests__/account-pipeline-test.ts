@@ -14,6 +14,8 @@ import {
   type Files,
 } from '../supabase/functions/account/pipeline';
 
+import { answer } from '../__mocks__/supabase-answer';
+
 const GATE = { owned_accounts: ['a1'], note_count: 4, person_email: 'lone@example.test' };
 
 function setUp(options: {
@@ -29,18 +31,18 @@ function setUp(options: {
     rpc(name) {
       steps.push(name);
       if (name === 'claim_account_deletion') {
-        return Promise.resolve({
+        return answer({
           data: options.claim?.data ?? [GATE],
           error: options.claim?.error ?? null,
         });
       }
       if (name === 'delete_account') {
-        return Promise.resolve({
+        return answer({
           data: options.deleteAccount?.data ?? 1,
           error: options.deleteAccount?.error ?? null,
         });
       }
-      return Promise.resolve({ data: null, error: null });
+      return answer({ data: null, error: null });
     },
   };
 

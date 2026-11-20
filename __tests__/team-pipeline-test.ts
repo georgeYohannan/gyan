@@ -12,6 +12,8 @@ import {
 } from '../supabase/functions/team/pipeline';
 import { MESSAGES, TeamError, joinUrlFor, renderInvite, subjectFor } from '../supabase/functions/team/invite-email';
 
+import { answer } from '../__mocks__/supabase-answer';
+
 const CLAIMED = {
   invite_id: 'i1',
   invite_account_id: 'a1',
@@ -28,10 +30,10 @@ function fakeDb(overrides: Record<string, { data?: unknown; error?: { message?: 
   const db: Db = {
     rpc(name, args) {
       calls.push(name);
-      const answer = overrides[name];
-      if (answer) return Promise.resolve({ data: answer.data ?? null, error: answer.error ?? null });
-      if (name === 'claim_invite') return Promise.resolve({ data: [CLAIMED], error: null });
-      return Promise.resolve({ data: null, error: null });
+      const override = overrides[name];
+      if (override) return answer({ data: override.data ?? null, error: override.error ?? null });
+      if (name === 'claim_invite') return answer({ data: [CLAIMED], error: null });
+      return answer({ data: null, error: null });
     },
   };
   return { db, calls };
@@ -84,9 +86,9 @@ describe('inviting somebody', () => {
     const written: Record<string, unknown>[] = [];
     const db: Db = {
       rpc(name, args) {
-        if (name === 'claim_invite') return Promise.resolve({ data: [CLAIMED], error: null });
+        if (name === 'claim_invite') return answer({ data: [CLAIMED], error: null });
         if (name === 'log_account_email') written.push(args);
-        return Promise.resolve({ data: null, error: null });
+        return answer({ data: null, error: null });
       },
     };
 
@@ -187,5 +189,91 @@ describe('the invite email itself', () => {
     const html = renderInvite({ ...words, ownerName: '<script>bad()</script>' }).html;
     expect(html).not.toContain('<script>bad()');
     expect(html).toContain('&lt;script&gt;');
+  });
+});
+
+/**
+ * The bug of 2026-11-20, pinned down.
+ *
+ * A Supabase call is not a promise. It has `then` and nothing else, so anything that reaches
+ * for `.catch(...)` or `.finally(...)` on one blows up at run time. It blew up AFTER the email
+ * had gone, which is the cruellest possible place: the invite arrived in the inbox and the
+ * owner was told it had not.
+ */
+describe('a database that behaves like the real one, not like a promise', () => {
+  /** Exactly what Supabase hands back: `then`, and nothing else. */
+  function builderOnlyDb(): Db {
+    return {
+      rpc(name) {
+        const value =
+          name === 'claim_invite'
+            ? { data: [CLAIMED], error: null }
+            : { data: null, error: null };
+        return {
+          then(resolve, reject) {
+            return Promise.resolve(value).then(resolve, reject);
+          },
+        };
+      },
+    };
+  }
+
+  test('an invite whose email went out is reported as sent, not as a failure', async () => {
+    const sent: string[] = [];
+
+    const result = await runInvite({
+      db: builderOnlyDb(),
+      send: async (m) => {
+        sent.push(m.to);
+      },
+      userId: 'u1',
+      email: 'newbie@example.test',
+      appUrl: 'https://app.example.test',
+    });
+
+    expect(sent).toEqual(['newbie@example.test']);
+    expect(result.email).toBe('newbie@example.test');
+  });
+
+  test('a send that really failed still says so, and still takes the invite back', async () => {
+    const db = builderOnlyDb();
+    const calls: string[] = [];
+    const watched: Db = {
+      rpc(name, args) {
+        calls.push(name);
+        return db.rpc(name, args);
+      },
+    };
+
+    await expect(
+      runInvite({
+        db: watched,
+        send: async () => {
+          throw new TeamError('the mail server said no');
+        },
+        userId: 'u1',
+        email: 'newbie@example.test',
+        appUrl: 'https://app.example.test',
+      }),
+    ).rejects.toBeInstanceOf(TeamError);
+
+    expect(calls).toEqual(['claim_invite', 'discard_invite', 'log_account_email']);
+  });
+
+  test('the owner is never told "please try again" about an email that arrived', async () => {
+    let told: string | undefined;
+    try {
+      await runInvite({
+        db: builderOnlyDb(),
+        send: async () => undefined,
+        userId: 'u1',
+        email: 'newbie@example.test',
+        appUrl: 'https://app.example.test',
+      });
+    } catch (e) {
+      told = e instanceof Error ? e.message : String(e);
+    }
+    expect(told).toBeUndefined();
+    expect(told).not.toBe(MESSAGES.problem);
   });
 });

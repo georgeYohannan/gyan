@@ -87,12 +87,26 @@ maybe('Supabase test project: privacy between users', () => {
     accountA = data!.id;
   });
 
-  test('sign up trigger: user A has a profile, a Free account, and an owner row', async () => {
+  // WHAT THIS TEST MAY AND MAY NOT ASSUME.
+  //
+  // It runs against the shared TEST project, which the founder uses by hand. Two things there
+  // are MEANT to change: the plan (the test-only plan switch moves it on purpose) and is_admin
+  // (docs/testing/prompt-10.md tells the founder to set it on themselves). Asserting either to
+  // a fixed value here makes a passing test fail for doing as it was told, which is what
+  // happened on 2026-11-20.
+  //
+  // So the fixed promises — a new user starts on Free, and is_admin starts false — are checked
+  // in migrations-test.ts against the SQL, where no amount of using the app can move them.
+  // What is checked HERE is the shape the trigger builds, which must hold forever.
+  test('sign up trigger: user A has a profile, an account on a real plan, and an owner row', async () => {
     const profile = await A.client.from('profiles').select('id, is_admin').eq('id', A.userId).single();
-    expect(profile.data).toEqual({ id: A.userId, is_admin: false });
+    expect(profile.data?.id).toBe(A.userId);
+    expect(typeof profile.data?.is_admin).toBe('boolean');
 
     const account = await A.client.from('accounts').select('id, plans(name, meetings_per_month)').eq('id', accountA).single();
-    expect(account.data).toMatchObject({ plans: { name: 'Free', meetings_per_month: 5 } });
+    const plan = (account.data as { plans?: { name?: string; meetings_per_month?: number } } | null)?.plans;
+    expect(typeof plan?.name).toBe('string');
+    expect(plan?.meetings_per_month).toBeGreaterThan(0);
 
     const member = await A.client.from('account_members').select('role').eq('account_id', accountA).eq('user_id', A.userId).single();
     expect(member.data).toEqual({ role: 'owner' });

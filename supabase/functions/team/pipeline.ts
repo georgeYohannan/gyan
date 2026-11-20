@@ -6,9 +6,15 @@
 
 import { MESSAGES, TeamError, joinUrlFor, messageForSendError, renderInvite } from './invite-email.ts';
 
-/** The shape of the one Supabase call this needs. Kept small so a test can stand in for it. */
+/**
+ * The shape of the one Supabase call this needs. Kept small so a test can stand in for it.
+ *
+ * `PromiseLike`, not `Promise`, ON PURPOSE. A Supabase call is a builder that has `then` and
+ * nothing else, so `.catch(...)` or `.finally(...)` on one throws at run time. Saying so here
+ * means the type checker refuses that mistake instead of a founder finding it.
+ */
 export type Db = {
-  rpc(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message?: string } | null }>;
+  rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: { message?: string } | null }>;
 };
 
 export type SendInvite = (message: { to: string; subject: string; text: string; html: string }) => Promise<void>;
@@ -57,6 +63,23 @@ function firstRow(data: unknown): ClaimedInvite | undefined {
 }
 
 /**
+ * Runs a tidying-up call and never lets it change what the person is told.
+ *
+ * NOT `.catch()` on the call itself. A Supabase call looks like a promise but is not one: it
+ * has `then` and nothing else, so `.catch(...)` on it throws TypeError: catch is not a function
+ * — and that error then escapes, turning a send that WORKED into "Gyan could not send that
+ * invite". A test stands in for the database with a thenable of the same shape, so this cannot
+ * come back.
+ */
+async function quietly(run: () => PromiseLike<unknown>): Promise<void> {
+  try {
+    await run();
+  } catch {
+    // Writing the log down is never worth failing an invite over.
+  }
+}
+
+/**
  * Invites one person.
  *
  * The order is the whole point:
@@ -92,30 +115,30 @@ export async function runInvite(o: InviteOptions): Promise<InviteResult> {
     // Take the invite back, so no seat is held by an invite that nobody got. If even this
     // fails there is nothing more to do here: the owner can take it back by hand on the Team
     // screen, which is why that button exists.
-    await o.db.rpc('discard_invite', { p_invite_id: invite.invite_id }).catch(() => undefined);
-    await o.db
-      .rpc('log_account_email', {
+    await quietly(() => o.db.rpc('discard_invite', { p_invite_id: invite.invite_id }));
+    await quietly(() =>
+      o.db.rpc('log_account_email', {
         p_account_id: invite.invite_account_id,
         p_kind: 'invite',
         p_recipient_email: invite.invite_email,
         p_result: 'failed',
         p_error_message: why,
         p_sent_by: o.userId,
-      })
-      .catch(() => undefined);
+      }),
+    );
     throw new TeamError(why);
   }
 
-  await o.db
-    .rpc('log_account_email', {
+  await quietly(() =>
+    o.db.rpc('log_account_email', {
       p_account_id: invite.invite_account_id,
       p_kind: 'invite',
       p_recipient_email: invite.invite_email,
       p_result: 'sent',
       p_error_message: null,
       p_sent_by: o.userId,
-    })
-    .catch(() => undefined);
+    }),
+  );
 
   return {
     email: invite.invite_email,

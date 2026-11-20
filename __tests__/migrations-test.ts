@@ -44,6 +44,20 @@ describe('database migration files', () => {
     expect(sql).not.toMatch(/grant update[^;]*is_admin/);
   });
 
+  // These two are what a NEW person starts with. They used to be checked against the live test
+  // project, which was wrong: the founder is told to switch plans and to make themselves an
+  // admin while testing, so doing as instructed broke the test (2026-11-20). Checked here
+  // instead, against the SQL, where using the app cannot move them.
+  test('a brand new person starts as an ordinary person, not an admin', () => {
+    expect(sql).toContain('is_admin boolean not null default false');
+  });
+
+  test('a brand new person starts on the Free plan', () => {
+    expect(sql).toMatch(/select id into free_plan_id[\s\S]{0,200}where name = 'Free' and is_active/);
+    expect(sql).toContain('insert into public.accounts (owner_id, plan_id)');
+    expect(sql).toContain('values (new.id, free_plan_id)');
+  });
+
   test('signed out visitors get no table access', () => {
     expect(sql).toContain('revoke all on all tables in schema public from anon, authenticated');
     expect(sql).not.toMatch(/grant [^;]* to anon/);
