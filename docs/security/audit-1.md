@@ -200,6 +200,32 @@ files, and every single one of them is a command taking permission *away*.
 | **`.env` ignored only by habit** | A test now checks the ignore rules are in place and that git really is ignoring them. |
 | **The upload error leaked internals** | Will be fixed in phase 3, listed here so it is not forgotten. |
 
+### Fixed in this round (phase 2) — the database
+
+| What | How |
+|---|---|
+| **No audit log** | A new `audit_log` table records sign in, opening a note, exporting, sharing, deleting, settings changes, team changes and automatic deletions. Three things about it are deliberate: it holds **no words from a meeting** (ids and fixed facts only), it has **no foreign keys** so the record outlives the thing it describes, and it **cannot be changed or deleted by anybody, the server key included** — a rule could not do that, so a trigger does. The account owner reads it; a member cannot. |
+| **The app could have forged a log entry** | The app writes to the log through one narrow door that allows only three kinds of entry, always takes the person from their login rather than the request, refuses to name a note they cannot read, and will not write the same thing twice in a minute. |
+| **No limits on anything** | A new `security_settings` table holds every limit, one row per thing, each with a plain description. Nothing is written into the code: a test refuses it. The counters live in `rate_limits`, which the app cannot see at all. A refused attempt is not itself counted, so the limit is exact rather than drifting upward. |
+| **No retention** | A new per-account setting: keep for ever, 30, 90 or 365 days. `run_retention` is a **dry run unless somebody asks out loud**; it writes the record of each deletion *before* deleting, so the record survives the note, and it hands back the file paths because database rules do not reach storage. |
+| **Consent lived only on the device** | A new `consent_records` table stores which version of the wording each person agreed to and when, with a fingerprint of the exact words. Also append-only. Agreeing twice is not an error. |
+| **New tables could land wide open** | The one-off command back in migration 2 only protected the tables that existed then. It is now the standing default, proved by creating a table and checking what the not-signed-in role gets: nothing. |
+| **The app could write anything into `integrations`** | **This one was confirmed by trying it, not by reading.** While writing the test, a signed-in test user successfully wrote `{"token": "..."}` into the table the notes say will one day hold Slack and Teams tokens. The row was removed and the permission is gone. Reading is untouched. |
+| **A cost could be billed to the wrong account** | `finish_chat_message` was handed a chat and an account separately and never checked they belonged together. It does now, before writing anything. |
+| **Taking an invite back named no account** | `discard_invite` took only an invite id, so it had no idea which account the invite belonged to. It must name the account now, and the account must match. |
+
+**How this was checked.** Not by reading the SQL. `npm run check:db` builds a throwaway Postgres 17
+on your own computer, applies all eleven database files, then signs people in and **tries to
+break every rule**: 26 checks, including deleting a log entry as the server, spending somebody
+else's allowance, billing the wrong account, and running retention for real to confirm it
+deletes the old note, leaves the recent one, and leaves a record behind. On top of that, 36
+checks run against the real test project.
+
+One genuine mistake this caught, which reading would not have: a rate-limit check written in the
+`private` schema **cannot be called over the API at all**, because only `public` functions can be.
+It had to be given a public door. A text-only test would have passed and the limits would simply
+never have worked.
+
 ### Dependency check
 
 `npm audit` finds **22 problems: 0 critical, 0 high, 22 moderate.**
@@ -226,14 +252,14 @@ These are the real gaps, in the order they are being fixed. Nothing here is hidd
 | # | What is wrong | When |
 |---|---|---|
 | 1 | **The AI cannot tell what people said from what it is told to do.** A note containing "ignore your instructions" can change a summary, which then gets emailed to the whole team. | Phase 3 |
-| 2 | **No limits on anything.** Translating a note is a paid AI call with no cap, and changing the language code slightly dodges the save-once cache, so one person could run up an unlimited bill. Retrying a chat answer is free and unlimited. Recap emails are uncapped. | Phase 2 and 3 |
-| 3 | **No audit log.** Deleting a note, removing a person, handing over the account — none of it leaves a trace. | Phase 2 |
-| 4 | **Consent is only remembered on the device.** Clearing browser data erases the only evidence it was ever given. | Phase 2 and 4 |
-| 5 | **Nothing is ever deleted, and deleted files can be left behind.** When a note is deleted, the app is trusted to delete the recording; if that fails, the audio stays in the bucket forever, while the screen says Gyan keeps no copy. | Phase 2 and 5 |
+| 2 | **No limits where it costs money.** The counters and the settings table now exist (phase 2), but the server functions do not ask them yet, so translating a note is still an uncapped paid AI call and a slightly different language code still dodges the save-once cache. | Phase 3 |
+| 3 | ~~No audit log.~~ **Done in phase 2.** | Done |
+| 4 | **Consent is recorded in the database now** (phase 2), but the app does not write to it yet. | Phase 4 |
+| 5 | **Retention exists now** (phase 2) but nothing runs it on a schedule, and the screen to choose a keeping time is not built. | Phase 5 |
 | 6 | **A file's type is taken on trust.** The app says what kind of file it is, and nothing checks the contents. A file claiming to be plain text has its raw contents fed to the AI. | Phase 3 |
 | 7 | **No web security headers**, and the server functions accept requests from any website. | Phase 3 and 4 |
 | 8 | **No second factor, no automatic sign-out**, and an 8-character password minimum. Being signed in alone was enough to change the password. | Phase 4 |
-| 9 | **13 server-only functions have one lock, not two** — they trust the server code to have checked ownership. It does, everywhere I looked. | Phase 2 |
+| 9 | **Server-only functions mostly have one lock, not two** — they trust the server code to have checked ownership. It does, everywhere I looked. Three were given a second lock in phase 2 (`finish_chat_message`, `discard_invite`, and the new ones). The rest are listed as accepted: they are unreachable from the app, and only somebody already holding the server key could reach them. | Partly done |
 | 10 | Two copies of the same text-escaping function have drifted apart. Not exploitable today. | Phase 3 |
 | 11 | **Web sign-in tokens sit in the browser's own storage**, so anything that could run a script on the page could take one. | See below |
 

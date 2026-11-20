@@ -61,11 +61,45 @@ const a = { email: env.TEST_USER_A_EMAIL, password: env.TEST_USER_A_PASSWORD };
 const b = { email: env.TEST_USER_B_EMAIL, password: env.TEST_USER_B_PASSWORD };
 const ready = !!(url && key && a.email && a.password && b.email && b.password);
 
+/**
+ * STRICT MODE. These are the only tests that prove, against a real database, that one
+ * person cannot read another person's notes. Quietly skipping them means a green run can
+ * mean nothing was checked at all -- which is exactly what happened before prompt 11.
+ *
+ * Set GYAN_REQUIRE_LIVE_RLS=1 (and in any CI that has the test accounts) and a missing
+ * setting becomes a failure instead of a shrug.
+ */
+const strict = process.env.GYAN_REQUIRE_LIVE_RLS === '1';
+
 if (!ready) {
+  const missing = [
+    !url && 'EXPO_PUBLIC_SUPABASE_URL',
+    !key && 'EXPO_PUBLIC_SUPABASE_KEY',
+    !a.email && 'TEST_USER_A_EMAIL',
+    !a.password && 'TEST_USER_A_PASSWORD',
+    !b.email && 'TEST_USER_B_EMAIL',
+    !b.password && 'TEST_USER_B_PASSWORD',
+  ].filter(Boolean);
+  const why =
+    'THE ONLY TESTS THAT PROVE ONE PERSON CANNOT READ ANOTHER PERSON\'S NOTES DID NOT RUN.\n' +
+    `Missing from .env.local: ${missing.join(', ')}.\n` +
+    'See docs/testing/prompt-3.md for making the two test users.';
+  if (strict) throw new Error(why);
   // eslint-disable-next-line no-console
-  console.warn('Skipping Supabase isolation tests: add TEST_USER_A_* and TEST_USER_B_* to .env.local.');
+  console.warn(`\n${'='.repeat(78)}\n${why}\n${'='.repeat(78)}\n`);
 }
 const maybe = ready ? describe : describe.skip;
+
+/**
+ * Says a check could not run because the database file has not been pushed yet. In strict
+ * mode that is a failure, because "not pushed" is something somebody has to go and do.
+ */
+function notPushedYet(what: string): void {
+  const why = `Run \`supabase db push\` to add ${what}, then run npm test again.`;
+  if (strict) throw new Error(why);
+  // eslint-disable-next-line no-console
+  console.warn(`Skipped: ${why}`);
+}
 
 async function login(creds: { email?: string; password?: string }) {
   const client: SupabaseClient = createClient(url!, key!, { global: { fetch: realFetch }, auth: { persistSession: false, autoRefreshToken: false } });
@@ -344,5 +378,169 @@ maybe('Supabase test project: privacy between users', () => {
     expect(plans.error ?? plans.data?.length === 0).toBeTruthy();
     const profiles = await anon.from('profiles').select('id');
     expect(profiles.error ?? profiles.data?.length === 0).toBeTruthy();
+  });
+});
+
+/**
+ * The security baseline (prompt 11), checked against the real test project.
+ *
+ * These need `supabase db push` to have been run. Until then each says so plainly, and in
+ * strict mode (GYAN_REQUIRE_LIVE_RLS=1) it is a failure rather than a shrug.
+ */
+maybe('Supabase test project: the security baseline', () => {
+  let A: Awaited<ReturnType<typeof login>>;
+  let B: Awaited<ReturnType<typeof login>>;
+  /** Has `supabase db push` been run since prompt 11? Checked once, by looking. */
+  let pushed = false;
+
+  beforeAll(async () => {
+    expect(url).toContain('ofnspnobzesxmyqjxzad'); // only ever the TEST project
+    A = await login(a);
+    B = await login(b);
+    const probe = await A.client.from('security_settings').select('kind').limit(1);
+    pushed = !probe.error;
+  });
+
+  test('the app can read the limits, so it knows when to sign somebody out', async () => {
+    const read = await A.client.from('security_settings').select('kind, minutes').eq('kind', 'inactivity').maybeSingle();
+    if (read.error) return notPushedYet('security_settings');
+    expect(read.data?.minutes).toBeGreaterThan(0);
+  });
+
+  test('NOBODY CAN CHANGE A LIMIT FROM THE APP', async () => {
+    const read = await A.client.from('security_settings').select('kind').limit(1);
+    if (read.error) return notPushedYet('security_settings');
+
+    const write = await A.client.from('security_settings').update({ minutes: 9999 }).eq('kind', 'inactivity').select();
+    // Either refused outright, or allowed through to a rule that changes nothing.
+    expect(write.error ?? (write.data ?? []).length === 0).toBeTruthy();
+
+    const after = await A.client.from('security_settings').select('minutes').eq('kind', 'inactivity').single();
+    expect(after.data?.minutes).not.toBe(9999);
+  });
+
+  test('THE RATE LIMIT COUNTERS ARE INVISIBLE TO THE APP', async () => {
+    const read = await A.client.from('rate_limits').select('*');
+    // No rule and no permission at all: either an error, or nothing to see.
+    expect(read.error ?? (read.data ?? []).length === 0).toBeTruthy();
+  });
+
+  test('THE APP CANNOT ASK FOR SOMEBODY ELSE’S ALLOWANCE TO BE SPENT', async () => {
+    const { error } = await A.client.rpc('check_rate_limit', {
+      p_kind: 'translate',
+      p_user_id: B.userId,
+      p_account_id: null,
+    });
+    // Server only. A signed-in person must never be able to reach it.
+    expect(error).not.toBeNull();
+  });
+
+  test('THE APP CANNOT RUN RETENTION, not even as a dry run', async () => {
+    const { error } = await A.client.rpc('run_retention', { p_dry_run: true });
+    expect(error).not.toBeNull();
+  });
+
+  test('THE APP CANNOT WRITE A LOG ROW ABOUT SOMEBODY ELSE', async () => {
+    const direct = await A.client.rpc('record_audit', {
+      p_account_id: null,
+      p_actor_user_id: B.userId,
+      p_action: 'note_delete',
+    });
+    expect(direct.error).not.toBeNull();
+
+    // And the door the app *is* allowed to use refuses an action it has no business logging.
+    const mine = await A.client.rpc('record_my_action', { p_action: 'note_delete' });
+    if (mine.error?.message?.includes('Could not find the function')) return notPushedYet('record_my_action');
+    expect(mine.error).not.toBeNull();
+  });
+
+  test('a person can write down their own sign in, and nothing else', async () => {
+    const ok = await A.client.rpc('record_my_action', { p_action: 'sign_in' });
+    if (ok.error?.message?.includes('Could not find the function')) return notPushedYet('record_my_action');
+    expect(ok.error).toBeNull();
+  });
+
+  test('B CANNOT READ A SINGLE LINE OF A’S AUDIT LOG', async () => {
+    const read = await B.client.from('audit_log').select('*');
+    if (read.error?.message?.includes('does not exist')) return notPushedYet('audit_log');
+    // B owns their own account, so they may see their own rows and never A's.
+    for (const row of read.data ?? []) expect(row.actor_user_id).not.toBe(A.userId);
+  });
+
+  test('THE AUDIT LOG CANNOT BE CHANGED OR DELETED FROM THE APP', async () => {
+    const read = await A.client.from('audit_log').select('id').limit(1);
+    if (read.error?.message?.includes('does not exist')) return notPushedYet('audit_log');
+
+    const changed = await A.client.from('audit_log').update({ action: 'sign_in' }).eq('id', read.data?.[0]?.id ?? 0).select();
+    expect(changed.error ?? (changed.data ?? []).length === 0).toBeTruthy();
+
+    const deleted = await A.client.from('audit_log').delete().eq('id', read.data?.[0]?.id ?? 0).select();
+    expect(deleted.error ?? (deleted.data ?? []).length === 0).toBeTruthy();
+  });
+
+  test('a person reads their own privacy settings, and gets the number in force', async () => {
+    const { data, error } = await A.client.rpc('get_account_privacy');
+    if (error?.message?.includes('Could not find the function')) return notPushedYet('get_account_privacy');
+    expect(error).toBeNull();
+    const row = Array.isArray(data) ? data[0] : data;
+    // Never null: the account's own choice, or the 30 minutes from security_settings.
+    expect(row.inactivity_minutes).toBeGreaterThan(0);
+    expect(typeof row.email_summaries).toBe('boolean');
+    expect(row.is_owner).toBe(true);
+  });
+
+  test('a silly keeping time is refused with a plain reason', async () => {
+    const { error } = await A.client.rpc('save_account_privacy', { p_settings: { retention_days: 7 } });
+    if (error?.message?.includes('Could not find the function')) return notPushedYet('save_account_privacy');
+    expect(error?.message).toContain('bad_retention');
+  });
+
+  test('B cannot change A’s privacy settings by writing to the table', async () => {
+    const read = await B.client.from('account_privacy').select('account_id').limit(1);
+    if (read.error?.message?.includes('does not exist')) return notPushedYet('account_privacy');
+
+    const write = await B.client.from('account_privacy').update({ retention_days: 30 }).neq('account_id', read.data?.[0]?.account_id ?? '').select();
+    expect(write.error ?? (write.data ?? []).length === 0).toBeTruthy();
+  });
+
+  test('consent is written down for the person signed in, and read by nobody else', async () => {
+    const written = await A.client.rpc('record_consent', { p_version: 'test-v0', p_hash: 'testhash', p_platform: 'web' });
+    if (written.error?.message?.includes('Could not find the function')) return notPushedYet('record_consent');
+    expect(written.error).toBeNull();
+
+    const mine = await A.client.from('consent_records').select('user_id, consent_version');
+    expect((mine.data ?? []).every((r) => r.user_id === A.userId)).toBe(true);
+
+    const theirs = await B.client.from('consent_records').select('user_id');
+    expect((theirs.data ?? []).every((r) => r.user_id === B.userId)).toBe(true);
+  });
+
+  test('a consent record cannot be edited or deleted afterwards', async () => {
+    const read = await A.client.from('consent_records').select('id').limit(1);
+    if (read.error?.message?.includes('does not exist')) return notPushedYet('consent_records');
+    if (!read.data?.length) return;
+
+    const changed = await A.client.from('consent_records').update({ consent_text_hash: 'tampered' }).eq('id', read.data[0].id).select();
+    expect(changed.error ?? (changed.data ?? []).length === 0).toBeTruthy();
+  });
+
+  test('THE APP CAN NO LONGER WRITE STRAIGHT INTO INTEGRATIONS', async () => {
+    // This one really tries to write, so it must not run before the fix is pushed, or it
+    // leaves a junk row behind in the test project. (That is not a guess: it happened
+    // once while this test was being written, which is also the proof the gap was real --
+    // a signed-in person could put any token they liked into the table the notes say will
+    // hold Slack and Teams tokens.)
+    if (!pushed) return notPushedYet('the integrations fix');
+
+    const { data } = await A.client.from('accounts').select('id').eq('owner_id', A.userId).single();
+    const write = await A.client.from('integrations').insert({
+      account_id: data!.id,
+      kind: 'slack',
+      settings: { token: 'should-never-be-stored-this-way' },
+    }).select();
+    expect(write.error).not.toBeNull();
+
+    // Belt and braces: if it ever does get through, take it straight back out again.
+    if (!write.error) await A.client.from('integrations').delete().eq('kind', 'slack');
   });
 });

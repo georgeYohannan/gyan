@@ -18,10 +18,11 @@ const serverOnly = [
 ];
 
 describe('database migration files', () => {
-  test('create the 17 tables from the data model (chunks waits for the embedding model)', () => {
+  test('create the 22 tables from the data model (chunks waits for the embedding model)', () => {
     expect(tables.sort()).toEqual([
-      'account_members', 'accounts', 'action_items', 'ai_usage', 'chat_messages', 'chat_threads',
-      'email_log', 'integrations', 'invites', 'meetings', 'mind_maps', 'plans', 'profiles',
+      'account_members', 'account_privacy', 'accounts', 'action_items', 'ai_usage', 'audit_log',
+      'chat_messages', 'chat_threads', 'consent_records', 'email_log', 'integrations', 'invites',
+      'meetings', 'mind_maps', 'plans', 'profiles', 'rate_limits', 'security_settings',
       'summaries', 'transcript_segments', 'translations', 'usage',
     ]);
   });
@@ -30,8 +31,19 @@ describe('database migration files', () => {
     expect(sql).toContain(`alter table public.${table} enable row level security`);
   });
 
-  test('every table has at least one read rule', () => {
-    for (const t of tables) expect(sql).toMatch(new RegExp(`create policy "[^"]+" on public\\.${t}\\s+for select`));
+  test('every table either has a read rule, or is shut to the app completely', () => {
+    // Most tables are read by the app, and each needs a rule saying who may read what.
+    // A few are purely the server's business (the rate limit counters), and those must
+    // have NO permission at all rather than a rule nobody can reach. Both are safe; a
+    // table with a permission and no rule would not be.
+    for (const t of tables) {
+      const hasReadRule = new RegExp(`create policy "[^"]+" on public\\.${t}\\s+for select`).test(sql);
+      if (hasReadRule) continue;
+      // No read rule, so it must be shut completely: nothing granted to the app, and the
+      // permissions Supabase hands out by default explicitly taken back.
+      expect(new RegExp(`grant [^;]* on public\\.${t} to (anon|authenticated)`).test(sql)).toBe(false);
+      expect(sql).toContain(`revoke all on public.${t} from anon, authenticated`);
+    }
   });
 
   test.each(serverOnly)('the app cannot write to %s', (table) => {
@@ -746,5 +758,255 @@ describe('settings and team migration', () => {
     const pinned = t.match(/set search_path = ''/g) ?? [];
     expect(definers.length).toBeGreaterThan(0);
     expect(pinned).toHaveLength(definers.length);
+  });
+});
+
+describe('the security baseline migration (prompt 11)', () => {
+  const t = fs.readFileSync(path.join(dir, '20261120100000_security_baseline.sql'), 'utf8');
+  /** The SQL with the comments taken out, for rules about what the code does. */
+  const code = t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
+
+  test('it only adds things, apart from two drops it explains', () => {
+    expect(code).not.toMatch(/drop table|drop column|drop schema/i);
+    expect(code).not.toMatch(/truncate/i);
+    // The two deliberate replacements: discard_invite gains an argument (so the old
+    // signature has to go, or calling it would be ambiguous), and three integrations
+    // write rules go because the app no longer has permission to use them.
+    const drops = code.match(/drop (function|policy)[^;]*/gi) ?? [];
+    expect(drops).toHaveLength(4);
+    expect(code).toContain('drop function if exists public.discard_invite(uuid)');
+    expect(code).toContain('drop policy if exists "Owner adds integrations" on public.integrations');
+  });
+
+  test('every function pins its search path', () => {
+    const definers = t.match(/security definer/g) ?? [];
+    const pinned = t.match(/set search_path = ''/g) ?? [];
+    expect(definers.length).toBeGreaterThan(0);
+    expect(pinned).toHaveLength(definers.length);
+  });
+
+  // -------------------------------------------------------------------------
+  // The audit log
+  // -------------------------------------------------------------------------
+
+  test('THE AUDIT LOG HOLDS NO WORDS FROM A MEETING, only ids and fixed facts', () => {
+    const table = t.slice(t.indexOf('create table public.audit_log'), t.indexOf('create index audit_log_account'));
+    // Every column is an id, a timestamp, a small jsonb of facts, or one of a fixed list
+    // of action names. A text column would be an invitation to log a transcript line.
+    const freeText = table.match(/^\s+(\w+) text/gm) ?? [];
+    expect(freeText.map((l) => l.trim())).toEqual(['action text', 'target_type text']);
+    // And no column that would obviously hold personal information.
+    expect(table).not.toMatch(/email|transcript|summary|content|message|title/i);
+  });
+
+  test('THE AUDIT LOG CANNOT BE CHANGED OR DELETED, by anybody, server key included', () => {
+    // A rule cannot do this, because the server key skips rules. A trigger can.
+    expect(t).toContain('create trigger audit_log_never_changes');
+    expect(t).toContain('create trigger audit_log_never_deleted');
+    expect(t).toMatch(/before update on public\.audit_log/);
+    expect(t).toMatch(/before delete on public\.audit_log/);
+    expect(t).toContain('append only and cannot be changed or deleted');
+    // Nothing anywhere may grant the app permission to change it.
+    expect(t).not.toMatch(/grant [^;]*(insert|update|delete)[^;]* on public\.audit_log to (anon|authenticated)/);
+    expect(t).toContain('grant select on public.audit_log to authenticated');
+  });
+
+  test('the audit log outlives the things it talks about, so it has no foreign keys', () => {
+    const table = t.slice(t.indexOf('create table public.audit_log'), t.indexOf('create index audit_log_account'));
+    // "on delete cascade" from accounts would erase the record of an account being
+    // deleted, which is the exact opposite of the point.
+    expect(table).not.toMatch(/references/);
+    const consent = t.slice(t.indexOf('create table public.consent_records'), t.indexOf('create unique index consent_records'));
+    expect(consent).not.toMatch(/references/);
+  });
+
+  test('only the ACCOUNT OWNER reads the audit log', () => {
+    expect(t).toMatch(/create policy "Owner reads audit_log of own accounts" on public\.audit_log\s+for select to authenticated using \(\(select private\.is_account_owner\(account_id\)\)\)/);
+    const list = t.slice(t.indexOf('create function public.list_audit_log'), t.indexOf('revoke execute on function public.list_audit_log'));
+    expect(list).toContain("raise exception 'not_owner'");
+    expect(list).toContain("where am.user_id = me and am.role = 'owner'");
+    // A name, never an email address. Comments stripped first: saying "never an email
+    // address" in a note to the next person is the point, a column holding one is not.
+    const listCode = code.slice(
+      code.indexOf('create function public.list_audit_log'),
+      code.indexOf('revoke execute on function public.list_audit_log'),
+    );
+    expect(listCode).not.toMatch(/auth\.users|email/i);
+  });
+
+  test('THE APP CAN ONLY LOG SOMETHING ABOUT ITSELF, and only three kinds of thing', () => {
+    const mine = t.slice(t.indexOf('create function public.record_my_action'), t.indexOf('revoke execute on function public.record_my_action'));
+    // The person always comes from the login, never from the request.
+    expect(mine).toContain('me uuid := (select auth.uid())');
+    expect(mine).toContain("if p_action not in ('sign_in', 'note_view', 'consent_accept') then");
+    expect(mine).toContain("raise exception 'not_allowed'");
+    // A note has to be one they can really read before it can be named.
+    expect(mine).toContain('private.can_read_meeting(p_meeting_id)');
+    // The guard against flooding the log, which would make it useless.
+    expect(mine).toContain("interval '1 minute'");
+  });
+
+  // -------------------------------------------------------------------------
+  // Limits
+  // -------------------------------------------------------------------------
+
+  test('EVERY LIMIT COMES FROM THE SETTINGS TABLE, never from the code', () => {
+    const check = t.slice(t.indexOf('create function private.check_rate_limit'), t.indexOf('revoke execute on function private.check_rate_limit'));
+    expect(check).toContain('from public.security_settings where kind = p_kind');
+    expect(check).toContain('rule.per_person_per_hour');
+    expect(check).toContain('rule.per_account_per_hour');
+    // No number written into the checking code itself.
+    expect(check).not.toMatch(/per_person_per_hour\s*(>|<|>=|<=)\s*\d/);
+  });
+
+  test('a refused go is not counted, so the limit is exact', () => {
+    const check = t.slice(t.indexOf('create function private.check_rate_limit'), t.indexOf('revoke execute on function private.check_rate_limit'));
+    // The raise undoes the counting with it, which is what keeps the count exact.
+    expect(check).toContain("raise exception 'rate_limited'");
+    expect(check).toMatch(/do update set used = public\.rate_limits\.used \+ 1/);
+  });
+
+  test('the limit check is the SERVER’s to make, not the app’s', () => {
+    for (const fn of ['private.check_rate_limit(text, uuid, uuid)', 'public.check_rate_limit(text, uuid, uuid)']) {
+      expect(t).toContain(`revoke execute on function ${fn} from public, anon, authenticated`);
+      expect(t).toContain(`grant execute on function ${fn} to service_role`);
+    }
+    // Only functions in the public schema can be reached over the API, which is why
+    // there is a public door at all.
+    expect(t).toContain('create function public.check_rate_limit');
+  });
+
+  test('every limit in the settings table has a plain description', () => {
+    const rows = [...t.matchAll(/\n\s+\('(\w+)',\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*'([^']+)'\)/g)];
+    expect(rows.length).toBeGreaterThanOrEqual(9);
+    for (const [, kind, , , , description] of rows) {
+      expect(description.length).toBeGreaterThan(20);
+      expect(kind).toMatch(/^[a-z_]+$/);
+    }
+    // The one the app needs in order to sign somebody out.
+    expect(t).toMatch(/\('inactivity',\s*null,\s*null,\s*30,/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Keeping, and throwing away
+  // -------------------------------------------------------------------------
+
+  test('AN ACCOUNT THAT ALREADY EXISTS KEEPS ITS NOTES FOR EVER', () => {
+    // The founder chose 90 days for new accounts. Applying that to accounts that already
+    // exist would delete somebody's work because of a default they never saw.
+    const backfill = t.slice(t.indexOf('insert into public.account_privacy (account_id, retention_days)\nselect'), t.indexOf('create function private.start_account_privacy'));
+    expect(backfill).toContain('select a.id, null from public.accounts a');
+    // And the 90 days arrives only for accounts made after this.
+    const starter = t.slice(t.indexOf('create function private.start_account_privacy'), t.indexOf('revoke execute on function private.start_account_privacy'));
+    expect(starter).toContain('values (new.id, 90)');
+    // The backfill has to run BEFORE the trigger exists, or new rows would get 90 too.
+    expect(t.indexOf('select a.id, null from public.accounts a')).toBeLessThan(t.indexOf('create trigger accounts_start_privacy'));
+  });
+
+  test('every way of making an account gets a privacy row, through a trigger', () => {
+    // Accounts are made in three places (signing up, being removed from a team, tidying
+    // up). A trigger covers all three, and whatever is added next.
+    expect(t).toContain('create trigger accounts_start_privacy');
+    expect(t).toMatch(/after insert on public\.accounts/);
+  });
+
+  test('RETENTION IS A DRY RUN UNLESS SOMEBODY ASKS OUT LOUD', () => {
+    expect(t).toContain('create function public.run_retention(p_dry_run boolean default true)');
+    const run = t.slice(t.indexOf('create function public.run_retention'), t.indexOf('revoke execute on function public.run_retention'));
+    expect(run).toContain('if not p_dry_run then');
+    // Every delete sits inside that check.
+    const deletes = [...run.matchAll(/delete from public\.meetings/g)];
+    expect(deletes).toHaveLength(1);
+    expect(run.indexOf('if not p_dry_run then')).toBeLessThan(run.indexOf('delete from public.meetings'));
+    // A record is written BEFORE the note goes, so it survives it.
+    expect(run.indexOf("'retention_delete'")).toBeLessThan(run.indexOf('delete from public.meetings'));
+    // And it hands back the file paths, because database rules do not reach storage.
+    expect(run).toContain('file_path');
+  });
+
+  test('only the server can run retention, never the app', () => {
+    expect(t).toContain('revoke execute on function public.run_retention(boolean) from public, anon, authenticated');
+    expect(t).toContain('grant execute on function public.run_retention(boolean) to service_role');
+  });
+
+  // -------------------------------------------------------------------------
+  // Consent
+  // -------------------------------------------------------------------------
+
+  test('CONSENT IS WRITTEN DOWN WITH ITS VERSION, and cannot be edited afterwards', () => {
+    expect(t).toContain('create trigger consent_records_never_changes');
+    expect(t).toContain('create trigger consent_records_never_deleted');
+    const record = t.slice(t.indexOf('create function public.record_consent'), t.indexOf('revoke execute on function public.record_consent'));
+    // The person comes from the login, never from the request.
+    expect(record).toContain('me uuid := (select auth.uid())');
+    expect(record).toContain('on conflict (user_id, consent_version) do nothing');
+    // Lengths are capped, so a huge string cannot be posted into the table.
+    expect(record).toContain('length(p_version) > 40');
+  });
+
+  test('a person can read only their own consent record', () => {
+    expect(t).toMatch(/create policy "Read own consent records" on public\.consent_records\s+for select to authenticated using \(user_id = \(select auth\.uid\(\)\)\)/);
+  });
+
+  // -------------------------------------------------------------------------
+  // The hardening fixes
+  // -------------------------------------------------------------------------
+
+  test('A TABLE ADDED IN FUTURE CANNOT LAND WIDE OPEN', () => {
+    // The revoke back in migration 2 only covered the tables existing at the time.
+    expect(t).toContain('alter default privileges in schema public revoke all on tables from anon, authenticated');
+    expect(t).toContain('alter default privileges in schema public revoke all on sequences from anon, authenticated');
+  });
+
+  test('the app can no longer write straight into integrations', () => {
+    expect(t).toContain('revoke insert, update, delete on public.integrations from authenticated');
+    // The three rules that permission existed for go with it.
+    for (const name of ['Owner adds integrations', 'Owner edits integrations', 'Owner deletes integrations']) {
+      expect(t).toContain(`drop policy if exists "${name}" on public.integrations`);
+    }
+  });
+
+  test('a cost row cannot be billed to an account the chat does not belong to', () => {
+    const fn = t.slice(t.indexOf('create or replace function public.finish_chat_message'), t.indexOf('revoke execute on function public.finish_chat_message'));
+    expect(fn).toContain('select t.account_id into thread_account');
+    expect(fn).toContain('if thread_account <> p_account_id then');
+    expect(fn).toContain("raise exception 'wrong_account'");
+    // The check happens before anything is written.
+    expect(fn.indexOf('wrong_account')).toBeLessThan(fn.indexOf('insert into public.chat_messages'));
+  });
+
+  test('taking an invite back now has to name the account', () => {
+    expect(t).toContain('create function public.discard_invite(p_invite_id uuid, p_account_id uuid)');
+    const fn = t.slice(t.indexOf('create function public.discard_invite'), t.indexOf('revoke execute on function public.discard_invite'));
+    expect(fn).toContain('where id = p_invite_id and account_id = p_account_id');
+    expect(t).toContain('grant execute on function public.discard_invite(uuid, uuid) to service_role');
+    expect(t).not.toMatch(/grant execute on function public\.discard_invite\(uuid, uuid\) to (anon|authenticated)/);
+  });
+
+  test.each([
+    'record_audit(uuid, uuid, text, text, uuid, uuid, jsonb)',
+    'run_retention(boolean)',
+    'discard_invite(uuid, uuid)',
+    'check_rate_limit(text, uuid, uuid)',
+  ])('only the server can run %s', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon, authenticated`);
+    expect(t).toContain(`grant execute on function public.${fn} to service_role`);
+  });
+
+  test.each([
+    'record_my_action(text, uuid)',
+    'record_consent(text, text, text)',
+    'get_account_privacy()',
+    'save_account_privacy(jsonb)',
+    'list_audit_log(int, timestamptz)',
+  ])('the app can run %s, and a signed out visitor cannot', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon`);
+    expect(t).toContain(`grant execute on function public.${fn} to authenticated`);
+  });
+
+  test('it never claims Gyan is compliant with anything', () => {
+    // Only a lawyer may change this sentence.
+    expect(t).toMatch(/BUILT TO SUPPORT HIPAA\s*\n?--\s*AND GDPR REQUIREMENTS, PENDING LEGAL REVIEW|built to support HIPAA/i);
+    expect(t).not.toMatch(/is HIPAA compliant|is GDPR compliant|fully compliant/i);
   });
 });

@@ -61,6 +61,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "check": "npm run typecheck && npm test",
+    "check:db": "sh scripts/db-check/run.sh",
     "scan:secrets": "node scripts/scan-secrets.js",
     "scan:secrets:all": "node scripts/scan-secrets.js --tracked",
     "scan:secrets:history": "node scripts/scan-secrets.js --history",

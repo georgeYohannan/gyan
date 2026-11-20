@@ -82,6 +82,34 @@ describe('inviting somebody', () => {
     expect(calls).toEqual(['claim_invite', 'discard_invite', 'log_account_email']);
   });
 
+  test('TAKING AN INVITE BACK NAMES THE ACCOUNT, so the database can check it belongs there', async () => {
+    // discard_invite used to take only an invite id, so it had no idea which account the
+    // invite belonged to. Asserting the arguments, not just the call, because a test that
+    // checks only the name would have passed either way.
+    const args: Record<string, unknown>[] = [];
+    const db: Db = {
+      rpc(name, callArgs) {
+        if (name === 'claim_invite') return answer({ data: [CLAIMED], error: null });
+        if (name === 'discard_invite') args.push(callArgs as Record<string, unknown>);
+        return answer({ data: null, error: null });
+      },
+    };
+
+    await expect(
+      runInvite({
+        db,
+        send: async () => {
+          throw new Error('connection timed out');
+        },
+        userId: 'u1',
+        email: 'newbie@example.test',
+        appUrl: 'https://app.example.test',
+      }),
+    ).rejects.toThrow(/could not reach the mail server/i);
+
+    expect(args).toEqual([{ p_invite_id: 'i1', p_account_id: 'a1' }]);
+  });
+
   test('a failed send is written down too, as failed', async () => {
     const written: Record<string, unknown>[] = [];
     const db: Db = {

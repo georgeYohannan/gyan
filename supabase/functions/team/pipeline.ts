@@ -115,7 +115,14 @@ export async function runInvite(o: InviteOptions): Promise<InviteResult> {
     // Take the invite back, so no seat is held by an invite that nobody got. If even this
     // fails there is nothing more to do here: the owner can take it back by hand on the Team
     // screen, which is why that button exists.
-    await quietly(() => o.db.rpc('discard_invite', { p_invite_id: invite.invite_id }));
+    // The account has to be named now, so the database can check the invite really
+    // belongs to it (see the security baseline migration).
+    await quietly(() =>
+      o.db.rpc('discard_invite', {
+        p_invite_id: invite.invite_id,
+        p_account_id: invite.invite_account_id,
+      }),
+    );
     await quietly(() =>
       o.db.rpc('log_account_email', {
         p_account_id: invite.invite_account_id,
