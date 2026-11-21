@@ -674,12 +674,37 @@ export const HELP: Record<string, HelpEntry> = {
     id: 'settingsData',
     title: 'Data and privacy',
     sentences: [
-      'This is where you make something go away for good.',
+      'This page decides how long Gyan keeps your notes, what its emails may carry, and how to take a copy or delete something.',
+      'You can download everything Gyan holds about you as one file, whenever you want.',
       'Deleting a note removes its recording, its transcript, its summary, its to-dos and its chat.',
-      'Deleting your account removes everything, and Gyan keeps no copy.',
-      'Both ask you first, and neither can be undone.',
+      'Deleting your account removes everything you made, and lists the few records that stay and why.',
     ],
     lists: [
+      {
+        heading: 'How long notes are kept',
+        items: [
+          'For ever, or 30, 90 or 365 days. Only the account owner can change it.',
+          'Notes older than the time you pick are deleted on their own, with their recordings.',
+          'Keeping less is safer if anything ever goes wrong. Nothing comes back once it is gone.',
+        ],
+      },
+      {
+        heading: 'What recap emails carry',
+        items: [
+          'The whole summary, or a link only.',
+          'An email sits in an inbox, gets forwarded and syncs to phones, so some workspaces would rather send only a link.',
+          'With a link only, what was said never leaves Gyan.',
+        ],
+      },
+      {
+        heading: 'Downloading a copy of everything',
+        items: [
+          'One file holding every note on this workspace, with its transcript, summary and to-dos.',
+          'Your own chats are in it. Nobody else\u2019s are, even on a shared account.',
+          'The recordings are in it too. A recording too big to fit is listed with its own link instead.',
+          'The download link works for one hour. Ask again any time for a fresh one.',
+        ],
+      },
       {
         heading: 'Before you delete a note',
         items: [
@@ -692,6 +717,7 @@ export const HELP: Record<string, HelpEntry> = {
         items: [
           'If other people are still on your account, remove them on the Team page first.',
           'You have to type DELETE, so it cannot happen by accident.',
+          'A few records stay: what happened on the account, a line for each email sent, and what each AI call cost. The screen lists them with the reason. None holds a word anybody said.',
           'If you are on somebody else\u2019s team, the notes you made stay with them.',
         ],
       },

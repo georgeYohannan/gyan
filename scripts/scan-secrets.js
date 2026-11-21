@@ -52,6 +52,11 @@ const NOT_A_SECRET =
 function isPlaceholder(value) {
   if (value.includes('...') || value.includes('\u2026')) return true;
   if (/^[a-z]+(?:[_-][a-z]+)+$/.test(value)) return true;
+  // Something waiting to be filled in: a printf placeholder, a shell variable, a template
+  // slot. A real key never contains one, and a line that does is showing the SHAPE of a
+  // key rather than carrying one. (Added after this scanner stopped a commit over a
+  // printf line in the testing checklist, which was doing exactly that.)
+  if (/%[sdq]|\$\{|\$\(|<[A-Za-z_]+>|\bYOUR_[A-Z_]+\b/.test(value)) return true;
   return false;
 }
 

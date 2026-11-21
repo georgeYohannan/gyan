@@ -46,6 +46,10 @@ describe('the secret scanner leaves alone things that are not keys', () => {
     ['an empty line in .env.example', 'EXPO_DEEPGRAM_KEY='],
     ['a stand-in that trails off', 'EXPO_ANTHROPIC_KEY=sk-ant-...'],
     ['a stand-in written as words', 'EXPO_SMTP_PASSWORD=the_mailbox_password'],
+    ['a printf line showing the SHAPE of a key', "printf 'ANTHROPIC_API_KEY=sk-ant-%s\\n' \"rest\""],
+    ['a shell variable', 'ANTHROPIC_API_KEY=$ANTHROPIC_KEY'],
+    ['a template slot', 'ANTHROPIC_API_KEY=${THE_REAL_KEY}'],
+    ['a vendor doc example', 'ANTHROPIC_API_KEY=YOUR_DEEPGRAM_API_KEY'],
     ['the words service_role in SQL', "grant execute on function public.claim_recap to service_role;"],
     ['a React key prop', '<Row key={note.id} />'],
   ])('leaves alone %s', (_name, text) => {
@@ -74,7 +78,7 @@ describe('the secret scanner leaves alone things that are not keys', () => {
 });
 
 describe('placeholders', () => {
-  test.each([['sk-ant-...'], ['the_mailbox_password'], ['your-key-here']])('%s is a stand-in', (value) => {
+  test.each([['sk-ant-...'], ['the_mailbox_password'], ['your-key-here'], ['sk-ant-%s'], ['${KEY}'], ['YOUR_API_KEY']])('%s is a stand-in', (value) => {
     expect(isPlaceholder(value)).toBe(true);
   });
 
