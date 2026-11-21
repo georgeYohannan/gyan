@@ -166,6 +166,8 @@ describe('a copy of everything', () => {
     expect(Object.keys(inside)).toContain('recordings/note-1.mp3');
     expect(result.filesIncluded).toBe(1);
     expect(result.url).toContain('acc-1/user-me/export-id.zip');
+    // The path comes back too, so the server can tidy this file up in a day's time.
+    expect(result.path).toBe('acc-1/user-me/export-id.zip');
   });
 
   test('IT HOLDS EVERYTHING GYAN KNOWS, not a summary of it', async () => {

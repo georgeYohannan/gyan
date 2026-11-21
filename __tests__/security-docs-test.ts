@@ -117,7 +117,8 @@ describe('the HIPAA checklist', () => {
   test('the things that are NOT done are marked as not done', () => {
     expect(checklist).toContain('**NOT DONE**');
     // And the honest limit on two-factor is spelled out rather than glossed over.
-    expect(checklist).toContain('Recovery codes first, then the stricter rule');
+    expect(checklist).toContain('A way back in first, then the stricter rule');
+    expect(checklist).toContain('marked experimental');
   });
 
   test('no BAA is claimed as signed', () => {

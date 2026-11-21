@@ -237,6 +237,7 @@ describe('Profile', () => {
     await act(async () => {
       render(<ProfileScreen />);
     });
+    await act(async () => fireEvent.changeText(screen.getByLabelText('Your current password'), 'my-old-password'));
     await act(async () => fireEvent.changeText(screen.getByLabelText('New password'), 'longenoughnow1'));
     await act(async () => fireEvent.changeText(screen.getByLabelText('New password again'), 'differentonenow1'));
     await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Change password' })));
@@ -249,6 +250,7 @@ describe('Profile', () => {
     await act(async () => {
       render(<ProfileScreen />);
     });
+    await act(async () => fireEvent.changeText(screen.getByLabelText('Your current password'), 'my-old-password'));
     await act(async () => fireEvent.changeText(screen.getByLabelText('New password'), 'short'));
     await act(async () => fireEvent.changeText(screen.getByLabelText('New password again'), 'short'));
     await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Change password' })));
@@ -257,7 +259,10 @@ describe('Profile', () => {
     expect(screen.getByText('Use at least 12 characters.')).toBeTruthy();
   });
 
-  test('a new password is sent, and then wiped off the screen', async () => {
+  test('A STOLEN SESSION CANNOT CHANGE THE PASSWORD without knowing the old one', async () => {
+    // This is the whole reason the current-password box exists. Being signed in used to be
+    // enough, which turned an unattended laptop into a full account takeover: whoever had
+    // it could set a new password and lock the real person out of their own meetings.
     await act(async () => {
       render(<ProfileScreen />);
     });
@@ -265,7 +270,22 @@ describe('Profile', () => {
     await act(async () => fireEvent.changeText(screen.getByLabelText('New password again'), 'longenoughnow1'));
     await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Change password' })));
 
-    expect(mockChangePassword).toHaveBeenCalledWith('longenoughnow1');
+    expect(mockChangePassword).not.toHaveBeenCalled();
+    expect(screen.getByText('Type your current password first.')).toBeTruthy();
+  });
+
+  test('a new password is sent, and then wiped off the screen', async () => {
+    await act(async () => {
+      render(<ProfileScreen />);
+    });
+    await act(async () => fireEvent.changeText(screen.getByLabelText('Your current password'), 'my-old-password'));
+    await act(async () => fireEvent.changeText(screen.getByLabelText('New password'), 'longenoughnow1'));
+    await act(async () => fireEvent.changeText(screen.getByLabelText('New password again'), 'longenoughnow1'));
+    await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Change password' })));
+
+    // The CURRENT password goes with it. Without that, an unattended laptop or a stolen
+    // session could set a new password and lock the real person out of their own meetings.
+    expect(mockChangePassword).toHaveBeenCalledWith('longenoughnow1', 'my-old-password');
     expect(await screen.findByText('Your password is changed.')).toBeTruthy();
     expect(screen.getByLabelText('New password').props.value).toBe('');
     expect(screen.getByLabelText('New password again').props.value).toBe('');

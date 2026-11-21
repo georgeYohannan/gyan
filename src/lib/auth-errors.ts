@@ -3,6 +3,17 @@ export function friendlyAuthError(error: { code?: string; message?: string; stat
   switch (error.code) {
     case 'invalid_credentials':
       return 'That email and password do not match. Check them and try again.';
+    // Changing a password now asks for the current one, so this one has to say WHICH
+    // password was wrong. "That email and password do not match" would be baffling on a
+    // screen where no email was typed.
+    case 'wrong_current_password':
+      return 'That is not your current password. Check it and try again.';
+    case 'session_not_found':
+      return 'You are not signed in any more. Sign in again, then change your password.';
+    case 'same_password':
+      return 'That is the password you already have. Pick a different one.';
+    case 'reauthentication_needed':
+      return 'For your security, sign out and back in before changing your password.';
     case 'email_not_confirmed':
       return 'Please confirm your email first. Open the email we sent you and tap the link.';
     case 'user_already_exists':

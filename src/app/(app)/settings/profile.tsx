@@ -34,6 +34,7 @@ export default function ProfileScreen() {
   const [languageOpen, setLanguageOpen] = useState(false);
   const [languageError, setLanguageError] = useState<string>();
 
+  const [current, setCurrent] = useState('');
   const [password, setPassword] = useState('');
   const [again, setAgain] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
@@ -54,6 +55,10 @@ export default function ProfileScreen() {
 
   async function savePassword() {
     setPasswordSaved(false);
+    if (current.trim() === '') {
+      setPasswordError('Type your current password first.');
+      return;
+    }
     if (password.length < MIN_PASSWORD_LENGTH) {
       setPasswordError(`Use at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
@@ -64,13 +69,14 @@ export default function ProfileScreen() {
     }
     setPasswordSaving(true);
     setPasswordError(undefined);
-    const result = await changePassword(password);
+    const result = await changePassword(password, current);
     setPasswordSaving(false);
     if (result.error) {
       setPasswordError(result.error);
       return;
     }
-    // Clear both boxes, so a new password is never left sitting on screen.
+    // Clear every box, so no password is left sitting on screen.
+    setCurrent('');
     setPassword('');
     setAgain('');
     setPasswordSaved(true);
@@ -138,8 +144,28 @@ export default function ProfileScreen() {
       <GlassPanel>
         <Heading level={3}>Password</Heading>
         <Body small color="textSecondary">
-          Pick a new one and type it twice. You stay signed in on this device.
+          Type the password you use now, then pick a new one and type it twice. You stay
+          signed in on this device.
         </Body>
+        {/*
+          ASKING FOR THE CURRENT PASSWORD IS THE POINT OF THIS BOX.
+          It used to be enough to be signed in. That turned an unattended laptop, or a
+          stolen session, straight into a full account takeover: whoever had it could set a
+          new password and lock the real person out of their own meetings.
+        */}
+        <TextField
+          label="Your current password"
+          value={current}
+          onChangeText={(next) => {
+            setCurrent(next);
+            setPasswordError(undefined);
+            setPasswordSaved(false);
+          }}
+          secureTextEntry
+          autoComplete="current-password"
+          textContentType="password"
+          placeholder="The one you use now"
+        />
         <TextField
           label="New password"
           value={password}

@@ -104,7 +104,8 @@ export function TwoFactorGate({ children }: PropsWithChildren) {
           />
         </View>
         <Body small color="textSecondary">
-          Lost the app on your phone? Ask the person who owns this account to remove you and invite you again.
+          Lost the app on your phone? Email gyan@gyantechai.com from the address you sign in
+          with, and we will switch the code off for you so you can get back in.
         </Body>
       </GlassPanel>
     </Screen>

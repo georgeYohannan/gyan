@@ -49,6 +49,23 @@ Dashboard → **Authentication** → **Sign In / Providers** → **Email**:
 - **Leaked password protection**: this needs the Pro plan. **Leave it off for now.** I have
   not turned on anything paid.
 
+### 3b. Make the current-password check real
+
+Gyan now asks for your current password before changing it. **Supabase does not check that
+value unless the project is told to**, and I proved it: a change sent with a deliberately
+wrong current password succeeded against your test project. (It changed the test user's
+password; I put it straight back.)
+
+So right now that box stops somebody sitting at your unattended laptop, and does **not** stop
+somebody who has taken a session token.
+
+The setting is called `security_update_password_require_current_password`. Look for it in
+**Authentication → Sign In / Providers → Email**, near the password rules. If it is not
+there, it can be set through Supabase's Management API.
+
+**I could not verify from Supabase's own pages which plans allow it**, so if you cannot find
+it, that is worth asking them rather than assuming it is missing.
+
 ### 4. Turn on two-factor for YOUR OWN Supabase account
 
 Dashboard → account settings → enable two-factor.
@@ -84,6 +101,34 @@ Email them and ask:
 
 Then check it is working: Deepgram console → **Usage → Logs** → `mip_opt_out` should say
 **true** on new requests.
+
+### 6b. Decide about automatic deletion (nothing happens until you do)
+
+The tidy-up is built, deployed and tested. **Nothing runs it**, because running it deletes
+real work and that is your decision, not mine.
+
+It does two things: deletes notes past their account's keeping time (with their recordings),
+and throws away copies of data that people downloaded more than a day ago.
+
+**See what it WOULD do, without changing anything:**
+
+```
+curl -s -X POST "$SUPABASE_URL/functions/v1/retention"   -H "Authorization: Bearer $SERVICE_ROLE_KEY"   -H "Content-Type: application/json" -d '{}'
+```
+
+(Your project address and the **service_role** key are both in the Supabase dashboard under
+Settings → API. That key is the master key — never put it in the app or in a file you commit.)
+
+It answers with `notes_due` and `exports_due` and **changes nothing**.
+
+**Only when you are happy with that number**, run it for real by sending `{"confirm": true}`.
+
+**Your test account currently has 124 notes**, all set to "keep for ever", so nothing is due.
+If you ever set a keeping time, check the dry run first.
+
+To have it happen by itself, Supabase can call this on a schedule (Database → Cron). I have
+not set that up: a scheduled job that deletes customer work should be switched on by you,
+knowingly, not found later in a config file.
 
 ### 7. Read two documents and tell me if anything is wrong
 
@@ -161,9 +206,22 @@ You need an authenticator app on your phone (Google Authenticator, 1Password, Au
 
 Then **log out and back in**. It should ask for a code before showing you anything.
 
-**If you get stuck out:** turn it off from another signed-in device, or tell me and I can
-clear it in the dashboard. There are no recovery codes yet — that is written down as the
-next thing to build, and it is why two-factor is not yet required at the database level.
+**If you get stuck out — and this is the bit to remember, because a customer will ask one
+day:**
+
+1. Supabase dashboard → **Authentication** → **Users**
+2. Find the person by their email address
+3. Open them, and delete their **MFA factor**
+
+They can then sign in with just their password and set it up again. **Nothing of theirs is
+lost** — not their notes, not their chats.
+
+Do **not** remove them from the team and re-invite them. That works too, but they would lose
+their own chats.
+
+There are no self-service recovery codes yet. Both ways of building one into the app are
+marked experimental by Supabase, so neither is something to build a security feature on
+today — and it is why two-factor is not yet required at the database level.
 
 ### 13. Watch the record fill up
 

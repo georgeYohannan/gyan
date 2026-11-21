@@ -381,11 +381,11 @@ invite address checking, and the absence of anything sensitive in any log.
 
 | What | Why it matters |
 |---|---|
-| **A finished export is never deleted.** | It is the most concentrated copy of somebody's data there is, and it sits in the bucket indefinitely. The link expires after an hour, so it cannot be *reached* — but it still exists. Deleting exports older than a day belongs in the retention sweep. |
-| **Nothing runs the retention sweep.** | It works and is tested; somebody has to ask it to. Scheduling is a decision, because it deletes real work. |
+| ~~A finished export is never deleted.~~ | **Done.** Exports older than a day are thrown away, both by the tidy-up and opportunistically whenever somebody makes a new one. |
+| **Nothing runs the tidy-up on a schedule.** | It is built, deployed and tested, and refuses everybody but our own server. It is a **dry run unless asked out loud**. Scheduling it is deliberately left to the founder: a job that deletes customer work should be switched on knowingly, not found later in a config file. |
 | **Nothing watches for trouble.** | No alert on failed sign-ins, odd activity or a strange bill. |
-| **No recovery codes for two-factor.** | Which is why it is not required at the database level. |
-| **Changing a password does not ask for the old one.** | Being signed in is enough. |
+| **Getting back in after losing a phone is a manual step.** | It works today — the factor is cleared in the Supabase dashboard — and the app and the help now say so, instead of the wrong advice they gave before. Self-service needs either recovery codes or an owner-led reset, and **both are marked experimental** in the installed library, so neither is something to build a security feature on yet. This is why two-factor is not required at the database level. |
+| **Changing a password asks for the old one, but nothing checks it yet.** | Gyan now asks, which stops somebody at an unattended laptop. Supabase takes the value but does not verify it unless the project is told to -- **tested, not assumed**: a change sent with a deliberately wrong current password succeeded against the test project. The setting is `security_update_password_require_current_password`. Until it is on, the box is a speed bump, not a lock. Supabase's own pages do not say which plans allow it. |
 
 ### Dependency check
 

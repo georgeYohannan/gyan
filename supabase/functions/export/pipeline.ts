@@ -55,6 +55,8 @@ export type ExportOptions = {
 export type ExportResult = {
   /** Where to download it. Short lived on purpose. */
   url: string;
+  /** Where it was put, so it can be tidied up later. */
+  path: string;
   /** How big the zip is, so the screen can say. */
   bytes: number;
   /** How many recordings went inside it. */
@@ -195,5 +197,5 @@ export async function runExport(o: ExportOptions): Promise<ExportResult> {
   const url = await o.files.signedExportUrl(path, o.exportLinkSeconds);
   if (!url) throw new ExportError(MESSAGES.problem);
 
-  return { url, bytes: zip.length, filesIncluded: includedFiles.length, filesLinked: linkedFiles.length };
+  return { url, path, bytes: zip.length, filesIncluded: includedFiles.length, filesLinked: linkedFiles.length };
 }

@@ -39,9 +39,9 @@ These are the technical safeguards HIPAA's Security Rule asks for, in plain word
 | 16 | **The web pages are hardened** | **Done, with limits** | Content policy, no framing, no sniffing, referrer and permissions policies, HSTS. Inline styles and scripts are allowed because React Native for web needs them. |
 | 17 | **Consent is recorded** | **Done** | Which wording, by whom, and when. In the database, not just on the device. |
 | 18 | **Secrets never reach the app** | **Done** | Keys live only in server secrets. Checked before every commit and by tests. |
-| 19 | **Recovery codes for the second factor** | **NOT DONE** | See below. The reason it is not done matters. |
+| 19 | **A way back in if somebody loses their phone** | **By hand, and that is now written down** | There IS a working path today: you clear the person's second factor in the Supabase dashboard. It was simply not documented, and the app told people the wrong thing. Both ways of doing it inside the app -- recovery codes, and an owner resetting a teammate -- are marked **experimental** in the installed library, so neither is something to build a security feature on yet. |
 | 20 | **Automatic deletion runs on a schedule** | **NOT DONE** | Retention works, but somebody has to run it. Scheduling it is a decision for you, because it deletes real work. |
-| 21 | **Asking for the old password before changing it** | **NOT DONE** | Being signed in is currently enough. Supabase supports asking; it is small and is listed for a later round. |
+| 21 | **Asking for the old password before changing it** | **Half done** | Gyan asks for it, which stops somebody at an unattended laptop. It is **not yet a real lock**: Supabase does not check the value unless the project is told to, which was tested rather than assumed -- a change sent with a deliberately wrong current password succeeded. One project setting fixes it; see the hand-over list. |
 | 22 | **Someone is told when something looks wrong** | **NOT DONE** | Nothing watches the audit log or alerts on a burst of failures. HIPAA expects this. |
 
 ### The honest limit on the second factor
@@ -55,8 +55,12 @@ their phone.** Locking a customer out of their own meeting recordings for ever i
 failure than the one it fixes. Supabase has recovery codes, but the library marks that part
 experimental.
 
-**Recovery codes first, then the stricter rule.** That is item 19, and it should be done before
-any healthcare customer is signed.
+**A way back in first, then the stricter rule.** There is one today -- you clear the factor in
+the dashboard -- and the app and the help now say so instead of giving wrong advice. It is a
+manual step, which is fine for the number of customers Gyan has and is not fine for a
+thousand. Before any healthcare customer is signed, that should be self-service, and the
+honest obstacle is that both in-app ways of doing it are still marked experimental by
+Supabase.
 
 ---
 

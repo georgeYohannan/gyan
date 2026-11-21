@@ -651,8 +651,9 @@ export const HELP: Record<string, HelpEntry> = {
       {
         heading: 'If you lose the phone with your authenticator app',
         items: [
-          'Ask the person who owns the account to remove you and invite you again.',
-          'Keep the typed code somewhere safe when you set it up, and you can add the app again yourself.',
+          'Email gyan@gyantechai.com from the address you sign in with. We will switch the code off so you can get back in.',
+          'Keep the typed code somewhere safe when you set it up. With it you can add the app to a new phone yourself, with nobody\u2019s help.',
+          'Do not ask to be removed from the team and invited again. That works, but you would lose your own chats.',
         ],
       },
     ],

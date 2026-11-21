@@ -108,6 +108,29 @@ Deno.serve(async (req) => {
       exportFolder: EXPORT_FOLDER,
     });
 
+    // Remember the file itself, so it can be tidied up. An export is the most
+    // concentrated copy of somebody's information there is, and there is no reason to keep
+    // one once its link has expired: another takes seconds to make.
+    await admin.rpc('record_export', {
+      p_account_id: membership.account_id,
+      p_user_id: who.user.id,
+      p_path: result.path,
+      p_bytes: result.bytes,
+    });
+
+    // Tidy up anything older than a day, now, while we are here. Doing it on the way out of
+    // an export means it needs nothing scheduled and no extra moving part -- and the person
+    // most likely to make one is the person most likely to have made the last one.
+    try {
+      const { data: old } = await admin.rpc('old_exports', { p_dry_run: false, p_older_than_hours: 24 });
+      for (const row of (old ?? []) as { path: string }[]) {
+        await admin.storage.from(EXPORT_BUCKET).remove([row.path]);
+      }
+    } catch (e) {
+      // Tidying up must never stop somebody getting their own data.
+      console.error('tidying up old exports failed', e instanceof Error ? e.name : 'error');
+    }
+
     // Write down that a copy was taken. This is one of the things an account owner most
     // needs to be able to see afterwards.
     await admin.rpc('record_audit', {

@@ -18,12 +18,12 @@ const serverOnly = [
 ];
 
 describe('database migration files', () => {
-  test('create the 22 tables from the data model (chunks waits for the embedding model)', () => {
+  test('create the 23 tables from the data model (chunks waits for the embedding model)', () => {
     expect(tables.sort()).toEqual([
       'account_members', 'account_privacy', 'accounts', 'action_items', 'ai_usage', 'audit_log',
-      'chat_messages', 'chat_threads', 'consent_records', 'email_log', 'integrations', 'invites',
-      'meetings', 'mind_maps', 'plans', 'profiles', 'rate_limits', 'security_settings',
-      'summaries', 'transcript_segments', 'translations', 'usage',
+      'chat_messages', 'chat_threads', 'consent_records', 'email_log', 'export_log',
+      'integrations', 'invites', 'meetings', 'mind_maps', 'plans', 'profiles', 'rate_limits',
+      'security_settings', 'summaries', 'transcript_segments', 'translations', 'usage',
     ]);
   });
 
