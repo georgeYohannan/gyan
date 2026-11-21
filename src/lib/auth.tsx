@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js';
 import { createContext, use, useCallback, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import { Platform } from 'react-native';
 
+import { recordMyAction } from '@/lib/audit';
 import { friendlyAuthError } from '@/lib/auth-errors';
 import { getSupabase } from '@/lib/supabase';
 
@@ -62,7 +63,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const signIn = useCallback<AuthValue['signIn']>(async (email, password) => {
     const { error } = await getSupabase().auth.signInWithPassword({ email: email.trim(), password });
-    return error ? { error: friendlyAuthError(error) } : {};
+    if (error) return { error: friendlyAuthError(error) };
+    // Write the sign in down. Fire and forget: the record is worth having, and never worth
+    // keeping somebody waiting at a sign in screen for. The database refuses a second row
+    // for the same person inside a minute, so a retry cannot fill the log.
+    void recordMyAction('sign_in');
+    return {};
   }, []);
 
   const signOut = useCallback<AuthValue['signOut']>(async () => {

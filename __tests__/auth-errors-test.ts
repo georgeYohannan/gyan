@@ -5,7 +5,7 @@ describe('friendlyAuthError', () => {
     ['invalid_credentials', /do not match/],
     ['email_not_confirmed', /confirm your email/],
     ['user_already_exists', /already has an account/],
-    ['weak_password', /at least 8/],
+    ['weak_password', /at least 12/],
     ['over_email_send_rate_limit', /Wait a few minutes/],
   ])('%s gives plain words', (code, pattern) => {
     expect(friendlyAuthError({ code })).toMatch(pattern);

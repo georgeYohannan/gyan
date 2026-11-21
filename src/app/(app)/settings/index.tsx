@@ -15,6 +15,7 @@ import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { getPlanAndUsage, type PlanAndUsage } from '@/lib/plans';
 import { useProfile } from '@/lib/profile';
+import { getSecuritySettings, getTwoFactor, type SecuritySettings, type TwoFactor } from '@/lib/security';
 import { DEFAULT_SETTINGS, getRecapSettings, shortRecipients, type RecapSettings } from '@/lib/recaps';
 import { listTeam, seatsSentence, type Team } from '@/lib/team';
 
@@ -22,7 +23,21 @@ type Summaries = {
   plan?: PlanAndUsage;
   team?: Team;
   recap: RecapSettings;
+  security?: SecuritySettings;
+  twoFactor?: TwoFactor;
 };
+
+/**
+ * What the Security row says. It leads with the thing people came to check -- whether the
+ * extra code is on -- and adds the sign out time after it.
+ */
+function securitySummary(security?: SecuritySettings, twoFactor?: TwoFactor): string {
+  if (!security) return 'Two-factor sign in, and what has happened on this account.';
+  const code = twoFactor?.on ? 'Two-factor sign in is on' : 'Two-factor sign in is off';
+  const minutes = security.inactivityMinutes;
+  const time = minutes < 60 ? `${minutes} minutes` : minutes === 60 ? '1 hour' : `${minutes / 60} hours`;
+  return `${code}. Signs you out after ${time} of doing nothing.`;
+}
 
 /**
  * Settings: five doors, each saying what is behind it.
@@ -45,8 +60,10 @@ export default function SettingsScreen() {
       getPlanAndUsage().catch(() => undefined),
       listTeam().catch(() => undefined),
       getRecapSettings().catch(() => undefined),
-    ]).then(([plan, team, recap]) => {
-      setSummaries({ plan, team, recap: recap?.settings ?? DEFAULT_SETTINGS });
+      getSecuritySettings().catch(() => undefined),
+      getTwoFactor().catch(() => undefined),
+    ]).then(([plan, team, recap, security, twoFactor]) => {
+      setSummaries({ plan, team, recap: recap?.settings ?? DEFAULT_SETTINGS, security, twoFactor });
       setLoading(false);
     });
   }, []);
@@ -61,7 +78,7 @@ export default function SettingsScreen() {
     setLogOutError(result.error);
   }
 
-  const { plan, team, recap } = summaries;
+  const { plan, team, recap, security, twoFactor } = summaries;
   const email = session?.user.email ?? '';
   const name = displayName.trim() === '' ? email.split('@')[0] : displayName;
 
@@ -106,6 +123,11 @@ export default function SettingsScreen() {
             title="Recaps"
             summary={shortRecipients(recap)}
             href="/settings/recaps"
+          />
+          <NavRow
+            title="Security"
+            summary={securitySummary(security, twoFactor)}
+            href="/settings/security"
           />
           <NavRow
             title="Data and privacy"

@@ -629,6 +629,47 @@ export const HELP: Record<string, HelpEntry> = {
       },
     ],
   },
+  settingsSecurity: {
+    id: 'settingsSecurity',
+    title: 'Security',
+    sentences: [
+      'This page makes your account harder to get into, and shows what has happened on it.',
+      'Two-factor sign in asks for a 6-digit code from an app on your phone, as well as your password. A stolen password is then not enough on its own.',
+      'Gyan signs you out if you walk away and do nothing for a while. Reading, typing and uploading all count as using it.',
+      'The record at the bottom cannot be changed or deleted by anybody, including Gyan. Only the account owner can see it.',
+    ],
+    lists: [
+      {
+        heading: 'What the record keeps',
+        items: [
+          'Signing in.',
+          'Opening, exporting, emailing and deleting a note.',
+          'Changes to the team, and changes to these settings.',
+          'It never keeps the words of a meeting. Only what happened, to which note, and when.',
+        ],
+      },
+      {
+        heading: 'If you lose the phone with your authenticator app',
+        items: [
+          'Ask the person who owns the account to remove you and invite you again.',
+          'Keep the typed code somewhere safe when you set it up, and you can add the app again yourself.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-security-390.png'),
+        alt: 'The Security page on a phone: two-factor sign in, the automatic sign out time, and the record of what has happened.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/settings-security-1280.png'),
+        alt: 'The same Security page on a wide web window.',
+      },
+    ],
+  },
+
   settingsData: {
     id: 'settingsData',
     title: 'Data and privacy',

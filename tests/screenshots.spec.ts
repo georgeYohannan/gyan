@@ -304,6 +304,16 @@ for (const w of WIDTHS) {
     );
   });
 
+  test(`Security at ${w.name} pixels`, async ({ page, context }) => {
+    await shootSettings(
+      { page, context },
+      `settings-security-${w.name}.png`,
+      { width: w.width, height: w.full },
+      'Security',
+      'Security',
+    );
+  });
+
   test(`Data and privacy at ${w.name} pixels`, async ({ page, context }) => {
     await shootSettings(
       { page, context },

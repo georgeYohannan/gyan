@@ -1,3 +1,4 @@
+import { markActivity } from '@/hooks/use-inactivity-signout';
 import { Platform } from 'react-native';
 
 import { getSupabase } from '@/lib/supabase';
@@ -29,7 +30,14 @@ export async function uploadFile(
       xhr.setRequestHeader('apikey', process.env.EXPO_PUBLIC_SUPABASE_KEY ?? '');
       xhr.setRequestHeader('Content-Type', contentType);
       xhr.setRequestHeader('x-upsert', 'true');
-      xhr.upload.onprogress = (e) => onProgress?.(e.lengthComputable ? e.loaded / e.total : undefined);
+      xhr.upload.onprogress = (e) => {
+        // Tell the automatic sign out that something is still happening. A 50 MB file on a
+        // slow connection can take longer than the whole timeout with nobody touching the
+        // screen, and being signed out mid-upload would be a worse failure than the one the
+        // timeout prevents.
+        markActivity();
+        onProgress?.(e.lengthComputable ? e.loaded / e.total : undefined);
+      };
       xhr.onload = () =>
         xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(
               new Error(

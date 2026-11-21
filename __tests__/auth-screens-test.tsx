@@ -11,7 +11,12 @@ jest.mock('@/lib/auth', () => ({
 // Links need a navigator. Tests only need to see the words.
 jest.mock('expo-router', () => {
   const { Text } = require('react-native');
-  return { Link: ({ children }: { children: React.ReactNode }) => <Text>{children}</Text> };
+  return {
+    Link: ({ children }: { children: React.ReactNode }) => <Text>{children}</Text>,
+    // The log in screen reads ?signedOut=time, so it can say why somebody is looking at it
+    // again. Nothing in the address by default, which is the ordinary case.
+    useLocalSearchParams: () => ({}),
+  };
 });
 
 beforeEach(() => {
@@ -37,7 +42,7 @@ describe('Sign up screen', () => {
     await fill('not-an-email', 'short');
     await fireEvent.press(screen.getByRole('button', { name: 'Sign up' }));
     expect(screen.getByText(/Enter your email/)).toBeTruthy();
-    expect(screen.getByText('Use at least 8 characters.')).toBeTruthy();
+    expect(screen.getByText('Use at least 12 characters.')).toBeTruthy();
     expect(mockSignUp).not.toHaveBeenCalled();
   });
 

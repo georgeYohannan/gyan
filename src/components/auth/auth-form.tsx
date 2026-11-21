@@ -39,7 +39,18 @@ const words = {
 } as const;
 
 /** The email and password form shared by the Sign up and Log in screens. */
-export function AuthForm({ mode }: { mode: Mode }) {
+export function AuthForm({
+  mode,
+  /**
+   * Something to say before anybody types, such as why they are looking at this screen
+   * again. It seeds the same line that a sent confirmation email uses, rather than adding a
+   * second one, so the screen never shows two notices at once.
+   */
+  notice: openingNotice,
+}: {
+  mode: Mode;
+  notice?: string;
+}) {
   const w = words[mode];
   const { signUp, signIn } = useAuth();
   const [email, setEmail] = useState('');
@@ -47,7 +58,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [emailError, setEmailError] = useState<string>();
   const [passwordError, setPasswordError] = useState<string>();
   const [formError, setFormError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
+  const [notice, setNotice] = useState<string | undefined>(openingNotice);
   const [busy, setBusy] = useState(false);
 
   async function submit() {

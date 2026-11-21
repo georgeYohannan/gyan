@@ -22,6 +22,8 @@ export const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 export const NOTE_ID = '33333333-3333-4333-8333-333333333333';
 export const FAILED_NOTE_ID = '44444444-4444-4444-8444-444444444444';
 export const TEXT_NOTE_ID = '55555555-5555-4555-8555-555555555555';
+/** The made up authenticator app, so the two-factor screens have something to show. */
+export const FAKE_FACTOR_ID = 'ffffffff-0000-4000-8000-00000000f1f1';
 /** A made up teammate, so the Send recap dialog has more than one person in it. */
 export const TEAMMATE = { id: '66666666-6666-4666-8666-666666666666', email: 'test.b@example.com' };
 
@@ -63,6 +65,12 @@ export type FakeData = {
   recapPeople: Row[];
   /** The account's saved recap settings, as get_recap_settings would hand them back. */
   recapSettings: { to_owner: boolean; to_members: boolean; auto_send: boolean };
+  /** True when the fake person already has an authenticator app set up. */
+  twoFactorOn: boolean;
+  /** The account's privacy and security settings, as get_account_privacy hands them back. */
+  privacy: { retention_days: number | null; email_summaries: boolean; inactivity_minutes: number };
+  /** What has happened on the account, as list_audit_log hands it back. Fake people only. */
+  auditLog: Row[];
   /** false makes this person a team member rather than the owner, so the settings lock. */
   isOwner: boolean;
   /** A plain message the recap function answers with instead of sending. */
@@ -391,6 +399,67 @@ export const DEFAULTS: FakeData = {
   translations: ALL_TRANSLATIONS,
   recapPeople: RECAP_PEOPLE,
   recapSettings: { to_owner: true, to_members: false, auto_send: false },
+  twoFactorOn: false,
+  // Keep notes for ever, summaries allowed in email, and the 30 minutes the founder chose.
+  privacy: { retention_days: null, email_summaries: true, inactivity_minutes: 30 },
+  // A believable few days of activity, all made up. Newest first, as the database returns it.
+  auditLog: [
+    {
+      id: 7,
+      action: 'sign_in',
+      actor_user_id: FAKE_USER.id,
+      actor_name: 'Sam Carter',
+      target_type: null,
+      meeting_id: null,
+      meeting_title: null,
+      detail: {},
+      created_at: '2026-11-20T09:05:00Z',
+    },
+    {
+      id: 6,
+      action: 'note_share',
+      actor_user_id: FAKE_USER.id,
+      actor_name: 'Sam Carter',
+      target_type: 'meeting',
+      meeting_id: NOTE_ID,
+      meeting_title: 'Weekly team call',
+      detail: {},
+      created_at: '2026-11-20T08:40:00Z',
+    },
+    {
+      id: 5,
+      action: 'settings_change',
+      actor_user_id: FAKE_USER.id,
+      actor_name: 'Sam Carter',
+      target_type: 'account_privacy',
+      meeting_id: null,
+      meeting_title: null,
+      detail: { setting: 'retention_days', from: null, to: 365 },
+      created_at: '2026-11-19T16:20:00Z',
+    },
+    {
+      id: 4,
+      action: 'note_delete',
+      actor_user_id: TEAMMATE.id,
+      actor_name: 'Priya Raman',
+      target_type: 'meeting',
+      meeting_id: null,
+      meeting_title: 'Pricing workshop',
+      detail: {},
+      created_at: '2026-11-18T11:02:00Z',
+    },
+    {
+      id: 3,
+      action: 'two_factor_on',
+      actor_user_id: TEAMMATE.id,
+      actor_name: 'Priya Raman',
+      target_type: null,
+      meeting_id: null,
+      meeting_title: null,
+      detail: {},
+      created_at: '2026-11-17T14:30:00Z',
+    },
+  ],
   isOwner: true,
   displayName: 'Sam Carter',
   planAndUsage: PLAN_FREE,
@@ -450,9 +519,63 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
       }
       return json(route, session());
     }
-    if (url.pathname.endsWith('/user')) return json(route, session().user);
+    if (url.pathname.endsWith('/user')) {
+      // listFactors() reads the factors off the person, so once an authenticator app is
+      // set up it has to come back here too, exactly as the real server does it.
+      const factors = data.twoFactorOn
+        ? [
+            {
+              id: FAKE_FACTOR_ID,
+              friendly_name: 'Authenticator app',
+              factor_type: 'totp',
+              status: 'verified',
+              created_at: '2026-11-21T10:00:00Z',
+              updated_at: '2026-11-21T10:00:00Z',
+            },
+          ]
+        : [];
+      return json(route, { ...session().user, factors });
+    }
     if (url.pathname.endsWith('/logout')) return route.fulfill({ status: 204, body: '' });
     if (url.pathname.endsWith('/signup')) return json(route, session());
+
+    // --- two-factor sign in (prompt 11). Nothing real, and no real secret. ---------------
+    if (url.pathname.endsWith('/factors')) {
+      // Adding an authenticator app. The picture is a tiny square so a screenshot has
+      // something to show; the secret is obviously made up.
+      const qr =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 8 8">' +
+        '<rect width="8" height="8" fill="#fff"/>' +
+        '<path fill="#000" d="M0 0h3v3H0zM5 0h3v3H5zM0 5h3v3H0zM4 4h1v1H4zM6 4h1v1H6zM5 5h1v1H5zM7 5h1v1H7zM4 6h1v1H4zM6 6h1v1H6z"/>' +
+        '</svg>';
+      return json(route, {
+        id: FAKE_FACTOR_ID,
+        type: 'totp',
+        friendly_name: 'Authenticator app',
+        totp: { qr_code: qr, secret: 'FAKESECRETFORTESTSONLY', uri: 'otpauth://totp/gyan' },
+      });
+    }
+    if (url.pathname.includes('/factors/') && url.pathname.endsWith('/challenge')) {
+      return json(route, { id: 'fake-challenge-id', expires_at: 9999999999 });
+    }
+    if (url.pathname.includes('/factors/') && url.pathname.endsWith('/verify')) {
+      const asked = (() => {
+        try {
+          return route.request().postDataJSON() as { code?: string };
+        } catch {
+          return {};
+        }
+      })();
+      // Only one code works, so a test can check both a right and a wrong one.
+      if (asked.code !== '123456') {
+        return json(route, { error: 'invalid_code', msg: 'Invalid TOTP code entered' }, 400);
+      }
+      data.twoFactorOn = true;
+      return json(route, session());
+    }
+    if (url.pathname.endsWith('/aal')) {
+      return json(route, { currentLevel: 'aal1', nextLevel: data.twoFactorOn ? 'aal2' : 'aal1' });
+    }
     return json(route, {});
   });
 
@@ -633,6 +756,48 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
           auto_send: asked.auto_send === true,
         };
         return json(route, data.recapSettings);
+      }
+
+      // --- the Security page (prompt 11) --------------------------------------
+      if (fn === 'get_account_privacy') {
+        const row = {
+          account_id: ACCOUNT_ID,
+          retention_days: data.privacy.retention_days,
+          email_summaries: data.privacy.email_summaries,
+          inactivity_minutes: data.privacy.inactivity_minutes,
+          is_owner: data.isOwner,
+        };
+        return json(route, wantsOne ? row : [row]);
+      }
+
+      if (fn === 'save_account_privacy') {
+        recorder.updates.push({ table: fn, body });
+        const asked = (body as { p_settings?: Record<string, unknown> } | undefined)?.p_settings ?? {};
+        if (!data.isOwner) return json(route, { message: 'not_owner', code: 'P0001' }, 400);
+        // A NEW object, never a change to the one already there. The defaults are shared
+        // between every script in this file, so changing that object in place would leak
+        // one test's settings into the next -- which it did, once.
+        data.privacy = {
+          retention_days:
+            'retention_days' in asked ? (asked.retention_days as number | null) : data.privacy.retention_days,
+          email_summaries:
+            'email_summaries' in asked ? (asked.email_summaries as boolean) : data.privacy.email_summaries,
+          inactivity_minutes:
+            'inactivity_minutes' in asked
+              ? (asked.inactivity_minutes as number)
+              : data.privacy.inactivity_minutes,
+        };
+        return json(route, wantsOne ? data.privacy : [data.privacy]);
+      }
+
+      if (fn === 'list_audit_log') {
+        if (!data.isOwner) return json(route, { message: 'not_owner', code: 'P0001' }, 400);
+        return json(route, data.auditLog);
+      }
+
+      if (fn === 'record_my_action' || fn === 'record_consent') {
+        recorder.functionCalls.push({ name: fn, body });
+        return json(route, null);
       }
 
       if (fn === 'get_plan_and_usage') {

@@ -35,6 +35,7 @@ test('Settings is in the main navigation, and every row says what is set', async
   await expect(page.getByText('Free plan. 2 of 5 meetings used this month.')).toBeVisible();
   await expect(page.getByText('3 of 5 seats')).toBeVisible();
   await expect(page.getByText('The account owner only')).toBeVisible();
+  await expect(page.getByText('Two-factor sign in is off. Signs you out after 30 minutes of doing nothing.')).toBeVisible();
   await expect(page.getByText('Delete a note, or delete your account.')).toBeVisible();
 });
 
@@ -48,6 +49,7 @@ test('each row opens its own page, and each page has a way back', async ({ page 
     ['Plan and usage', 'Plan and usage'],
     ['Team', 'Team'],
     ['Recaps', 'Recap emails'],
+    ['Security', 'Security'],
     ['Data and privacy', 'Data and privacy'],
   ] as const) {
     await page.getByRole('link', { name: new RegExp(`^${row}\\.`) }).click();
@@ -94,8 +96,8 @@ test('Profile: TWO PASSWORDS THAT DO NOT MATCH NEVER REACH THE SERVER', async ({
   await openSettings(page);
   await page.getByRole('link', { name: /^Profile\./ }).click();
 
-  await page.getByLabel('New password', { exact: true }).fill('longenough1');
-  await page.getByLabel('New password again').fill('somethingelse1');
+  await page.getByLabel('New password', { exact: true }).fill('longenoughnow1');
+  await page.getByLabel('New password again').fill('somethingelsenow1');
   await page.getByRole('button', { name: 'Change password' }).click();
 
   await expect(page.getByText('Those two passwords are not the same. Check them and try again.')).toBeVisible();
@@ -268,6 +270,7 @@ test('every Settings page has a ? button that opens its own help', async ({ page
     ['Profile', 'Your profile'],
     ['Plan and usage', 'Plan and usage'],
     ['Team', 'Your team'],
+    ['Security', 'Security'],
     ['Data and privacy', 'Data and privacy'],
   ] as const) {
     // Start from the Settings list each time, so the screen behind is always the same one.

@@ -9,7 +9,7 @@ export function friendlyAuthError(error: { code?: string; message?: string; stat
     case 'email_exists':
       return 'That email already has an account. Try logging in instead.';
     case 'weak_password':
-      return 'That password is too easy to guess. Use at least 8 characters.';
+      return `That password is too easy to guess. Use at least ${MIN_PASSWORD_LENGTH} characters.`;
     case 'email_address_invalid':
     case 'validation_failed':
       return 'That email does not look right. Check it and try again.';
@@ -30,4 +30,15 @@ export function looksLikeEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
-export const MIN_PASSWORD_LENGTH = 8;
+/**
+ * The shortest password Gyan accepts.
+ *
+ * Twelve, not eight. Supabase's own guidance says anything under eight is not recommended,
+ * and length is what actually makes a password hard to guess -- far more than forcing a
+ * capital letter and a symbol, which mostly produces "Password1!" and a sticky note.
+ *
+ * Gyan only checks this BEFORE asking the server, so somebody gets a quick answer instead of
+ * a round trip. The real rule is the one set in the Supabase dashboard, which is in the
+ * hand-over list, because no amount of app code can enforce it.
+ */
+export const MIN_PASSWORD_LENGTH = 12;

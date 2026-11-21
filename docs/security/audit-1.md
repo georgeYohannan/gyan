@@ -259,6 +259,50 @@ did** write `{"token": "..."}` into the `integrations` table on the test project
 gap was confirmed rather than assumed, and the row was removed immediately. It is also why that
 test now refuses to run until the fix is pushed.
 
+### Fixed in this round (phase 4) — signing in, and the web pages
+
+| What | How |
+|---|---|
+| **No second factor** | Two-factor sign in with an authenticator app, optional per person, under Settings, Security. Supabase supports it free on every project. Turning it on and off is written to the audit log. |
+| **Nothing signed you out** | After **30 minutes** of doing nothing, Gyan signs you out and says why on the sign in screen. Reading, typing, moving between screens and **an upload in progress** all count as using it, so nobody is cut off mid-task. The number is the account's own setting, read from the database. |
+| **An 8-character password was enough** | Twelve now, and the wording lives in one place instead of two. Length beats forced capitals and symbols, which mostly produce "Password1!" and a sticky note. The real rule is the one in the Supabase dashboard, which is in your list. |
+| **Consent lived only on the device** | It is written to the database too, with which version of the wording was agreed to and when. Clearing site data no longer erases the only evidence. |
+| **No web security headers** | Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` and HSTS, applied by Expo's own documented mechanism. Checked by **reading the real response**, not the config. |
+
+**What the two-factor sign in does and does not protect, plainly.** It is a lock on the door of
+the **app**, not on the **data** behind it. Supabase can require the code in the database rules,
+which would be genuinely stronger — and that is deliberately not done yet, because **Gyan has no
+way to get somebody back in if they lose their phone.** Locking a customer out of their own
+meeting recordings for ever is a worse failure than the one it would fix. Supabase does have
+recovery codes, but the installed library marks that API `@experimental`, so it is not something
+to build a lockout-proof path on today. **Recovery codes first, then the stricter rule.**
+
+**Two honest notes on the content policy.** It allows inline styles and inline scripts, and that
+is not the strongest policy that exists. React Native for web turns every style into an inline
+style, and the page Expo serves starts the app with an inline script; neither can be removed
+without Expo changing. What still carries most of the value is everything that is *not* about
+inline code: nothing may be loaded from another website, the page cannot be framed, there are no
+plugins, and — the line that matters most — **`connect-src` refuses every address but ours**, so
+an injected script would have nowhere to send what it took. The second note: `unsafe-eval` is
+allowed **only while building**, never in the real web app, because the development bundler needs
+it and blocking it would make the app impossible to work on.
+
+**Three real bugs this round found, none of which a test would have caught.**
+
+1. **The square code was a blank white square.** Supabase's type notes say to prepend
+   `data:image/svg+xml;utf-8,` to the picture yourself — but its code already does it, so
+   following the note gives the prefix twice. The prefix it adds is also fragile: it writes the
+   SVG into the address unescaped, and an SVG is full of `#` characters, which end an address as
+   far as a browser is concerned. On top of that, neither `expo-image` nor React Native's own
+   `Image` would show the picture at all on the web, though the browser loads exactly the same
+   address happily. Found by **looking at a screenshot**, which is why CLAUDE.md asks for them.
+   The browser test now checks the picture really *loads*, not merely that it is on the page.
+2. **The sign-out choices told a screen reader nothing.** `accessibilityRole="radio"` on a
+   pressable produces no role at all on the web. They use the modern `role` prop now.
+3. **A test fixture leaked settings between browser scripts**, because it changed a shared
+   object in place instead of replacing it. One script's choice became the next script's
+   starting point.
+
 ### Dependency check
 
 `npm audit` finds **22 problems: 0 critical, 0 high, 22 moderate.**
@@ -287,11 +331,11 @@ These are the real gaps, in the order they are being fixed. Nothing here is hidd
 | 1 | ~~The AI cannot tell what people said from what it is told to do.~~ **Done in phase 3**, with the limits of it written down above. | Done |
 | 2 | ~~No limits where it costs money.~~ **Done in phase 3.** | Done |
 | 3 | ~~No audit log.~~ **Done in phase 2.** | Done |
-| 4 | **Consent is recorded in the database now** (phase 2), but the app does not write to it yet. | Phase 4 |
+| 4 | ~~Consent is only remembered on the device.~~ **Done in phase 4.** | Done |
 | 5 | **Retention exists now** (phase 2) but nothing runs it on a schedule, and the screen to choose a keeping time is not built. | Phase 5 |
 | 6 | ~~A file's type is taken on trust.~~ **Done in phase 3.** | Done |
-| 7 | **No web security headers.** The server functions no longer accept requests from any website (phase 3), but the web pages themselves still have no headers. | Phase 4 |
-| 8 | **No second factor, no automatic sign-out**, and an 8-character password minimum. Being signed in alone was enough to change the password. | Phase 4 |
+| 7 | ~~No web security headers.~~ **Done in phase 4**, with the two honest limits written above. | Done |
+| 8 | **Done in phase 4**, except one thing: being signed in is still enough to change the password, with no need to re-enter the old one. Supabase supports asking for the current password; it is a small change and is listed for a later round. | Mostly done |
 | 9 | **Server-only functions mostly have one lock, not two** — they trust the server code to have checked ownership. It does, everywhere I looked. Three were given a second lock in phase 2 (`finish_chat_message`, `discard_invite`, and the new ones). The rest are listed as accepted: they are unreachable from the app, and only somebody already holding the server key could reach them. | Partly done |
 | 10 | ~~Two copies of the same text-escaping function have drifted apart.~~ **Done in phase 3.** | Done |
 | 11 | **Web sign-in tokens sit in the browser's own storage**, so anything that could run a script on the page could take one. | See below |

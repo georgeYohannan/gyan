@@ -237,8 +237,8 @@ describe('Profile', () => {
     await act(async () => {
       render(<ProfileScreen />);
     });
-    await act(async () => fireEvent.changeText(screen.getByLabelText('New password'), 'longenough1'));
-    await act(async () => fireEvent.changeText(screen.getByLabelText('New password again'), 'different1'));
+    await act(async () => fireEvent.changeText(screen.getByLabelText('New password'), 'longenoughnow1'));
+    await act(async () => fireEvent.changeText(screen.getByLabelText('New password again'), 'differentonenow1'));
     await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Change password' })));
 
     expect(mockChangePassword).not.toHaveBeenCalled();
@@ -254,18 +254,18 @@ describe('Profile', () => {
     await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Change password' })));
 
     expect(mockChangePassword).not.toHaveBeenCalled();
-    expect(screen.getByText('Use at least 8 characters.')).toBeTruthy();
+    expect(screen.getByText('Use at least 12 characters.')).toBeTruthy();
   });
 
   test('a new password is sent, and then wiped off the screen', async () => {
     await act(async () => {
       render(<ProfileScreen />);
     });
-    await act(async () => fireEvent.changeText(screen.getByLabelText('New password'), 'longenough1'));
-    await act(async () => fireEvent.changeText(screen.getByLabelText('New password again'), 'longenough1'));
+    await act(async () => fireEvent.changeText(screen.getByLabelText('New password'), 'longenoughnow1'));
+    await act(async () => fireEvent.changeText(screen.getByLabelText('New password again'), 'longenoughnow1'));
     await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Change password' })));
 
-    expect(mockChangePassword).toHaveBeenCalledWith('longenough1');
+    expect(mockChangePassword).toHaveBeenCalledWith('longenoughnow1');
     expect(await screen.findByText('Your password is changed.')).toBeTruthy();
     expect(screen.getByLabelText('New password').props.value).toBe('');
     expect(screen.getByLabelText('New password again').props.value).toBe('');
