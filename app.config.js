@@ -56,7 +56,22 @@ function supabaseOrigins() {
 const connect = [
   "'self'",
   ...supabaseOrigins(),
-  ...(development ? ['ws://localhost:*', 'ws://127.0.0.1:*', 'http://localhost:*', 'http://127.0.0.1:*'] : []),
+  ...(development
+    ? [
+        'ws://localhost:*',
+        'ws://127.0.0.1:*',
+        'http://localhost:*',
+        'http://127.0.0.1:*',
+        // While building only. The browser scripts run against a made-up Supabase address
+        // so that a call escaping their fakes goes nowhere, and the settings they build the
+        // app with are not always the ones this file is read with. Pinning the policy to
+        // one address in development therefore blocks the app from signing in at all --
+        // which is how this line came to exist, after the policy did exactly its job.
+        // The real web app gets the one address and nothing else.
+        'https://*.supabase.co',
+        'wss://*.supabase.co',
+      ]
+    : []),
 ].join(' ');
 
 /**
@@ -93,7 +108,10 @@ const contentSecurityPolicy = [
   // Fonts ship with the app. IBM Plex and Schibsted Grotesk are bundled, not fetched.
   "font-src 'self' data:",
   // Recordings: ones in the browser before upload, and ones played back from storage.
-  `media-src 'self' blob: ${supabaseOrigins().filter((o) => o.startsWith('https:')).join(' ')}`.trim(),
+  `media-src 'self' blob: ${[
+    ...supabaseOrigins().filter((o) => o.startsWith('https:')),
+    ...(development ? ['https://*.supabase.co'] : []),
+  ].join(' ')}`.trim(),
   // The MP3 maker runs in a worker built in the browser.
   "worker-src 'self' blob:",
   `connect-src ${connect}`,

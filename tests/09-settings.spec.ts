@@ -96,11 +96,28 @@ test('Profile: TWO PASSWORDS THAT DO NOT MATCH NEVER REACH THE SERVER', async ({
   await openSettings(page);
   await page.getByRole('link', { name: /^Profile\./ }).click();
 
+  await page.getByLabel('Your current password').fill('the-one-i-use-now');
   await page.getByLabel('New password', { exact: true }).fill('longenoughnow1');
   await page.getByLabel('New password again').fill('somethingelsenow1');
   await page.getByRole('button', { name: 'Change password' }).click();
 
   await expect(page.getByText('Those two passwords are not the same. Check them and try again.')).toBeVisible();
+  await expect(page.getByText('Your password is changed.')).toBeHidden();
+});
+
+test('Profile: CHANGING A PASSWORD NEEDS THE CURRENT ONE', async ({ page }) => {
+  // Being signed in used to be enough, which turned an unattended laptop into a full
+  // account takeover: whoever had it could set a new password and lock the real person out.
+  await installFakes(page);
+  await signIn(page);
+  await openSettings(page);
+  await page.getByRole('link', { name: /^Profile\./ }).click();
+
+  await page.getByLabel('New password', { exact: true }).fill('longenoughnow1');
+  await page.getByLabel('New password again').fill('longenoughnow1');
+  await page.getByRole('button', { name: 'Change password' }).click();
+
+  await expect(page.getByText('Type your current password first.')).toBeVisible();
   await expect(page.getByText('Your password is changed.')).toBeHidden();
 });
 

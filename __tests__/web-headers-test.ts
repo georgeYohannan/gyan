@@ -118,6 +118,16 @@ describe('the headers the real web app sends', () => {
 });
 
 describe('while building, and only while building', () => {
+  test('THE WILDCARD IS DEVELOPMENT ONLY, and the real app never gets it', () => {
+    // The browser scripts run against a made-up Supabase address, and the settings they
+    // build the app with are not always the ones app.config.js is read with, so pinning
+    // the policy to one address in development blocks signing in altogether.
+    expect(policy(building, 'connect-src')).toContain('https://*.supabase.co');
+    // And this is the half that matters: the real web app gets one address, by name.
+    expect(policy(live, 'connect-src')).not.toContain('*');
+    expect(policy(live, 'connect-src')).toContain('https://ofnspnobzesxmyqjxzad.supabase.co');
+  });
+
   test('the development server is allowed what it needs', () => {
     // The bundler reloads the page over a websocket to localhost, and may run code it has
     // just built. Blocking either would make the app impossible to work on -- and would

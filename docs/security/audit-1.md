@@ -277,6 +277,13 @@ meeting recordings for ever is a worse failure than the one it would fix. Supaba
 recovery codes, but the installed library marks that API `@experimental`, so it is not something
 to build a lockout-proof path on today. **Recovery codes first, then the stricter rule.**
 
+**A third note, added after it bit.** The policy names this project's Supabase address
+rather than allowing every `*.supabase.co`, because anybody can make a free project there.
+That is right for the real web app — and it broke every browser test at once, because those
+run against a made-up Supabase address so that a call escaping their fakes goes nowhere. The
+policy was doing exactly its job. Development now allows the wider pattern and **the real
+web app still gets one address and nothing else**, which a test checks both halves of.
+
 **Two honest notes on the content policy.** It allows inline styles and inline scripts, and that
 is not the strongest policy that exists. React Native for web turns every style into an inline
 style, and the page Expo serves starts the app with an inline script; neither can be removed
