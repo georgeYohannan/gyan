@@ -544,3 +544,77 @@ maybe('Supabase test project: the security baseline', () => {
     if (!write.error) await A.client.from('integrations').delete().eq('kind', 'slack');
   });
 });
+
+/**
+ * The data controls (prompt 11), checked against the real test project.
+ *
+ * The export function takes no id at all -- it works out who is asking from their login and
+ * which account they are on from the database -- so there is no id to tamper with. What is
+ * worth proving here is the thing underneath: that one person cannot reach another person's
+ * finished export, or any other file in their folder.
+ */
+maybe('Supabase test project: exports and the files behind them', () => {
+  let A: Awaited<ReturnType<typeof login>>;
+  let B: Awaited<ReturnType<typeof login>>;
+  let accountA: string;
+
+  beforeAll(async () => {
+    expect(url).toContain('ofnspnobzesxmyqjxzad'); // only ever the TEST project
+    A = await login(a);
+    B = await login(b);
+    const { data } = await A.client.from('accounts').select('id').eq('owner_id', A.userId).single();
+    accountA = data!.id;
+  });
+
+  test('B CANNOT LIST WHAT IS IN A’S FOLDER', async () => {
+    // An export is written to <account id>/exports/<random>.zip. The storage rules key off
+    // that first part, so another account cannot see into it at all.
+    const { data, error } = await B.client.storage.from('notes-files').list(`${accountA}/exports`);
+    expect(error ?? (data ?? []).length === 0).toBeTruthy();
+  });
+
+  test('B CANNOT DOWNLOAD A FILE FROM A’S FOLDER, even knowing the path', async () => {
+    const { data, error } = await B.client.storage
+      .from('notes-files')
+      .download(`${accountA}/exports/anything.zip`);
+    // Either refused outright, or nothing comes back. Never somebody else's file.
+    expect(error ?? data === null).toBeTruthy();
+  });
+
+  test('B CANNOT MAKE A LINK TO A FILE IN A’S FOLDER', async () => {
+    // A signed link is a key to one file. Being able to mint one for somebody else's folder
+    // would hand over everything the rules are there to protect.
+    const { data, error } = await B.client.storage
+      .from('notes-files')
+      .createSignedUrl(`${accountA}/exports/anything.zip`, 60);
+    expect(error ?? !data?.signedUrl).toBeTruthy();
+  });
+
+  test('B CANNOT WRITE INTO A’S FOLDER either', async () => {
+    const { error } = await B.client.storage
+      .from('notes-files')
+      .upload(`${accountA}/exports/planted.zip`, new Blob(['x']), { upsert: true });
+    expect(error).not.toBeNull();
+  });
+
+  test('the export function refuses somebody who is not signed in', async () => {
+    const res = await realFetch(`${url}/functions/v1/export`, {
+      method: 'POST',
+      headers: { apikey: key!, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  test('a person can read their own privacy settings, and not somebody else’s', async () => {
+    const mine = await A.client.rpc('get_account_privacy');
+    if (mine.error?.message?.includes('Could not find the function')) return notPushedYet('get_account_privacy');
+    const row = Array.isArray(mine.data) ? mine.data[0] : mine.data;
+    expect(row.account_id).toBe(accountA);
+
+    // B asks the same question and gets THEIR account, never A's.
+    const theirs = await B.client.rpc('get_account_privacy');
+    const theirRow = Array.isArray(theirs.data) ? theirs.data[0] : theirs.data;
+    expect(theirRow.account_id).not.toBe(accountA);
+  });
+});

@@ -303,6 +303,90 @@ it and blocking it would make the app impossible to work on.
    object in place instead of replacing it. One script's choice became the next script's
    starting point.
 
+### The security review of this round's own work (phase 5)
+
+The `/security-review` command was run over everything built in this round. **It found a
+serious hole in code written two hours earlier**, which is the most useful result a review of
+your own work can have.
+
+#### 1. Somebody could read another account's recordings — now fixed
+
+**How it worked.** When a note is made, the app says where its file is kept, and the database
+checked only that the path *started* with the right account and note:
+
+```
+<my account>/<my note>/../../<your account>/<your note>/recording.m4a
+```
+
+starts with the right prefix. The `../..` is then **taken out later**, by the thing that turns
+a path into a web address — the parser every browser and server uses removes those steps
+before the request is sent. So the storage service never sees them. It is handed an ordinary
+key belonging to somebody else, and three server functions read files with the server key,
+which skips every rule.
+
+**I checked every link of that chain myself** rather than taking the report's word for it: the
+address parser really does collapse the steps, and the storage library really does put the
+path into the address without encoding it.
+
+**Who could have done it.** Anybody signed in, who knew the other account's id, note id and
+file name. That is not guessable — but it is exactly what **a removed team member or a
+departed contractor keeps**. Inside one workspace no trick is needed at all, because notes are
+shared on purpose. The realistic victim is a *former* workspace.
+
+**Fixed in three places.** The database now refuses a path that can climb out of its folder;
+the export, the summary step and the transcription step each check the path belongs to the
+account before reading anything; and a test proves the exact attack is refused while ordinary
+paths still work. `npm run check:db` tries it for real, against a real database.
+
+**One mistake made while fixing it**, worth recording because the check caught it: the first
+version of the fix also refused a null byte, using `chr(0)` — which **raises an error in
+Postgres** rather than returning anything, so it would have refused *every* note and broken
+uploading entirely. The behaviour check caught it within a minute of being written.
+
+#### 2. A teammate could read the account owner's exported history — now fixed
+
+A finished export was written into the account's own folder, where the rule lets **any member
+of the account** read it. Most of what is inside they could read anyway — but not the
+exporter's own profile row, and not their entries in the record of what happened, which is
+**owner-only** by rule. A member could have opened the owner's export and read the owner's
+history out of it.
+
+Exports now live in **their own bucket with no rules at all**, so nobody can reach them
+through the app by any path. The server writes with the server key and hands back a link that
+works for an hour; that link is the only way in. Verified against the real test project: the
+other test user cannot download it, cannot make a link to it, and **neither can its own
+owner** except through the link.
+
+This also fixed something that had not been noticed: the notes bucket only accepts audio,
+video and text, so **the zip upload would have been refused outright** and the feature would
+simply not have worked the first time somebody tried it.
+
+#### 3. The content policy let a script send data to any Supabase project — now fixed
+
+The policy allowed `https://*.supabase.co`. Anybody can make a free Supabase project, so an
+injected script could have posted somebody's notes to **their own** one and the policy would
+have allowed it. That line was the stated reason the inline-script allowance was acceptable,
+so the wildcard cancelled the thing it was leaning on. It now names this project's address
+exactly, taken from the same setting the app itself uses, and allows nothing if that setting
+is missing.
+
+#### What the review found clean
+
+Worth stating, because it is the other half of the result: the export's row scoping
+(including that a teammate's private chats never come out), every grant in the new database
+file, the append-only record, the zip name handling, the constant-time key comparison, the
+invite address checking, and the absence of anything sensitive in any log.
+
+### Still open after phase 5
+
+| What | Why it matters |
+|---|---|
+| **A finished export is never deleted.** | It is the most concentrated copy of somebody's data there is, and it sits in the bucket indefinitely. The link expires after an hour, so it cannot be *reached* — but it still exists. Deleting exports older than a day belongs in the retention sweep. |
+| **Nothing runs the retention sweep.** | It works and is tested; somebody has to ask it to. Scheduling is a decision, because it deletes real work. |
+| **Nothing watches for trouble.** | No alert on failed sign-ins, odd activity or a strange bill. |
+| **No recovery codes for two-factor.** | Which is why it is not required at the database level. |
+| **Changing a password does not ask for the old one.** | Being signed in is enough. |
+
 ### Dependency check
 
 `npm audit` finds **22 problems: 0 critical, 0 high, 22 moderate.**

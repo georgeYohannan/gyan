@@ -176,3 +176,94 @@ test('THE PAGE SENDS THE SECURITY HEADERS a browser needs', async ({ page }) => 
   expect(policy).toContain('connect-src');
   expect(policy).toContain('https://*.supabase.co');
 });
+
+// ---------------------------------------------------------------------------
+// The data controls: how long notes are kept, what emails carry, and taking a
+// copy of everything.
+// ---------------------------------------------------------------------------
+
+async function openData(page: import('@playwright/test').Page) {
+  await page.getByRole('link', { name: /^Settings/ }).first().click();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+  await page.getByRole('link', { name: /^Data and privacy\./ }).click();
+  await expect(page.getByRole('heading', { name: 'Data and privacy', level: 1 })).toBeVisible();
+}
+
+test('HOW LONG NOTES ARE KEPT can be changed, and starts at for ever', async ({ page }) => {
+  await installFakes(page);
+  await signIn(page);
+  await openData(page);
+
+  // An account that already existed keeps its notes for ever, so nobody loses work to a
+  // default they never saw.
+  await expect(shown(page.getByText('For ever')).first()).toBeVisible();
+  await shown(page.getByRole('radio', { name: '90 days' })).click();
+  await expect(shown(page.getByText('90 days')).first()).toBeVisible();
+});
+
+test('a team member can see how long notes are kept but not change it', async ({ page }) => {
+  await installFakes(page, { isOwner: false });
+  await signIn(page);
+  await openData(page);
+
+  await expect(page.getByText('Only the account owner can change this.')).toBeVisible();
+  await expect(page.getByRole('radio', { name: '90 days' })).toBeHidden();
+});
+
+test('RECAP EMAILS CAN BE SET TO A LINK ONLY, so what was said never leaves gyan', async ({ page }) => {
+  await installFakes(page);
+  await signIn(page);
+  await openData(page);
+
+  await expect(shown(page.getByText('The whole summary')).first()).toBeVisible();
+  await shown(page.getByRole('button', { name: 'Send a link only' })).click();
+  await expect(shown(page.getByText('A link only')).first()).toBeVisible();
+  await expect(page.getByText(/never leaves gyan/)).toBeVisible();
+});
+
+test('A COPY OF EVERYTHING can be asked for, and says what came back', async ({ page }) => {
+  await installFakes(page);
+  await signIn(page);
+  await openData(page);
+
+  await page.getByRole('button', { name: 'Put my copy together' }).click();
+  await expect(page.getByText(/Your copy is ready/)).toBeVisible();
+  // It says how big, so nobody is left wondering whether it worked.
+  await expect(page.getByText(/4\.2 MB/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download it' })).toBeVisible();
+  // And that the link does not last for ever.
+  await expect(page.getByText(/works for one hour/)).toBeVisible();
+});
+
+test('a recording too big to fit is mentioned, not quietly dropped', async ({ page }) => {
+  await installFakes(page, { exportLinksFiles: true });
+  await signIn(page);
+  await openData(page);
+
+  await page.getByRole('button', { name: 'Put my copy together' }).click();
+  await expect(page.getByText(/1 recording linked inside it/)).toBeVisible();
+});
+
+test('a copy that will not build says so plainly, with no jargon', async ({ page }) => {
+  await installFakes(page, { exportFails: true });
+  await signIn(page);
+  await openData(page);
+
+  await page.getByRole('button', { name: 'Put my copy together' }).click();
+  const message = page.getByText(/could not put your copy together/);
+  await expect(message).toBeVisible();
+  await expect(page.getByText(/error|exception|500|null/i)).toBeHidden();
+});
+
+test('DELETING AN ACCOUNT SAYS WHAT STAYS, and no longer claims gyan keeps no copy', async ({ page }) => {
+  await installFakes(page);
+  await signIn(page);
+  await openData(page);
+
+  await expect(page.getByText('What stays, and why:')).toBeVisible();
+  await expect(page.getByText('The record of what happened on the account')).toBeVisible();
+  await expect(page.getByText(/None of these holds a word anybody said/)).toBeVisible();
+
+  // The sentence that contradicted the list right under it.
+  await expect(page.getByText(/gyan keeps no copy/i)).toBeHidden();
+});

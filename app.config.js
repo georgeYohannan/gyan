@@ -28,10 +28,34 @@ const development = process.env.NODE_ENV !== 'production';
  *
  * In development the Metro server is added, which is what reloads the page as files change.
  */
+/**
+ * OUR OWN PROJECT BY NAME, not every Supabase project in the world.
+ *
+ * This started as `https://*.supabase.co`, and that quietly undid the most useful line in
+ * the whole policy. Anybody can make a free Supabase project and get their own address at
+ * that domain, so a wildcard means an injected script could post somebody's notes to
+ * `https://whoever.supabase.co` and the policy would allow it. The stated reason the
+ * inline-script allowance is acceptable is that a script would have nowhere to send what it
+ * took -- so the wildcard cancelled the thing it was leaning on.
+ *
+ * Taken from EXPO_PUBLIC_SUPABASE_URL at the moment the app is built, which is the same
+ * value the app itself talks to. If it is missing, no Supabase address is allowed at all
+ * rather than all of them: a missing setting must never widen a policy.
+ */
+function supabaseOrigins() {
+  const configured = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  if (!configured) return [];
+  try {
+    const { host } = new URL(configured);
+    return [`https://${host}`, `wss://${host}`];
+  } catch {
+    return [];
+  }
+}
+
 const connect = [
   "'self'",
-  'https://*.supabase.co',
-  'wss://*.supabase.co',
+  ...supabaseOrigins(),
   ...(development ? ['ws://localhost:*', 'ws://127.0.0.1:*', 'http://localhost:*', 'http://127.0.0.1:*'] : []),
 ].join(' ');
 
@@ -69,7 +93,7 @@ const contentSecurityPolicy = [
   // Fonts ship with the app. IBM Plex and Schibsted Grotesk are bundled, not fetched.
   "font-src 'self' data:",
   // Recordings: ones in the browser before upload, and ones played back from storage.
-  "media-src 'self' blob: https://*.supabase.co",
+  `media-src 'self' blob: ${supabaseOrigins().filter((o) => o.startsWith('https:')).join(' ')}`.trim(),
   // The MP3 maker runs in a worker built in the browser.
   "worker-src 'self' blob:",
   `connect-src ${connect}`,

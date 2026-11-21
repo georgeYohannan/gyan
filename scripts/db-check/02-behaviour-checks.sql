@@ -217,3 +217,46 @@ select case when count(*) = 0 then 'PASS B''s own log is empty, and holds nothin
             else 'FAIL B saw ' || count(*) end as result
 from public.list_audit_log(50, null);
 reset role; reset request.jwt.claim.sub;
+
+\echo '--- 15. a note cannot point at another account''s file ---'
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-4000-8000-000000000001';
+do $$
+declare mine uuid; theirs uuid; note uuid := gen_random_uuid();
+begin
+  select id into mine from public.accounts where owner_id = 'aaaaaaaa-0000-4000-8000-000000000001';
+  select id into theirs from public.accounts where owner_id = 'bbbbbbbb-0000-4000-8000-000000000002';
+
+  -- THE ATTACK. The path starts with my own account and note, so the old prefix check
+  -- passed it -- and the "../.." is removed later, when it becomes a web address, leaving
+  -- a key inside somebody else's folder. Three server functions read files with the
+  -- service key, which skips every rule.
+  begin
+    perform public.create_note(note, mine, 'text', 'x',
+      mine || '/' || note || '/../../' || theirs || '/their-note/recording.m4a');
+    raise notice 'FAIL: a note was allowed to point out of its own folder';
+  exception when sqlstate 'P0001' then raise notice 'PASS: climbing out of the folder is refused';
+  end;
+
+  -- The other shapes that mean something different once they become an address.
+  begin
+    perform public.create_note(gen_random_uuid(), mine, 'text', 'x', mine || '/n/./x.txt');
+    raise notice 'FAIL: a single-dot step was allowed';
+  exception when sqlstate 'P0001' then raise notice 'PASS: a single-dot step is refused';
+  end;
+  begin
+    perform public.create_note(gen_random_uuid(), mine, 'text', 'x', mine || '/n//x.txt');
+    raise notice 'FAIL: an empty step was allowed';
+  exception when sqlstate 'P0001' then raise notice 'PASS: an empty step is refused';
+  end;
+
+  -- And an ordinary path still works, which is the half that is easy to break.
+  declare good_note uuid := gen_random_uuid();
+  begin
+    perform public.create_note(good_note, mine, 'text', 'Real note',
+      mine || '/' || good_note || '/pasted-text.txt');
+    raise notice 'PASS: an ordinary path still works';
+  exception when others then raise notice 'FAIL: an ordinary path was refused (%)', sqlerrm;
+  end;
+end $$;
+reset role; reset request.jwt.claim.sub;

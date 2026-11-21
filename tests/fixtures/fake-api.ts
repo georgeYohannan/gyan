@@ -67,6 +67,10 @@ export type FakeData = {
   recapSettings: { to_owner: boolean; to_members: boolean; auto_send: boolean };
   /** True when the fake person already has an authenticator app set up. */
   twoFactorOn: boolean;
+  /** Make asking for a copy of everything fail, to check the message. */
+  exportFails?: boolean;
+  /** Make one recording too big to fit, so it is linked instead. */
+  exportLinksFiles?: boolean;
   /** The account's privacy and security settings, as get_account_privacy hands them back. */
   privacy: { retention_days: number | null; email_summaries: boolean; inactivity_minutes: number };
   /** What has happened on the account, as list_audit_log hands it back. Fake people only. */
@@ -591,6 +595,21 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
     }
     recorder.functionCalls.push({ name, body });
     const status = data.functionStatus?.[name] ?? 202;
+
+    // The export function hands back a link to a made-up file, so the screen has something
+    // to show. Nothing is really built and nothing is really downloaded.
+    if (name === 'export') {
+      if (data.exportFails) {
+        return json(route, { ok: false, message: 'Gyan could not put your copy together just now. Please try again.' });
+      }
+      return json(route, {
+        ok: true,
+        url: 'https://fake.supabase.co/storage/v1/object/sign/notes-files/acc/exports/made-up.zip?token=fake',
+        bytes: 4_404_019,
+        files_included: 2,
+        files_linked: data.exportLinksFiles ? 1 : 0,
+      });
+    }
 
     // The chat function answers with a made up answer, so the panel has something to show.
     if (name === 'chat') {

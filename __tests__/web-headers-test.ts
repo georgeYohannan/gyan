@@ -11,7 +11,11 @@
  */
 function headersFor(mode: 'development' | 'production'): Record<string, string> {
   const before = process.env.NODE_ENV;
+  const beforeUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   process.env.NODE_ENV = mode;
+  // Set here rather than read from the environment: Jest does not load the .env files, and
+  // the policy is built from this value at the moment the app is built.
+  process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://ofnspnobzesxmyqjxzad.supabase.co';
   jest.resetModules();
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const makeConfig = require('../app.config.js') as (a: { config: Record<string, unknown> }) => {
@@ -21,6 +25,7 @@ function headersFor(mode: 'development' | 'production'): Record<string, string> 
   const base = (require('../app.json') as { expo: Record<string, unknown> }).expo;
   const config = makeConfig({ config: base });
   process.env.NODE_ENV = before;
+  process.env.EXPO_PUBLIC_SUPABASE_URL = beforeUrl;
 
   const router = config.plugins.find((p) => Array.isArray(p) && p[0] === 'expo-router') as [
     string,
@@ -76,9 +81,12 @@ describe('the headers the real web app sends', () => {
     // nowhere to send what it stole.
     const connect = policy(live, 'connect-src');
     expect(connect).toContain("'self'");
-    expect(connect).toContain('https://*.supabase.co');
+    // OUR OWN PROJECT BY NAME. A wildcard here would quietly undo the whole point: anybody
+    // can make a free Supabase project, so https://*.supabase.co would let an injected
+    // script post somebody's notes to their own one.
+    expect(connect).toContain('https://ofnspnobzesxmyqjxzad.supabase.co');
+    expect(connect).not.toContain('*.supabase.co');
     expect(connect).not.toContain('localhost');
-    expect(connect).not.toMatch(/https:(?!\/\/\*\.supabase)/);
   });
 
   test('the real web app never allows code to be built from text', () => {
@@ -96,7 +104,9 @@ describe('the headers the real web app sends', () => {
 
   test('recordings can be played back, and picked before they are uploaded', () => {
     expect(policy(live, 'media-src')).toContain('blob:');
-    expect(policy(live, 'media-src')).toContain('https://*.supabase.co');
+    // Named, not wildcarded, for the same reason as connect-src.
+    expect(policy(live, 'media-src')).toContain('https://ofnspnobzesxmyqjxzad.supabase.co');
+    expect(policy(live, 'media-src')).not.toContain('*.supabase.co');
     expect(policy(live, 'img-src')).toContain('blob:');
     // The MP3 maker runs in a worker built in the browser.
     expect(policy(live, 'worker-src')).toContain('blob:');

@@ -1,6 +1,7 @@
 // The slow part of a transcript: link -> Deepgram -> save (or fail). Pure code, so Jest can test it
 // with a fake database and a fake Deepgram.
 import { sniffKind, WRONG_TYPE_MESSAGE } from '../_shared/filetype.ts';
+import { isPathInsideAccount, WRONG_PLACE_MESSAGE } from '../_shared/paths.ts';
 
 import { costFor, MESSAGES, TranscribeError, transcribeUrl } from './deepgram.ts';
 
@@ -29,6 +30,8 @@ export type PipelineOptions = {
    * Left out in tests, and in that case the note simply waits on Summarizing.
    */
   startSummary?: () => Promise<void>;
+  /** The account the note belongs to, so the file path can be checked against it. */
+  accountId?: string;
   /**
    * Reads the first few thousand bytes of the stored file, so its real kind can be worked
    * out. Injected rather than called directly, so the tests stay free of storage.
@@ -45,6 +48,14 @@ export type PipelineOptions = {
  */
 export async function runTranscription(o: PipelineOptions): Promise<boolean> {
   try {
+    // Belt and braces. mark_note_queued already refuses a note whose file does not really
+    // exist under that exact name, which closes this route -- but the signed link below is
+    // made with the service key, so the check costs nothing and the rule is the same
+    // everywhere a stored path is used.
+    if (o.accountId && !isPathInsideAccount(o.filePath, o.accountId)) {
+      throw new TranscribeError(WRONG_PLACE_MESSAGE);
+    }
+
     // IS THIS REALLY A RECORDING? The kind of file was taken on trust from the app, which
     // reads it from the file's name. Nearly every audio and video format starts with a few
     // fixed bytes, so the first few thousand bytes are read and checked before anything

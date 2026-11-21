@@ -17,6 +17,7 @@ import {
 import { ExportError, MESSAGES, runExport, type Db, type Files } from './pipeline.ts';
 import {
   EXPORT_FOLDER,
+  EXPORT_BUCKET,
   EXPORT_LINK_SECONDS,
   FILE_LINK_SECONDS,
   MAX_ZIPPED_BYTES,
@@ -78,11 +79,18 @@ Deno.serve(async (req) => {
       const { data, error } = await admin.storage.from(STORAGE_BUCKET).createSignedUrl(path, seconds);
       return error || !data?.signedUrl ? null : data.signedUrl;
     },
+    // The finished copy goes in its own bucket, which has no rules at all, so nobody can
+    // reach it through the app. Recordings are READ from notes-files above; only the
+    // export itself is written here.
     upload: async (path, bytes, contentType) => {
       const { error } = await admin.storage
-        .from(STORAGE_BUCKET)
+        .from(EXPORT_BUCKET)
         .upload(path, bytes, { contentType, upsert: true });
       if (error) throw new ExportError(MESSAGES.problem);
+    },
+    signedExportUrl: async (path, seconds) => {
+      const { data, error } = await admin.storage.from(EXPORT_BUCKET).createSignedUrl(path, seconds);
+      return error || !data?.signedUrl ? null : data.signedUrl;
     },
   };
 

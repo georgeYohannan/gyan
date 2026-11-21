@@ -165,6 +165,9 @@ Deno.serve(async (req) => {
   const work = runSummary({
     admin,
     meetingId,
+    // The account comes from the note the caller was allowed to see, so the stored file
+    // path can be checked against it before anything is read with the service key.
+    accountId: accountId ?? undefined,
     source: claimed.source,
     filePath: claimed.file_path,
     language: claimed.language,

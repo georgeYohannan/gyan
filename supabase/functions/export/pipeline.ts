@@ -3,6 +3,7 @@
 // Pure code apart from the database and storage handed to it, so Jest can test the whole
 // shape of an export with a fake database and no network.
 
+import { isPathInsideAccount } from '../_shared/paths.ts';
 import { makeZip, safeZipName, type ZipEntry } from '../_shared/zip.ts';
 
 export class ExportError extends Error {}
@@ -30,6 +31,8 @@ export type Files = {
   download(path: string): Promise<Uint8Array | null>;
   signedUrl(path: string, seconds: number): Promise<string | null>;
   upload(path: string, bytes: Uint8Array, contentType: string): Promise<void>;
+  /** A link to the finished export, which lives in its own bucket. */
+  signedExportUrl(path: string, seconds: number): Promise<string | null>;
 };
 
 export type ExportOptions = {
@@ -119,6 +122,16 @@ export async function runExport(o: ExportOptions): Promise<ExportResult> {
   for (const meeting of meetings) {
     const path = typeof meeting.file_path === 'string' ? meeting.file_path : '';
     if (path === '') continue;
+
+    // THE PATH HAS TO BE REALLY INSIDE THIS ACCOUNT, not merely start with it.
+    //
+    // meetings.file_path is written by the app, and what follows hands it to storage with
+    // the SERVICE KEY, which skips every rule. A path like
+    // "<account>/<note>/../../<other account>/<their note>/x.m4a" starts with the right
+    // prefix and becomes somebody else's file once it is turned into a web address.
+    // Skipped quietly rather than failing the whole export: one odd row must not stop
+    // somebody getting the rest of their data.
+    if (!isPathInsideAccount(path, o.accountId)) continue;
     const title = typeof meeting.title === 'string' && meeting.title.trim() !== '' ? meeting.title : 'Untitled note';
     const ending = path.includes('.') ? path.slice(path.lastIndexOf('.')) : '';
     const insideName = safeZipName(`recordings/${String(meeting.id)}${ending}`);
@@ -173,10 +186,13 @@ export async function runExport(o: ExportOptions): Promise<ExportResult> {
   });
 
   const zip = makeZip(entries);
-  const path = `${o.accountId}/${o.exportFolder}/${newId()}.zip`;
+  // In its own bucket, which has no rules at all, so nobody can reach it through the app.
+  // The person's id is in the path as well as the account's, so one teammate's export is
+  // never another's even if a rule were ever added to that bucket by mistake.
+  const path = `${o.accountId}/${o.userId}/${newId()}.zip`;
   await o.files.upload(path, zip, 'application/zip');
 
-  const url = await o.files.signedUrl(path, o.exportLinkSeconds);
+  const url = await o.files.signedExportUrl(path, o.exportLinkSeconds);
   if (!url) throw new ExportError(MESSAGES.problem);
 
   return { url, bytes: zip.length, filesIncluded: includedFiles.length, filesLinked: linkedFiles.length };

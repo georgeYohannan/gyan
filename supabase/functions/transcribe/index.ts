@@ -86,6 +86,9 @@ Deno.serve(async (req) => {
     model: DEEPGRAM_MODEL,
     usdPerMinute: DEEPGRAM_USD_PER_MINUTE,
     bucket: BUCKET,
+    // The account comes from the note the caller was allowed to see, so the stored file
+    // path can be checked against it before a link is made with the service key.
+    accountId: accountId ?? undefined,
     signedLinkSeconds: SIGNED_LINK_SECONDS,
     // Reads JUST the first few thousand bytes, so the real kind of the file can be worked
     // out before it is sent to a paid service.

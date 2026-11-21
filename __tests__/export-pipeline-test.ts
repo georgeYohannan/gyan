@@ -102,6 +102,10 @@ function fakeFiles(sizes: Record<string, number> = { 'acc-1/note-1/a.mp3': 1000 
     upload: async (p, bytes) => {
       uploads.push({ path: p, bytes });
     },
+    signedExportUrl: async (p) => {
+      signed.push(p);
+      return `https://files.example.test/${p}`;
+    },
   };
   return { files, uploads, signed };
 }
@@ -148,12 +152,20 @@ describe('a copy of everything', () => {
     const result = await runExport(base(db, files) as never);
 
     expect(uploads).toHaveLength(1);
-    expect(uploads[0].path).toBe('acc-1/exports/export-id.zip');
+    // NOT under the account's own folder. The storage rule lets any member of an account
+    // read anything whose first part is that account's id, and an export holds the
+    // exporter's own profile row and their own entries in the record of what happened --
+    // which is owner-only. A teammate could have read the owner's history out of it.
+    // In its own bucket (account-exports), which has no rules at all. It is NOT in
+    // notes-files, where the rule lets any member of an account read anything under that
+    // account's id -- and an export holds the exporter's own profile row and their own
+    // entries in the record of what happened, which is owner-only.
+    expect(uploads[0].path).toBe('acc-1/user-me/export-id.zip');
     const inside = openUpload(uploads[0].bytes);
     expect(Object.keys(inside)).toContain('gyan-export.json');
     expect(Object.keys(inside)).toContain('recordings/note-1.mp3');
     expect(result.filesIncluded).toBe(1);
-    expect(result.url).toContain('acc-1/exports/export-id.zip');
+    expect(result.url).toContain('acc-1/user-me/export-id.zip');
   });
 
   test('IT HOLDS EVERYTHING GYAN KNOWS, not a summary of it', async () => {

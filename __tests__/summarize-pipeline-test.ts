@@ -80,6 +80,7 @@ function fakeClaude(replies: Partial<Reply>[]) {
 
 const base = {
   meetingId: 'm1',
+  accountId: 'acc',
   source: 'upload',
   filePath: 'acc/m1/call.mp3',
   language: 'en',
@@ -391,6 +392,53 @@ describe('a file that is not what it says it is', () => {
     const { admin } = fakeAdmin({});
     const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
     await runSummary({ ...base, admin, call, source: 'upload' });
+    expect(call).toHaveBeenCalled();
+  });
+});
+
+describe('a file path that climbs out of the account', () => {
+  beforeEach(() => jest.spyOn(console, 'error').mockImplementation(() => {}));
+  afterEach(() => jest.restoreAllMocks());
+
+  test('A NOTE POINTING AT ANOTHER ACCOUNT\u2019S FILE NEVER REACHES CLAUDE', async () => {
+    // meetings.file_path is written by the app, and this download uses the SERVICE KEY,
+    // which skips every rule. "acc/m1/../../other-acc/their-note/secret.txt" starts with
+    // the right account and becomes somebody else's file once it is made into an address.
+    const { admin, calls } = fakeAdmin({ downloadText: 'SOMEBODY ELSE PRIVATE NOTES' });
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+
+    const ok = await runSummary({
+      ...base,
+      admin,
+      call,
+      source: 'text',
+      filePath: 'acc/m1/../../other-acc/their-note/secret.txt',
+    });
+
+    expect(ok).toBe(false);
+    expect(call).not.toHaveBeenCalled();
+    expect(String(calls[0].args.p_message)).toContain('could not open that file');
+  });
+
+  test('and nor does one that names another account outright', async () => {
+    const { admin } = fakeAdmin({ downloadText: 'SOMEBODY ELSE PRIVATE NOTES' });
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+    await runSummary({ ...base, admin, call, source: 'text', filePath: 'other-acc/their-note/secret.txt' });
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  test('WITHOUT AN ACCOUNT TO CHECK AGAINST, nothing is read at all', async () => {
+    // Fail closed. A missing account must never mean "any path is fine".
+    const { admin } = fakeAdmin({ downloadText: 'notes' });
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+    await runSummary({ ...base, accountId: undefined, admin, call, source: 'text' });
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  test('an ordinary path still works', async () => {
+    const { admin } = fakeAdmin({ downloadText: 'Notes from the meeting.' });
+    const { call } = fakeClaude([{ text: JSON.stringify(good) }]);
+    await runSummary({ ...base, admin, call, source: 'text', filePath: 'acc/m1/pasted-text.txt' });
     expect(call).toHaveBeenCalled();
   });
 });
