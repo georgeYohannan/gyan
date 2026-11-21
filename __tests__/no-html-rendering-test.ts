@@ -64,11 +64,24 @@ describe('the app has no way to show text as HTML', () => {
     expect(source).toContain('openBrowserAsync');
     expect(source).toMatch(/href:\s*Href/);
 
-    // And nothing else in the app opens anything at all.
+    // Anywhere ELSE that opens an address has to check it first. There is one: the Data and
+    // privacy screen, which opens the finished copy of somebody's data. That address comes
+    // from our own server, but handing anything to the operating system is the one thing in
+    // this app that reaches outside it, so it is checked all the same.
     const openers = appFiles
       .filter((f) => f !== linkFile)
-      .filter((f) => /openBrowserAsync|Linking\s*\.\s*openURL/.test(fs.readFileSync(f, 'utf8')));
-    expect(openers.map((f) => path.relative(root, f))).toEqual([]);
+      .filter((f) => /openBrowserAsync|Linking\s*\.\s*openURL|window\.open/.test(fs.readFileSync(f, 'utf8')));
+
+    for (const file of openers) {
+      const source = fs.readFileSync(file, 'utf8');
+      if (!/isOurDownload/.test(source)) {
+        throw new Error(`${path.relative(root, file)} opens an address without checking it first`);
+      }
+      // And the check has to be the real one: https, and our own project.
+      expect(source).toContain("asked.protocol !== 'https:'");
+      expect(source).toContain('EXPO_PUBLIC_SUPABASE_URL');
+    }
+    expect(openers.length).toBeLessThanOrEqual(1);
   });
 });
 

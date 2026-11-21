@@ -17,6 +17,7 @@ export const MESSAGES = {
   noteProblem: 'Gyan could not delete that note just now. Please try again.',
   deleteProblem: 'Gyan could not delete your account just now. Nothing has been deleted. Please try again.',
   typeToConfirm: `Type ${CONFIRM_WORD} to confirm.`,
+  exportProblem: 'Gyan could not put your copy together just now. Please try again.',
 } as const;
 
 /** Why somebody can or cannot delete their account, in words straight from the server. */
@@ -107,3 +108,71 @@ export async function deleteAccount(): Promise<{ ok: true } | { ok: false; messa
 export function confirmed(typed: string): boolean {
   return typed.trim() === CONFIRM_WORD;
 }
+
+// ---------------------------------------------------------------------------
+// A copy of everything, and what stays behind when an account goes
+// ---------------------------------------------------------------------------
+
+/** What came back from asking for a copy of everything. */
+export type ExportResult = {
+  url: string;
+  bytes: number;
+  filesIncluded: number;
+  filesLinked: number;
+};
+
+/**
+ * Asks for a copy of everything gyan holds about this person.
+ *
+ * It can take a little while: it reads every note on the account and packs the recordings
+ * into one file. The link it hands back is short lived on purpose.
+ */
+export async function exportMyData(): Promise<{ result?: ExportResult; error?: string }> {
+  const { data, error } = await getSupabase().functions.invoke('export', { body: {} });
+  if (error) return { error: MESSAGES.exportProblem };
+  const body = (data ?? {}) as Record<string, unknown>;
+  if (body.ok !== true) {
+    return { error: typeof body.message === 'string' ? body.message : MESSAGES.exportProblem };
+  }
+  return {
+    result: {
+      url: String(body.url ?? ''),
+      bytes: Number(body.bytes ?? 0),
+      filesIncluded: Number(body.files_included ?? body.filesIncluded ?? 0),
+      filesLinked: Number(body.files_linked ?? body.filesLinked ?? 0),
+    },
+  };
+}
+
+/** "4.2 MB". Written by hand so it reads the same everywhere and a test can be sure of it. */
+export function plainSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * What is NOT deleted when somebody deletes their account, and why.
+ *
+ * Being straight about this matters more than the list being short. Somebody who is told
+ * "everything is gone" and later finds a row with their account id on it has been misled,
+ * and that is worse than telling them plainly now.
+ */
+export const WHAT_STAYS: { what: string; why: string }[] = [
+  {
+    what: 'The record of what happened on the account',
+    why: 'It says what was done and when, never what was said. A record that can be erased is not a record, and it is the only way to answer "what happened" afterwards.',
+  },
+  {
+    what: 'A line for each email gyan sent, with the address it went to',
+    why: 'It is how a delivery problem gets looked into, and how we can say what was sent if anybody asks.',
+  },
+  {
+    what: 'What each AI call cost',
+    why: 'It is an accounting record. It holds no words from any meeting, only numbers.',
+  },
+  {
+    what: 'Notes you made on somebody else’s workspace',
+    why: 'They belong to that workspace, not to you. Your name comes off them and they show as made by "A removed person".',
+  },
+];

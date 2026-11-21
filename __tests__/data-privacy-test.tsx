@@ -153,7 +153,7 @@ describe('deleting the account', () => {
 
     expect(screen.getByText('•  Every note, recording and transcript')).toBeTruthy();
     expect(screen.getByText('•  Your login, so you cannot sign in again')).toBeTruthy();
-    expect(screen.getByText('•  Gyan keeps no copy, and we cannot put it back')).toBeTruthy();
+    expect(screen.getByText('•  None of it can be put back')).toBeTruthy();
   });
 
   test('once it is done, the person is signed out and sent away', async () => {
@@ -225,5 +225,54 @@ describe('deleting the account', () => {
     await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Delete my account' })));
 
     expect(screen.getByRole('button', { name: 'Delete everything' }).props.accessibilityState.disabled).toBe(true);
+  });
+});
+
+describe('the address a download is opened at', () => {
+  // The address comes from our own server, so this is depth rather than a hole being
+  // closed. But handing anything to the operating system is the one thing in this app that
+  // reaches outside it, and the check costs nothing.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { isOurDownload } = require('@/app/(app)/settings/data') as { isOurDownload: (u: string) => boolean };
+
+  // Set here rather than read from the environment: Jest does not load the .env files, and
+  // a test that quietly does nothing because a setting is missing is worse than no test.
+  const ours = 'https://ofnspnobzesxmyqjxzad.supabase.co';
+  const before = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  beforeEach(() => {
+    process.env.EXPO_PUBLIC_SUPABASE_URL = ours;
+  });
+  afterAll(() => {
+    process.env.EXPO_PUBLIC_SUPABASE_URL = before;
+  });
+
+  test('our own project is allowed', () => {
+    expect(isOurDownload(`${ours}/storage/v1/object/sign/notes-files/acc/exports/x.zip?token=abc`)).toBe(true);
+  });
+
+  test('IT REFUSES EVERYTHING when the project address is not set at all', () => {
+    // Fail closed. A missing setting must not turn the check into "anything goes".
+    process.env.EXPO_PUBLIC_SUPABASE_URL = '';
+    expect(isOurDownload(`${ours}/x.zip`)).toBe(false);
+  });
+
+  test('ANOTHER WEBSITE IS REFUSED, however plausible it looks', () => {
+    expect(isOurDownload('https://evil.example/export.zip')).toBe(false);
+    // The oldest trick: our address as a prefix of somebody else's.
+    expect(isOurDownload(`${ours}.evil.example/export.zip`)).toBe(false);
+    expect(isOurDownload(`https://evil.example/?x=${encodeURIComponent(ours)}`)).toBe(false);
+  });
+
+  test('ADDRESSES THAT ARE NOT THE WEB AT ALL ARE REFUSED', () => {
+    for (const bad of [
+      'javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'file:///etc/passwd',
+      `http://${ours.replace('https://', '')}/x.zip`,
+      '',
+      'not a url',
+    ]) {
+      expect(isOurDownload(bad)).toBe(false);
+    }
   });
 });

@@ -719,7 +719,14 @@ describe('settings and team migration', () => {
     );
     expect(screenCheck).toContain('Remove them on the Team screen first');
     expect(screenCheck).toContain('The notes you made stay in');
-    expect(screenCheck).toContain('This cannot be undone and gyan keeps no copy');
+    // NOT "gyan keeps no copy": a few records stay (the audit log, the email log, the cost
+    // rows) and the screen lists them with the reason for each. Corrected in
+    // 20261121100000_honest_delete_wording.sql -- a sentence that contradicts the list
+    // right under it is worse than no sentence.
+    expect(screenCheck).toContain('This cannot be undone');
+    const latest = fs.readFileSync(path.join(dir, '20261121100000_honest_delete_wording.sql'), 'utf8');
+    expect(latest).toContain('This cannot be undone.');
+    expect(latest).not.toMatch(/keeps no copy'/);
 
     const gate = t.slice(
       t.indexOf('create function public.claim_account_deletion'),

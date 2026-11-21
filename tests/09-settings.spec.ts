@@ -225,7 +225,7 @@ test('DELETING AN ACCOUNT WILL NOT GO UNTIL THE WORD IS TYPED', async ({ page })
   await page.getByRole('link', { name: /^Data and privacy\./ }).click();
   await page.getByRole('button', { name: 'Delete my account' }).click();
 
-  await expect(page.getByText('•  Gyan keeps no copy, and we cannot put it back')).toBeVisible();
+  await expect(page.getByText('•  None of it can be put back')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Delete everything' })).toBeDisabled();
 
   // Something close is not close enough.

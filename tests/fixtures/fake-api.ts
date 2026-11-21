@@ -379,7 +379,7 @@ export const DELETE_CHECK: Row = {
   can_delete: true,
   reason: null,
   what_goes:
-    'Everything goes: your login, your name, all 1 of your notes, their transcripts, summaries, to-dos, chats, and the files you uploaded. This cannot be undone and gyan keeps no copy.',
+    'Everything you made goes: your login, your name, all 1 of your notes, their transcripts, summaries, to-dos, chats, and the files you uploaded. This cannot be undone.',
   note_count: 1,
   other_member_count: 0,
   pending_invite_count: 0,
