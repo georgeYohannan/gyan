@@ -617,4 +617,96 @@ maybe('Supabase test project: exports and the files behind them', () => {
     const theirRow = Array.isArray(theirs.data) ? theirs.data[0] : theirs.data;
     expect(theirRow.account_id).not.toBe(accountA);
   });
+
+  // ---------------------------------------------------------------------------
+  // Searching (prompt 12)
+  // ---------------------------------------------------------------------------
+  // find_notes is the one function in this project that runs as the PERSON asking rather than
+  // as the server, so the read rule on meetings is what keeps accounts apart. The same attempt
+  // is made against a throwaway database in scripts/db-check/02-behaviour-checks.sql; this one
+  // makes it against the real test project, because a rule that holds in a copy and not in the
+  // real thing is no rule at all.
+
+  test('searching only ever reaches your own notes, however the words are chosen', async () => {
+    const mine = await A.client.rpc('find_notes', { p_query: null, p_limit: 30 });
+    if (mine.error?.message?.includes('Could not find the function')) return notPushedYet('find_notes');
+    expect(mine.error).toBeNull();
+
+    const myIds = new Set(((mine.data ?? []) as { id: string }[]).map((row) => row.id));
+    expect(myIds.size).toBeGreaterThan(0);
+
+    // B asks for everything, and for a word out of A's notes, and gets neither.
+    for (const words of [null, 'the', 'a', 'storage', 'pricing', 'pelican', 'meeting']) {
+      const theirs = await B.client.rpc('find_notes', { p_query: words, p_limit: 30 });
+      expect(theirs.error).toBeNull();
+      const rows = (theirs.data ?? []) as { id: string; total_count: number }[];
+      for (const row of rows) {
+        expect(myIds.has(row.id)).toBe(false);
+      }
+    }
+  });
+
+  test('and is never told HOW MANY notes somebody else has', async () => {
+    // The leak a test that only looked at rows would miss: "none of these are yours, but there
+    // are four hundred of them" still says something about another account.
+    const mine = await A.client.rpc('find_notes', { p_query: null, p_limit: 1 });
+    if (mine.error?.message?.includes('Could not find the function')) return notPushedYet('find_notes');
+    const myTotal = ((mine.data ?? []) as { total_count: number }[])[0]?.total_count ?? 0;
+    expect(myTotal).toBeGreaterThan(0);
+
+    const theirs = await B.client.rpc('find_notes', { p_query: null, p_limit: 1 });
+    const theirRows = (theirs.data ?? []) as { total_count: number }[];
+    const theirTotal = theirRows[0]?.total_count ?? 0;
+    expect(theirTotal).not.toBe(myTotal);
+  });
+
+  test('no single ask can ever bring back more than thirty notes', async () => {
+    const greedy = await A.client.rpc('find_notes', { p_query: null, p_limit: 5000 });
+    if (greedy.error?.message?.includes('Could not find the function')) return notPushedYet('find_notes');
+    expect(greedy.error).toBeNull();
+    expect((greedy.data ?? []).length).toBeLessThanOrEqual(30);
+  });
+
+  test('searching transcript lines cannot reach another account either', async () => {
+    const mine = await A.client.rpc('find_passages', { p_query: 'storage', p_limit: 30 });
+    if (mine.error?.message?.includes('Could not find the function')) return notPushedYet('find_passages');
+    expect(mine.error).toBeNull();
+
+    const myNotes = new Set(((mine.data ?? []) as { meeting_id: string }[]).map((r) => r.meeting_id));
+    for (const words of ['storage', 'pricing', 'the', 'budget']) {
+      const theirs = await B.client.rpc('find_passages', { p_query: words, p_limit: 30 });
+      expect(theirs.error).toBeNull();
+      for (const row of (theirs.data ?? []) as { meeting_id: string }[]) {
+        expect(myNotes.has(row.meeting_id)).toBe(false);
+      }
+    }
+  });
+
+  test('deleting notes in a batch refuses another account\'s note, and deletes nothing', async () => {
+    const mine = await A.client.rpc('find_notes', { p_query: null, p_limit: 1 });
+    if (mine.error?.message?.includes('Could not find the function')) return notPushedYet('find_notes');
+    const victim = ((mine.data ?? []) as { id: string }[])[0];
+    expect(victim).toBeTruthy();
+
+    // B knows the id and asks for it by name. That is the strongest form of the attempt.
+    const attempt = await B.client.rpc('delete_notes', { p_ids: [victim.id] });
+    expect(attempt.error).toBeNull();
+    const outcomes = (attempt.data ?? []) as { id: string; error_code: string | null }[];
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0].error_code).not.toBeNull();
+
+    // And it really is still there.
+    const after = await A.client.from('meetings').select('id').eq('id', victim.id);
+    expect(after.data).toHaveLength(1);
+  });
+
+  test('the fake-note doors refuse anybody who is not a gyan admin', async () => {
+    // B is an ordinary person. Both doors must shut, whatever they ask for.
+    const seed = await B.client.rpc('seed_test_notes', { p_count: 1 });
+    if (seed.error?.message?.includes('Could not find the function')) return notPushedYet('seed_test_notes');
+    expect(seed.error?.message).toMatch(/not_admin|not_owner/);
+
+    const remove = await B.client.rpc('remove_test_notes');
+    expect(remove.error?.message).toMatch(/not_admin|not_owner/);
+  });
 });

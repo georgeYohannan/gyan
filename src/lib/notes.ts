@@ -125,6 +125,30 @@ export async function listNotes(): Promise<NoteRow[]> {
   return (data ?? []).map((m) => ({ ...m, status: STATUS_FROM_DB[m.status as string] ?? 'Queued' })) as NoteRow[];
 }
 
+/**
+ * Just the status of the notes named, nothing else.
+ *
+ * Home polls while a note is being worked on. It used to re-ask for the WHOLE list, which was
+ * fine when the whole list was one request -- but with paging it would quietly throw away every
+ * page after the first. This asks about the busy notes only, which is both cheaper and keeps the
+ * "never more than 30 in one request" rule without thinking about it.
+ */
+export async function refreshNoteStatuses(
+  ids: string[],
+): Promise<{ id: string; status: Status; error_message: string | null }[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await getSupabase()
+    .from('meetings')
+    .select('id, status, error_message')
+    .in('id', ids.slice(0, 30));
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    status: STATUS_FROM_DB[row.status as string] ?? 'Queued',
+    error_message: (row.error_message as string | null) ?? null,
+  }));
+}
+
 /** A plain-words title for a note that has none. */
 export function noteTitle(note: Pick<NoteRow, 'title' | 'source'>): string {
   return note.title?.trim() || (note.source === 'text' ? 'Pasted text' : 'Untitled note');

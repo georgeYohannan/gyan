@@ -260,3 +260,179 @@ begin
   end;
 end $$;
 reset role; reset request.jwt.claim.sub;
+
+\echo '--- 16. searching cannot reach another account, not even its count (prompt 12) ---'
+-- find_notes is the one function in this project that runs as the PERSON asking rather than as
+-- the server, so the read rule on meetings is what keeps accounts apart. That is a claim worth
+-- turning the handle on: here A gets a note with a word nothing else has, and B goes looking.
+set role service_role;
+do $$
+declare
+  a_account uuid; a_note uuid := gen_random_uuid(); seg uuid;
+begin
+  select id into a_account from public.accounts where owner_id = 'aaaaaaaa-0000-4000-8000-000000000001';
+  insert into public.meetings (id, account_id, created_by, title, source, status, created_at)
+  values (a_note, a_account, 'aaaaaaaa-0000-4000-8000-000000000001',
+          'Quarterly xyzzyplugh review', 'upload', 'ready', now());
+  insert into public.transcript_segments (meeting_id, speaker_label, start_ms, end_ms, text)
+  values (a_note, 'Speaker 1', 60000, 64000, 'The xyzzyplugh numbers are late again.');
+  insert into public.summaries (meeting_id, language, overview, key_points, decisions, open_questions)
+  values (a_note, 'en', 'A note about xyzzyplugh.', '["xyzzyplugh went up"]'::jsonb, '[]'::jsonb, '[]'::jsonb);
+  insert into public.action_items (meeting_id, text, done)
+  values (a_note, 'Chase the xyzzyplugh figures', false);
+end $$;
+reset role;
+
+-- The triggers should have built the searchable words by themselves, with no help.
+select case when search_transcript like '%xyzzyplugh%' and search_summary like '%xyzzyplugh%'
+                 and open_action_count = 1
+            then 'PASS: the note''s words and open to-do count were built by the database'
+            else 'FAIL: got ' || coalesce(left(search_transcript, 40), 'null')
+                 || ' / open=' || open_action_count end as result
+from public.meetings where title = 'Quarterly xyzzyplugh review';
+
+set role authenticated;
+set request.jwt.claim.sub = 'bbbbbbbb-0000-4000-8000-000000000002';
+do $$
+declare rows_seen int; count_shown int;
+begin
+  select count(*), coalesce(max(total_count), 0) into rows_seen, count_shown
+  from public.find_notes('xyzzyplugh');
+
+  if rows_seen = 0 then raise notice 'PASS: B finds none of A''s notes';
+  else raise notice 'FAIL: B saw % of A''s notes', rows_seen; end if;
+
+  -- The one that would slip past a test that only looked at rows. A count taken over the whole
+  -- table would say "none of these are yours, but there are three of them" -- which is still
+  -- telling B something about A.
+  if count_shown = 0 then raise notice 'PASS: and is not told how many exist';
+  else raise notice 'FAIL: B was told the count is %', count_shown; end if;
+end $$;
+
+do $$
+declare lines_seen int;
+begin
+  select count(*) into lines_seen from public.find_passages('xyzzyplugh');
+  if lines_seen = 0 then raise notice 'PASS: B finds none of A''s transcript lines';
+  else raise notice 'FAIL: B saw % of A''s lines', lines_seen; end if;
+end $$;
+
+-- B cannot even be handed the id by the database, so the check hands it over by hand -- which
+-- is the strongest version of the test: B knows exactly which note to go for and still cannot.
+reset role; reset request.jwt.claim.sub;
+select id as a_note_id from public.meetings where title = 'Quarterly xyzzyplugh review' \gset
+set role authenticated;
+set request.jwt.claim.sub = 'bbbbbbbb-0000-4000-8000-000000000002';
+select case
+  when (select error_code from public.delete_notes(array[:'a_note_id'::uuid])) is not null
+    then 'PASS: B cannot delete A''s note even knowing its id'
+  else 'FAIL: B deleted A''s note' end as result;
+
+-- And the half that is easy to break: A really can find their own note, and is told where the
+-- words were.
+set request.jwt.claim.sub = 'aaaaaaaa-0000-4000-8000-000000000001';
+do $$
+declare r record;
+begin
+  select * into r from public.find_notes('xyzzyplugh');
+  if r.id is null then raise notice 'FAIL: A cannot find their own note';
+  else
+    if r.total_count = 1 then raise notice 'PASS: A finds it, and is told there is 1';
+    else raise notice 'FAIL: A was told there are %', r.total_count; end if;
+    if 'title' = any(r.matched_in) and 'transcript' = any(r.matched_in) and 'summary' = any(r.matched_in)
+      then raise notice 'PASS: it says the words were in the title, summary and transcript';
+      else raise notice 'FAIL: matched_in was %', r.matched_in; end if;
+    if r.snippet like '%' || chr(57344) || '%' then raise notice 'PASS: the snippet marks the matched word';
+      else raise notice 'FAIL: the snippet has no mark: %', r.snippet; end if;
+    if r.snippet_start_ms = 60000 then raise notice 'PASS: and carries the moment it was said';
+      else raise notice 'FAIL: the moment was %', r.snippet_start_ms; end if;
+  end if;
+end $$;
+
+-- English word endings, which is what the founder chose, and an exact word in another language,
+-- which is how the other fifteen keep working.
+do $$
+declare found int;
+begin
+  select count(*) into found from public.find_notes('reviews');
+  if found = 1 then raise notice 'PASS: searching "reviews" finds a note titled "review"';
+  else raise notice 'FAIL: English word endings found % notes', found; end if;
+end $$;
+
+-- Signing out closes the door completely.
+reset role; reset request.jwt.claim.sub;
+set role anon;
+do $$ begin
+  perform public.find_notes('xyzzyplugh');
+  raise notice 'FAIL: a signed out visitor could search';
+exception when others then raise notice 'PASS: a signed out visitor cannot search at all';
+end $$;
+reset role;
+
+\echo '--- 17. a very long pasted note, and languages other than English (prompt 12) ---'
+-- A searchable column has a hard ceiling of 1 MB, and pasted text is only bounded by the 50 MB
+-- upload limit, so the migration cuts each part at 200,000 characters. Without that cut this
+-- insert is refused and the note cannot be saved at all. Turning the handle on it here means
+-- the founder never meets it.
+set role service_role;
+do $$
+declare a_account uuid; big_note uuid := gen_random_uuid();
+begin
+  select id into a_account from public.accounts where owner_id = 'aaaaaaaa-0000-4000-8000-000000000001';
+  insert into public.meetings (id, account_id, created_by, title, source, status, created_at)
+  values (big_note, a_account, 'aaaaaaaa-0000-4000-8000-000000000001',
+          'A very long pasted note', 'text', 'ready', now());
+  begin
+    -- About 3 MB made of 400,000 DIFFERENT words, which is what actually matters: the ceiling
+    -- counts distinct words, not characters, so repeating one sentence would prove nothing.
+    -- Measured in this same database: without the cut, this exact text is refused with
+    -- "string is too long for tsvector (4597986 bytes, max 1048575 bytes)".
+    insert into public.transcript_segments (meeting_id, speaker_label, start_ms, end_ms, text)
+    select big_note, 'Speaker 1', n * 1000, n * 1000 + 900,
+           (select string_agg('word' || (n * 4000 + w), ' ') from generate_series(1, 4000) as w)
+           || ' and the quarterly figures moved again'
+    from generate_series(1, 100) as n;
+    raise notice 'PASS: a 3 MB note of 400,000 different words saves and is searchable';
+  exception when others then raise notice 'FAIL: a long note was refused (%)', sqlerrm;
+  end;
+end $$;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-4000-8000-000000000001';
+select case when count(*) = 1 then 'PASS: and the long note can still be found'
+            else 'FAIL: the long note was not found' end as result
+from public.find_notes('quarterly figures')
+where title = 'A very long pasted note';
+
+-- Spanish and Arabic words are not English, so nothing stems them. They must still find
+-- themselves exactly, which is the whole job of the second tokenising in the search column.
+reset role; reset request.jwt.claim.sub;
+set role service_role;
+do $$
+declare a_account uuid; es_note uuid := gen_random_uuid();
+begin
+  select id into a_account from public.accounts where owner_id = 'aaaaaaaa-0000-4000-8000-000000000001';
+  insert into public.meetings (id, account_id, created_by, title, source, status, created_at)
+  values (es_note, a_account, 'aaaaaaaa-0000-4000-8000-000000000001',
+          'Reunion de presupuesto', 'upload', 'ready', now());
+  insert into public.transcript_segments (meeting_id, speaker_label, start_ms, end_ms, text)
+  values (es_note, 'Speaker 1', 1000, 5000,
+          'Hablamos del presupuesto y de la contratacion. ' ||
+          'Also one line of Japanese: 予算の会議は来週です。');
+end $$;
+reset role;
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-4000-8000-000000000001';
+
+select case when count(*) = 1 then 'PASS: a Spanish word finds its own note'
+            else 'FAIL: Spanish found ' || count(*) || ' notes' end as result
+from public.find_notes('presupuesto');
+
+-- Japanese is the honest gap, and this check records which way it falls rather than assuming.
+-- Whichever it is, docs/testing/prompt-12.md says so in plain words.
+select 'NOTE: a whole Japanese phrase finds ' || count(*) || ' note(s)' as result
+from public.find_notes('予算の会議は来週です');
+select 'NOTE: one Japanese word on its own finds ' || count(*) || ' note(s)' as result
+from public.find_notes('予算');
+reset role; reset request.jwt.claim.sub;

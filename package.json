@@ -71,7 +71,11 @@
     "e2e": "playwright test",
     "e2e:shots": "playwright test tests/screenshots.spec.ts",
     "reset-project": "node ./scripts/reset-project.js",
-    "check:supabase": "node scripts/check-supabase.js"
+    "check:supabase": "node scripts/check-supabase.js",
+    "fake:notes": "node scripts/fake-notes.js",
+    "fake:notes:count": "node scripts/fake-notes.js --count",
+    "fake:notes:remove": "node scripts/fake-notes.js --remove",
+    "measure:home": "node scripts/measure-home.js"
   },
   "private": true
 }

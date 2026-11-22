@@ -52,12 +52,43 @@ export const HELP: Record<string, HelpEntry> = {
     id: 'home',
     title: 'Home',
     sentences: [
-      'Home shows all your notes, newest first.',
+      'Home shows your 10 newest notes. Show more adds 20 more at a time.',
       'Tap New note to add a conversation.',
+      'Search looks inside the title, the summary and every word that was said.',
       'The box at the top shows how many meetings you have used this month, and how many your plan allows.',
-      'Your account, at the bottom, is where you change the language Gyan writes in.',
     ],
     lists: [
+      {
+        heading: 'Finding a note',
+        items: [
+          'Type in the search box. Gyan waits until you stop typing, then looks.',
+          'Each result shows the words it found and says where it found them.',
+          'If the words came from something somebody said, tapping the note opens it at that moment.',
+          'See every matching line opens a list of the lines themselves, not the notes.',
+          'Searching knows English word endings, so "meeting" also finds "meetings".',
+          'In other languages it finds the word exactly as you type it. Japanese, Chinese and Korean are the weak spot: a whole phrase works, a single word inside one often does not.',
+        ],
+      },
+      {
+        heading: 'Narrowing the list',
+        items: [
+          'Filters lets you pick when, what state, where it came from, and whether anything is still to do.',
+          'Filters work together, and with whatever you have searched for.',
+          'The number of notes found is shown above the list.',
+          'Each filter you have on appears as a pill you can tap to take off. Clear filters takes off all of them.',
+          'Today and This month are counted where you are. The monthly meeting count is kept in UTC time, so around the 1st the two can differ by a few hours.',
+        ],
+      },
+      {
+        heading: 'Deleting several notes at once',
+        items: [
+          'Tap Select, tap the notes you want, then tap Delete.',
+          'One box asks you first, and lists what will go.',
+          'Deleting also removes the recordings and files.',
+          'It does not give you the meetings back this month.',
+          'You can delete a note you made. If you own the account you can delete any of them. A note somebody else made cannot be ticked.',
+        ],
+      },
       {
         heading: 'What each status means',
         items: [
@@ -83,7 +114,7 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/home-notes-390.png'),
-        alt: 'The Home screen on a phone-sized window. A box says 0 of 5 meetings used, a blue New note button sits below it, and 4 notes are listed with Queued, Transcribing, Ready, and Failed labels.',
+        alt: 'The Home screen on a phone-sized window. A box says 2 of 5 meetings used, a blue New note button sits below it, then a search box and a Filters button, then notes grouped under Today and Yesterday with Ready, Transcribing and Failed labels.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -93,7 +124,40 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/home-notes-1280.png'),
-        alt: 'The Home screen on a wide web window, with the same box, button, and list of notes laid out wider.',
+        alt: 'The Home screen on a wide web window, with the same box, button, search box and list of notes laid out wider.',
+      },
+    ],
+  },
+  search: {
+    id: 'search',
+    title: 'Search',
+    sentences: [
+      'Search looks through every line of every note you can see.',
+      'Each result is one line somebody said, with the moment it was said.',
+      'Tapping a result opens that note and jumps to that line.',
+      'Home searches whole notes. This searches the lines inside them.',
+    ],
+    lists: [
+      {
+        heading: 'What it can and cannot do',
+        items: [
+          'It finds the words that were actually said or typed.',
+          'It does not yet find a topic worded differently. Asking for "cost" will not find "pricing" unless somebody said "cost".',
+          'A note still being transcribed has no words to find yet.',
+          'You only ever see lines from your own account.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/search-390.png'),
+        alt: 'The Search screen on a phone-sized window. A search box holds a word, a line below says how many lines matched in how many notes, and each result card shows a note title, a date, a speaker name, the matching line with the searched word picked out in blue, and a timestamp pill.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/search-1280.png'),
+        alt: 'The Search screen on a wide web window, with the same search box and result cards laid out wider.',
       },
     ],
   },

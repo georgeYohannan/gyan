@@ -17,6 +17,15 @@ import type { Page, Route } from '@playwright/test';
  */
 export const PROMPT_VERSION = 2;
 
+/**
+ * The two characters the database wraps a matched search word in, copied from
+ * supabase/migrations/20261121150000_search_and_paging.sql and src/lib/notes-search.ts.
+ * They are private-use characters, never html. __tests__/notes-search-test.ts reads all three
+ * places and fails if they drift apart.
+ */
+export const MARK_START = '\uE000';
+export const MARK_END = '\uE001';
+
 export const FAKE_USER = { id: '11111111-1111-4111-8111-111111111111', email: 'test.a@example.com' };
 export const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 export const NOTE_ID = '33333333-3333-4333-8333-333333333333';
@@ -106,6 +115,19 @@ export type FakeData = {
   recapFailsFor?: string[];
   /** An error message save_recap_settings answers with, for example 'not_owner'. */
   saveSettingsError?: string;
+
+  /**
+   * The words INSIDE a note, keyed by note id, for searching (prompt 12). A note that is not in
+   * here is still searchable by its title, which is why every script written before prompt 12
+   * keeps working without being touched.
+   */
+  searchText?: Record<string, { summary?: string; transcript?: string; startMs?: number }>;
+  /** Note ids that have at least one to-do still open, for the "open to-dos" filter. */
+  openActions?: string[];
+  /** Note ids made by SOMEBODY ELSE, so Select mode cannot tick them and delete refuses them. */
+  notMine?: string[];
+  /** Make searching the Home list fail, to check the message and the Retry. */
+  findNotesError?: string;
 };
 
 /** One made up answer from the chat function. `ok: false` is a problem with a Retry. */
@@ -481,6 +503,14 @@ export type Recorder = {
   functionCalls: { name: string; body: unknown }[];
   updates: { table: string; body: unknown }[];
   uploads: string[];
+  /** Files the app asked storage to remove. One entry per call, each holding its paths. */
+  storageRemovals: string[][];
+  /**
+   * Questions the app ASKED, as against changes it made: searching and paging the note list.
+   * Kept apart from `updates` on purpose. They are reads, and a script checking that ticking a
+   * to-do saves nothing but the tick should not have to step over them to find out.
+   */
+  searches: { name: string; body: unknown }[];
 };
 
 const session = () => ({
@@ -512,7 +542,13 @@ const json = (route: Route, body: unknown, status = 200) =>
  */
 export async function installFakes(page: Page, overrides: Partial<FakeData> = {}): Promise<Recorder> {
   const data: FakeData = { ...DEFAULTS, ...overrides };
-  const recorder: Recorder = { functionCalls: [], updates: [], uploads: [] };
+  const recorder: Recorder = {
+    functionCalls: [],
+    updates: [],
+    uploads: [],
+    storageRemovals: [],
+    searches: [],
+  };
 
   // Login, logout and "who am I". No real account is used.
   await page.route('**/auth/v1/**', async (route) => {
@@ -720,10 +756,22 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
 
   // Files. Nothing is really stored, and nothing real is ever downloaded.
   await page.route('**/storage/v1/**', async (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
     // Reading a pasted-text note's words back out of the bucket.
-    if (route.request().method() === 'GET') {
+    if (request.method() === 'GET') {
       return route.fulfill({ status: 200, contentType: 'text/plain', body: data.textWords });
+    }
+    // Deleting a note's recording. supabase-js sends the paths as "prefixes".
+    if (request.method() === 'DELETE') {
+      let prefixes: string[] = [];
+      try {
+        prefixes = (request.postDataJSON() as { prefixes?: string[] })?.prefixes ?? [];
+      } catch {
+        prefixes = [];
+      }
+      recorder.storageRemovals.push(prefixes);
+      return json(route, prefixes.map((name) => ({ name })));
     }
     recorder.uploads.push(path);
     return json(route, { Key: 'notes-files/fake' });
@@ -884,6 +932,39 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
         return json(route, `${ACCOUNT_ID}/${id}/recording.mp3`);
       }
 
+      // ---------------------------------------------------------------------------
+      // Searching and paging the Home list (prompt 12)
+      // ---------------------------------------------------------------------------
+      // These three do the real work in JavaScript -- filtering, sorting, paging, counting and
+      // marking the matched words -- because the browser scripts never touch a database. They
+      // read the SAME data.notes array every other answer here reads, which is what keeps every
+      // script written before prompt 12 passing without a line changed.
+      if (fn === 'find_notes') {
+        recorder.searches.push({ name: fn, body });
+        if (data.findNotesError) return json(route, { message: data.findNotesError, code: 'P0001' }, 400);
+        return json(route, findNotesFake(data, (body ?? {}) as Row));
+      }
+
+      if (fn === 'find_passages') {
+        recorder.searches.push({ name: fn, body });
+        return json(route, findPassagesFake(data, (body ?? {}) as Row));
+      }
+
+      if (fn === 'delete_notes') {
+        recorder.updates.push({ table: fn, body });
+        const ids = ((body as { p_ids?: string[] } | undefined)?.p_ids ?? []).slice();
+        const notMine = data.notMine ?? [];
+        const outcomes = ids.map((id) => {
+          const note = data.notes.find((n) => n.id === id);
+          if (!note) return { id, file_path: null, error_code: 'no_such_note' };
+          if (notMine.includes(id)) return { id, file_path: null, error_code: 'not_yours' };
+          return { id, file_path: (note.file_path as string | null) ?? null, error_code: null };
+        });
+        const removed = outcomes.filter((o) => o.error_code === null).map((o) => o.id);
+        data.notes = data.notes.filter((n) => !removed.includes(n.id as string));
+        return json(route, outcomes);
+      }
+
       if (fn === 'can_delete_account') {
         return json(route, wantsOne ? data.deleteCheck : [data.deleteCheck]);
       }
@@ -891,11 +972,21 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
       return json(route, null);
     }
 
-    const noteId = url.searchParams.get('id')?.replace('eq.', '');
+    // "id=eq.<one>" for a note page, and "id=in.(<a>,<b>)" for Home's poll of the busy notes.
+    // Reading only the first of those would hand back nothing for the poll, which would quietly
+    // blank every note still being worked on -- a failure that shows as empty rows, not an error.
+    const idFilter = url.searchParams.get('id') ?? '';
+    const wantedIds = ((): string[] | undefined => {
+      if (idFilter.startsWith('eq.')) return [idFilter.slice(3)];
+      const list = /^in\.\((.*)\)$/.exec(idFilter);
+      if (list) return list[1].split(',').map((v) => v.trim().replace(/^"|"$/g, '')).filter(Boolean);
+      return undefined;
+    })();
+    const noteId = wantedIds?.length === 1 ? wantedIds[0] : undefined;
     const rows: Row[] = (() => {
       switch (table) {
         case 'meetings':
-          return noteId ? data.notes.filter((n) => n.id === noteId) : data.notes;
+          return wantedIds ? data.notes.filter((n) => wantedIds.includes(n.id as string)) : data.notes;
         case 'transcript_segments':
           return data.segments;
         case 'summaries':
@@ -981,4 +1072,204 @@ export async function signIn(page: Page): Promise<void> {
 /** Opens one note page straight away (after signIn). */
 export async function openNote(page: Page, id: string = NOTE_ID): Promise<void> {
   await gotoApp(page, `/note/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// The made up search (prompt 12)
+// ---------------------------------------------------------------------------
+// Not a copy of the database's search -- it could not be, and pretending otherwise would be
+// worse than useless. It behaves the same way in the ways the SCREEN can tell apart: which
+// notes come back, in what order, how many there are in total, which part of the note matched,
+// and what a snippet with its marked words looks like. Whether "meeting" also finds "meetings"
+// is the database's job, and scripts/db-check/02-behaviour-checks.sql turns the handle on that.
+
+type SearchBody = {
+  p_query?: string | null;
+  p_from?: string | null;
+  p_to?: string | null;
+  p_statuses?: string[] | null;
+  p_sources?: string[] | null;
+  p_open_actions?: boolean | null;
+  p_limit?: number | null;
+  p_before?: string | null;
+  p_before_id?: string | null;
+  p_offset?: number | null;
+};
+
+const words = (query: string): string[] =>
+  query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/^[-"]+|"+$/g, ''))
+    .filter(Boolean);
+
+/** Does this text hold every word asked for? The database's "and" between words. */
+const holdsAll = (text: string, asked: string[]): boolean => {
+  const lower = text.toLowerCase();
+  return asked.length > 0 && asked.every((w) => lower.includes(w));
+};
+
+/** A few words either side of the first match, with the matched words marked. */
+const snippetOf = (text: string, asked: string[]): string => {
+  const lower = text.toLowerCase();
+  let at = -1;
+  for (const w of asked) {
+    const found = lower.indexOf(w);
+    if (found >= 0 && (at < 0 || found < at)) at = found;
+  }
+  if (at < 0) return '';
+  let start = Math.max(0, at - 40);
+  let end = Math.min(text.length, at + 80);
+  // Cut between words, never through one: "anks for joining" is not what the database does.
+  while (start > 0 && !/\s/.test(text[start - 1])) start -= 1;
+  while (end < text.length && !/\s/.test(text[end])) end += 1;
+  let piece = text.slice(start, end).trim();
+  for (const w of asked) {
+    piece = piece.replace(new RegExp(`(${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'),
+      `${MARK_START}$1${MARK_END}`);
+  }
+  return (start > 0 ? '... ' : '') + piece + (end < text.length ? ' ...' : '');
+};
+
+function findNotesFake(data: FakeData, body: Row): Row[] {
+  const ask = body as SearchBody;
+  const query = (ask.p_query ?? '').trim();
+  const asked = words(query);
+  const searching = asked.length > 0;
+  const limit = Math.min(Math.max(ask.p_limit ?? 10, 1), 30);
+  const openOnly = ask.p_open_actions === true;
+  const openActions = data.openActions ?? [];
+  const notMine = data.notMine ?? [];
+
+  let found = data.notes.filter((note) => {
+    const id = note.id as string;
+    const inside = data.searchText?.[id] ?? {};
+    const title = (note.title as string | null) ?? '';
+
+    if (searching) {
+      const all = [title, inside.summary ?? '', inside.transcript ?? ''].join(' \n ');
+      if (!holdsAll(all, asked)) return false;
+    }
+    const at = new Date(note.created_at as string).getTime();
+    if (ask.p_from && at < new Date(ask.p_from).getTime()) return false;
+    if (ask.p_to && at >= new Date(ask.p_to).getTime()) return false;
+    if (ask.p_statuses && !ask.p_statuses.includes(note.status as string)) return false;
+    if (ask.p_sources && !ask.p_sources.includes(note.source as string)) return false;
+    if (openOnly && !openActions.includes(id)) return false;
+    return true;
+  });
+
+  const matchedIn = (note: Row): string[] => {
+    if (!searching) return [];
+    const id = note.id as string;
+    const inside = data.searchText?.[id] ?? {};
+    const where: string[] = [];
+    if (holdsAll((note.title as string | null) ?? '', asked)) where.push('title');
+    if (holdsAll(inside.summary ?? '', asked)) where.push('summary');
+    if (holdsAll(inside.transcript ?? '', asked)) where.push('transcript');
+    return where;
+  };
+
+  const newestFirst = (a: Row, b: Row) =>
+    new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime();
+
+  if (searching) {
+    // Best match first: the database weights the title above the summary above the transcript.
+    const weight = (note: Row) => {
+      const where = matchedIn(note);
+      if (where.includes('title')) return 3;
+      if (where.includes('summary')) return 2;
+      return 1;
+    };
+    found.sort((a, b) => weight(b) - weight(a) || newestFirst(a, b));
+    found = found.slice(ask.p_offset ?? 0);
+  } else {
+    found.sort(newestFirst);
+    // Paging by date walks past the last row already shown, rather than counting from the start.
+    if (ask.p_before) {
+      const edge = new Date(ask.p_before).getTime();
+      found = found.filter((note) => {
+        const at = new Date(note.created_at as string).getTime();
+        if (at !== edge) return at < edge;
+        return (note.id as string) < (ask.p_before_id ?? '');
+      });
+    }
+  }
+
+  const total = searching
+    ? found.length + (ask.p_offset ?? 0)
+    : data.notes.filter((note) => {
+        // The count is over everything the filters allow, not just this page -- so it must not
+        // be affected by where the page starts.
+        const id = note.id as string;
+        const inside = data.searchText?.[id] ?? {};
+        const at = new Date(note.created_at as string).getTime();
+        if (ask.p_from && at < new Date(ask.p_from).getTime()) return false;
+        if (ask.p_to && at >= new Date(ask.p_to).getTime()) return false;
+        if (ask.p_statuses && !ask.p_statuses.includes(note.status as string)) return false;
+        if (ask.p_sources && !ask.p_sources.includes(note.source as string)) return false;
+        if (openOnly && !openActions.includes(id)) return false;
+        void inside;
+        return true;
+      }).length;
+
+  return found.slice(0, limit).map((note) => {
+    const id = note.id as string;
+    const inside = data.searchText?.[id] ?? {};
+    const where = matchedIn(note);
+    const fromTranscript = where.includes('transcript');
+    const snippet = !searching
+      ? null
+      : fromTranscript
+        ? snippetOf(inside.transcript ?? '', asked)
+        : where.includes('summary')
+          ? snippetOf(inside.summary ?? '', asked)
+          : null;
+    return {
+      id,
+      title: note.title ?? null,
+      source: note.source,
+      status: note.status,
+      error_message: note.error_message ?? null,
+      created_at: note.created_at,
+      has_open_actions: openActions.includes(id),
+      can_delete: !notMine.includes(id),
+      matched_in: where,
+      snippet: snippet || null,
+      snippet_start_ms: fromTranscript ? (inside.startMs ?? 60000) : null,
+      snippet_segment_id: fromTranscript ? `seg-${id}` : null,
+      total_count: total,
+    };
+  });
+}
+
+function findPassagesFake(data: FakeData, body: Row): Row[] {
+  const ask = body as SearchBody;
+  const asked = words((ask.p_query ?? '').trim());
+  if (asked.length === 0) return [];
+  const limit = Math.min(Math.max(ask.p_limit ?? 10, 1), 30);
+  const firstNote = data.notes[0];
+
+  const found = data.segments
+    .filter((seg) => holdsAll((seg.text as string) ?? '', asked))
+    .map((seg) => {
+      const noteId = (seg.meeting_id as string | undefined) ?? (firstNote?.id as string);
+      const note = data.notes.find((n) => n.id === noteId) ?? firstNote;
+      return {
+        segment_id: seg.id,
+        meeting_id: noteId,
+        note_title: (note?.title as string | null) ?? null,
+        note_created_at: note?.created_at ?? new Date().toISOString(),
+        speaker_label: seg.speaker_label ?? null,
+        start_ms: seg.start_ms ?? 0,
+        line: snippetOf((seg.text as string) ?? '', asked),
+      };
+    });
+
+  const noteCount = new Set(found.map((f) => f.meeting_id)).size;
+  return found.slice(ask.p_offset ?? 0).slice(0, limit).map((row) => ({
+    ...row,
+    total_count: found.length,
+    note_count: noteCount,
+  }));
 }

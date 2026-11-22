@@ -1017,3 +1017,105 @@ describe('the security baseline migration (prompt 11)', () => {
     expect(t).not.toMatch(/is HIPAA compliant|is GDPR compliant|fully compliant/i);
   });
 });
+
+describe('the search and paging migration (prompt 12)', () => {
+  const file = fs.readdirSync(dir).find((f) => f.includes('search_and_paging'))!;
+  const t = fs.readFileSync(path.join(dir, file), 'utf8');
+
+  test("it only adds things. It deletes no table, column, or row of anybody's data", () => {
+    expect(t).not.toMatch(/drop (table|column|schema|function)/i);
+    expect(t).not.toMatch(/truncate/i);
+    // The only two deletes are the fake-note door, which needs both marks before it removes
+    // anything, and delete_notes, which is the whole point of Select mode.
+    expect(t.match(/delete from/gi)).toHaveLength(2);
+  });
+
+  test('the searchable column keeps the language argument that makes it allowed at all', () => {
+    // to_tsvector with ONE argument depends on a database setting, which makes it STABLE, and
+    // Postgres refuses a stable expression in a stored column. Every call must name its config.
+    const calls = t.match(/to_tsvector\(/g) ?? [];
+    const named = t.match(/to_tsvector\('(english|simple)'/g) ?? [];
+    expect(named.length).toBe(calls.length);
+  });
+
+  test('both tokenisings are there, so the other fifteen languages still find a word', () => {
+    expect(t).toContain("to_tsvector('english', coalesce(title, ''))");
+    expect(t).toContain("to_tsvector('simple', coalesce(title, ''))");
+    // Title, summary and transcript are weighted apart, which is what lets a result say where
+    // the words were found.
+    expect(t).toMatch(/setweight\([\s\S]{0,200}'A'\)/);
+    expect(t).toMatch(/setweight\([\s\S]{0,200}'B'\)/);
+    expect(t).toMatch(/setweight\([\s\S]{0,200}'C'\)/);
+  });
+
+  test('every part of the searchable column is cut, so a long pasted note cannot be refused', () => {
+    // Measured in scripts/db-check: 3 MB of different words is refused outright without this.
+    expect(t.match(/left\(coalesce\(search_summary, ''\), 200000\)/g)).toBeTruthy();
+    expect(t.match(/left\(coalesce\(search_transcript, ''\), 200000\)/g)).toBeTruthy();
+  });
+
+  test('searching runs as the person asking, and says whose notes it may see as well', () => {
+    const fn = t.slice(t.indexOf('create function public.find_notes'), t.indexOf('create function public.find_passages'));
+    expect(fn).toContain('security invoker');
+    expect(fn).toContain('select private.is_account_member(m.account_id)');
+  });
+
+  test('a page can never be more than 30 notes, whatever the app asks for', () => {
+    expect(t).toContain('least(greatest(coalesce(p_limit, 10), 1), 30)');
+  });
+
+  test('the number of matches is counted over the same rows the rules allow', () => {
+    // A count taken anywhere else would say "none of these are yours, but there are nine of
+    // them", which still tells somebody about another account. scripts/db-check turns the
+    // handle on this one.
+    const fn = t.slice(t.indexOf('create function public.find_notes'), t.indexOf('create function public.find_passages'));
+    const where = fn.indexOf('where (select private.is_account_member');
+    expect(fn.indexOf('count(*) over ()')).toBeLessThan(where);
+    expect(fn).not.toMatch(/count\(\*\) from public\.meetings/);
+  });
+
+  test('a snippet is marked with characters, never with html', () => {
+    // Postgres' own manual says a snippet is not safe to drop into a web page, and nothing in
+    // this app renders html. chr(57344) and chr(57345) are private-use characters.
+    expect(t).toContain('chr(57344)');
+    expect(t).toContain('chr(57345)');
+    expect(t).not.toMatch(/StartSel=</);
+  });
+
+  test('deleting several notes keeps the one-note rule, note by note', () => {
+    const fn = t.slice(t.indexOf('create function public.delete_notes'));
+    expect(fn).toContain("'not_yours'");
+    expect(fn).toContain("'no_such_note'");
+    expect(fn).toContain('private.is_account_owner(note.account_id)');
+    expect(fn).toContain('note.created_by is distinct from me');
+    // And a ceiling, like every other list here has one.
+    expect(fn).toContain('too_many');
+  });
+
+  test('the fake-note doors need BOTH a gyan admin and your own account', () => {
+    for (const fn of ['seed_test_notes', 'remove_test_notes']) {
+      const body = t.slice(t.indexOf(`create function public.${fn}`));
+      expect(body).toContain("raise exception 'not_admin'");
+      expect(body).toContain("raise exception 'not_owner'");
+    }
+    // Removing them needs the title mark AND the account, never the title alone.
+    const remove = t.slice(t.indexOf('create function public.remove_test_notes'));
+    expect(remove).toMatch(/m\.account_id = my_account[\s\S]{0,120}m\.title like '\[test\] %'/);
+  });
+
+  test('a fake note never carries a file path, so it cannot point anywhere', () => {
+    const seed = t.slice(t.indexOf('create function public.seed_test_notes'), t.indexOf('create function public.remove_test_notes'));
+    expect(seed).not.toMatch(/file_path/);
+  });
+
+  test.each([
+    'find_notes(\n  text, timestamptz, timestamptz, text[], text[], boolean, int, timestamptz, uuid, int\n)',
+    'find_passages(text, int, int)',
+    'delete_notes(uuid[])',
+    'seed_test_notes(int)',
+    'remove_test_notes()',
+  ])('the app can run %s, and a signed out visitor cannot', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon`);
+    expect(t).toContain(`grant execute on function public.${fn} to authenticated`);
+  });
+});

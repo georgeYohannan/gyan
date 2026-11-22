@@ -324,3 +324,173 @@ for (const w of WIDTHS) {
     );
   });
 }
+
+// ---------------------------------------------------------------------------
+// Home and Search (prompt 12)
+// ---------------------------------------------------------------------------
+// Home's pictures used to be taken by hand, which is why their descriptions in
+// src/content/help.ts had drifted from what the screen actually showed. They are made here now.
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/** A believable handful of notes: two from today and yesterday, the rest older. */
+function homeNotes() {
+  const now = Date.now();
+  const titles = [
+    'Weekly team call',
+    'Customer call: Northwind',
+    'Pricing review',
+    'Notes from the roadmap chat',
+    'Design review',
+    'Hiring catch-up',
+  ];
+  const statuses = ['ready', 'transcribing', 'ready', 'ready', 'failed', 'ready'] as const;
+  const sources = ['upload', 'upload', 'bot', 'text', 'upload', 'phone'] as const;
+  return titles.map((title, i) =>
+    noteRow({
+      id: `shot-${i}`,
+      title,
+      status: statuses[i],
+      source: sources[i],
+      error_message: statuses[i] === 'failed' ? 'We could not read this audio file.' : null,
+      created_at: new Date(now - (i === 0 ? 0 : i === 1 ? DAY : (i + 2) * DAY)).toISOString(),
+    }),
+  );
+}
+
+/** The words inside those notes, so a search has something true to find. */
+const homeSearchText = {
+  'shot-2': {
+    transcript: 'We agreed the pricing has to go up before the quarter ends, so Priya will redo the sheet.',
+    startMs: 64000,
+  },
+  'shot-3': { summary: 'A roadmap chat. The pricing question comes back in March.' },
+};
+
+/** One screenshot of Home, at one width, after doing `then` to it. */
+async function shootHome(
+  { page, context }: { page: import('@playwright/test').Page; context: import('@playwright/test').BrowserContext },
+  file: string,
+  size: { width: number; height: number },
+  data: Partial<FakeData>,
+  then?: (page: import('@playwright/test').Page) => Promise<void>,
+) {
+  await page.setViewportSize(size);
+  await installFakes(page, data);
+  await signIn(page);
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  if (then) await then(page);
+  // Tapping a note part-way down scrolls the list. React Native Web scrolls an element inside
+  // the page rather than the page itself, so fullPage would otherwise photograph it mid-list.
+  await page.evaluate(() => {
+    for (const el of Array.from(document.querySelectorAll('*'))) {
+      if (el.scrollTop > 0) el.scrollTop = 0;
+    }
+  });
+  await page.waitForTimeout(700); // let the fonts and any panel settle
+  await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
+  await context.clearCookies();
+}
+
+for (const w of WIDTHS) {
+  test(`Home with notes at ${w.name} pixels`, async ({ page, context }) => {
+    await shootHome({ page, context }, `home-notes-${w.name}.png`, { width: w.width, height: w.full }, {
+      notes: homeNotes(),
+      usage: { used: 2, limit: 5 },
+      openActions: ['shot-0'],
+    });
+  });
+
+  test(`Home with no notes at ${w.name} pixels`, async ({ page, context }) => {
+    await shootHome({ page, context }, `home-empty-${w.name}.png`, { width: w.width, height: w.short }, {
+      notes: [],
+      usage: { used: 0, limit: 5 },
+    });
+  });
+
+  test(`Home with a search word at ${w.name} pixels`, async ({ page, context }) => {
+    await shootHome(
+      { page, context },
+      `home-search-${w.name}.png`,
+      { width: w.width, height: w.short },
+      { notes: homeNotes(), usage: { used: 2, limit: 5 }, searchText: homeSearchText },
+      async (page) => {
+        await page.getByLabel('Search your notes').fill('pricing');
+        await expect(page.getByText('2 notes found').filter({ visible: true }).first()).toBeVisible();
+      },
+    );
+  });
+
+  test(`the filters at ${w.name} pixels`, async ({ page, context }) => {
+    await shootHome(
+      { page, context },
+      `home-filters-${w.name}.png`,
+      { width: w.width, height: w.full },
+      { notes: homeNotes(), usage: { used: 2, limit: 5 } },
+      async (page) => {
+        await page.getByRole('button', { name: /^Filters(, \d+ on)?$/ }).click();
+        await expect(page.getByRole('heading', { name: 'Filters' })).toBeVisible();
+      },
+    );
+  });
+
+  test(`picking a custom date range at ${w.name} pixels`, async ({ page, context }) => {
+    await shootHome(
+      { page, context },
+      `home-dates-${w.name}.png`,
+      { width: w.width, height: w.full },
+      { notes: homeNotes(), usage: { used: 2, limit: 5 } },
+      async (page) => {
+        await page.getByRole('button', { name: /^Filters(, \d+ on)?$/ }).click();
+        await page.getByRole('radio', { name: 'Custom range' }).filter({ visible: true }).first().click();
+        await expect(page.getByText('Pick the first day.')).toBeVisible();
+      },
+    );
+  });
+
+  test(`Select mode at ${w.name} pixels`, async ({ page, context }) => {
+    await shootHome(
+      { page, context },
+      `home-select-${w.name}.png`,
+      { width: w.width, height: w.full },
+      { notes: homeNotes(), usage: { used: 2, limit: 5 } },
+      async (page) => {
+        await page.getByRole('button', { name: 'Select notes' }).click();
+        await page.getByText('Weekly team call').click();
+        await page.getByText('Pricing review').click();
+        await expect(page.getByText('2 notes selected')).toBeVisible();
+      },
+    );
+  });
+
+  test(`the box that asks before deleting at ${w.name} pixels`, async ({ page, context }) => {
+    await shootHome(
+      { page, context },
+      `home-delete-${w.name}.png`,
+      { width: w.width, height: w.full },
+      { notes: homeNotes(), usage: { used: 2, limit: 5 } },
+      async (page) => {
+        await page.getByRole('button', { name: 'Select notes' }).click();
+        await page.getByText('Weekly team call').click();
+        await page.getByText('Pricing review').click();
+        await page.getByRole('button', { name: 'Delete selected notes' }).click();
+        await expect(page.getByRole('heading', { name: 'Delete 2 notes?' })).toBeVisible();
+      },
+    );
+  });
+
+  test(`the Search screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootHome(
+      { page, context },
+      `search-${w.name}.png`,
+      { width: w.width, height: w.short },
+      { notes: homeNotes(), usage: { used: 2, limit: 5 }, searchText: homeSearchText },
+      async (page) => {
+        await page.getByLabel('Search your notes').fill('sign up');
+        await page.getByRole('link', { name: 'See every matching line' }).click();
+        await expect(page.getByRole('heading', { name: 'Search' })).toBeVisible();
+        await expect(page.getByText(/lines? in 1 note/).filter({ visible: true }).first()).toBeVisible();
+      },
+    );
+  });
+}
