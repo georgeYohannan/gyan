@@ -125,15 +125,60 @@ export async function listNotes(): Promise<NoteRow[]> {
   return (data ?? []).map((m) => ({ ...m, status: STATUS_FROM_DB[m.status as string] ?? 'Queued' })) as NoteRow[];
 }
 
+/**
+ * Just the status of the notes named, nothing else.
+ *
+ * Home polls while a note is being worked on. It used to re-ask for the WHOLE list, which was
+ * fine when the whole list was one request -- but with paging it would quietly throw away every
+ * page after the first. This asks about the busy notes only, which is both cheaper and keeps the
+ * "never more than 30 in one request" rule without thinking about it.
+ */
+export async function refreshNoteStatuses(
+  ids: string[],
+): Promise<{ id: string; status: Status; error_message: string | null }[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await getSupabase()
+    .from('meetings')
+    .select('id, status, error_message')
+    .in('id', ids.slice(0, 30));
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    status: STATUS_FROM_DB[row.status as string] ?? 'Queued',
+    error_message: (row.error_message as string | null) ?? null,
+  }));
+}
+
 /** A plain-words title for a note that has none. */
 export function noteTitle(note: Pick<NoteRow, 'title' | 'source'>): string {
   return note.title?.trim() || (note.source === 'text' ? 'Pasted text' : 'Untitled note');
 }
 
-/** Keeps file names safe for a storage path. */
+/** Keeps file names safe for a storage path. Still used to work out the ending. */
 export function safeFileName(name: string): string {
   const cleaned = name.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
   return (cleaned || 'file').slice(-120);
+}
+
+/**
+ * THE NAME A FILE IS STORED UNDER IS RANDOM, not the name it arrived with.
+ *
+ * The file somebody picked might be called "Acme layoffs Q3 - confidential.m4a". Storing it
+ * under that name writes the contents of the meeting into the file path, and a path travels
+ * further than the file does: into logs, into error reports, into the address of a signed
+ * link. Only people on the account can reach the files either way, so this is not a hole
+ * being closed -- it is not writing private information into a name that does not need it.
+ *
+ * The ending is kept, because it is the only part anything downstream looks at, and it is
+ * taken from a short list rather than from the name. The name the person chose is still
+ * shown everywhere: it is the note's title.
+ */
+export function storedFileName(originalName: string): string {
+  const safe = safeFileName(originalName).toLowerCase();
+  const dot = safe.lastIndexOf('.');
+  const ending = dot > 0 ? safe.slice(dot + 1) : '';
+  const known = [...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS, ...TEXT_EXTENSIONS].includes(ending);
+  return known ? `${newId()}.${ending}` : newId();
 }
 
 function newId(): string {
@@ -203,7 +248,8 @@ export function prepareAttempt(
     accountId,
     source: isText ? 'text' : 'upload',
     title: input.title,
-    path: `${accountId}/${meetingId}/${safeFileName(input.name)}`,
+    // A random name, not the one the file arrived with. See storedFileName.
+    path: `${accountId}/${meetingId}/${storedFileName(input.name)}`,
     body: input.body,
     contentType: input.contentType,
     created: false,

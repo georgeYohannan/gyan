@@ -61,10 +61,21 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "check": "npm run typecheck && npm test",
+    "check:db": "sh scripts/db-check/run.sh",
+    "scan:secrets": "node scripts/scan-secrets.js",
+    "scan:secrets:all": "node scripts/scan-secrets.js --tracked",
+    "scan:secrets:history": "node scripts/scan-secrets.js --history",
+    "audit:check": "npm audit --audit-level=high",
+    "hooks:install": "node scripts/install-hooks.js",
+    "prepare": "node scripts/install-hooks.js",
     "e2e": "playwright test",
     "e2e:shots": "playwright test tests/screenshots.spec.ts",
     "reset-project": "node ./scripts/reset-project.js",
-    "check:supabase": "node scripts/check-supabase.js"
+    "check:supabase": "node scripts/check-supabase.js",
+    "fake:notes": "node scripts/fake-notes.js",
+    "fake:notes:count": "node scripts/fake-notes.js --count",
+    "fake:notes:remove": "node scripts/fake-notes.js --remove",
+    "measure:home": "node scripts/measure-home.js"
   },
   "private": true
 }

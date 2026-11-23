@@ -29,6 +29,30 @@ describe('Deepgram request', () => {
     expect(url.toString()).not.toMatch(/token|key/i);
   });
 
+  test('OUR CUSTOMERS\u2019 MEETINGS ARE KEPT OUT OF DEEPGRAM\u2019S TRAINING DATA', () => {
+    // Not a preference, and it must never be removed. Deepgram's own documentation says
+    // requests take part in its Model Improvement Program BY DEFAULT and that it keeps
+    // them -- the audio and the transcript. For an app whose whole job is private
+    // conversations, that is not an acceptable default.
+    //
+    // With this set, Deepgram says the data is kept only as long as it takes to answer.
+    const url = new URL(buildListenUrl('nova-3'));
+    expect(url.searchParams.get('mip_opt_out')).toBe('true');
+  });
+
+  test('every single request carries the opt-out, not just the first', async () => {
+    // A per-request setting is only worth anything if it is on every request. This checks
+    // the address really sent, rather than the one the builder makes.
+    const fetcher = jest.fn().mockResolvedValue(okResponse(twoPeople));
+    for (const file of ['a.mp3', 'b.mp3', 'c.mp3']) {
+      await transcribeUrl(`https://example.test/${file}`, 'FAKE-KEY', 'nova-3', fetcher);
+    }
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    for (const [address] of fetcher.mock.calls) {
+      expect(new URL(String(address)).searchParams.get('mip_opt_out')).toBe('true');
+    }
+  });
+
   test('the key goes in a header and the file goes in as a link', async () => {
     const fetcher = jest.fn().mockResolvedValue(okResponse(twoPeople));
     await transcribeUrl('https://example.test/file.mp3', 'FAKE-KEY', 'nova-3', fetcher);

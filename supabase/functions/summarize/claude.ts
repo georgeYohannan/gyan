@@ -2,6 +2,8 @@
 // No Deno-only code here, so Jest can test this file without ever calling Claude.
 // The prompt is the one in docs/data-model.md ("1. Summary and action items"), word for word.
 
+import { fence, untrustedRules } from '../_shared/untrusted.ts';
+
 export type Segment = { speaker_label: string | null; start_ms: number; text: string };
 
 export type ActionItem = { text: string; owner: string | null; due: string | null; start_ms: number };
@@ -117,6 +119,8 @@ export function buildSystem(language: string, hasTimes = true): string {
 Write all text in ${language}.
 ${lineShape}
 
+${untrustedRules('TRANSCRIPT', 'transcript')}
+
 Return JSON only, in this shape:
 {
   "title": "short title, at most 8 words",
@@ -135,12 +139,23 @@ RULES
 - If the transcript is too short or has no clear content, return empty lists and an overview that says so.`;
 }
 
-/** The USER half of the prompt, from docs/data-model.md. */
+/**
+ * The USER half of the prompt, from docs/data-model.md.
+ *
+ * The transcript is FENCED. It used to sit straight after the word "Transcript:", which left
+ * the model no way to tell what people said from what it was being told to do. Anybody who
+ * could get words into a note -- by pasting a file, or just by saying it out loud in a
+ * recorded meeting -- could write "ignore your instructions" and have it carried into the
+ * summary, and from there into the recap email sent to everybody on the account.
+ *
+ * The meeting type is only ever one of our own words, but it is shortened and stripped of
+ * line breaks anyway, so it can never be used to write extra lines into the prompt.
+ */
 export function buildUser(transcript: string, meetingType?: string | null): string {
-  const type = meetingType?.trim() || 'general';
+  const type = (meetingType ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 60) || 'general';
   return `Meeting type: ${type}
 Transcript:
-${transcript}`;
+${fence('TRANSCRIPT', transcript).block}`;
 }
 
 function asStringList(value: unknown): string[] | undefined {

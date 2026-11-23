@@ -95,7 +95,7 @@ const POLL_MS = 3000;
 
 /** Note detail: a Summary tab, a Transcript tab, and the side chat. Mind map comes later. */
 export default function NoteDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, line } = useLocalSearchParams<{ id: string; line?: string }>();
   const router = useRouter();
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [tab, setTab] = useState<Tab>('Summary');
@@ -209,6 +209,18 @@ export default function NoteDetailScreen() {
       if (typeof top === 'number') pageRef.current?.scrollTo({ y: Math.max(top - 80, 0), animated: true });
     }, 50);
   }, []);
+
+  /**
+   * A search result opened this note at a particular line, as "?line=<id>". It is the same
+   * jump the chat's passage numbers make, so there is one way to land on a moment, not two.
+   * It runs once per line asked for, so scrolling away and back does not drag you back to it.
+   */
+  const jumped = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!line || load.state !== 'ready' || jumped.current === line) return;
+    jumped.current = line;
+    jumpTo({ n: 0, segment_id: line, start_ms: 0, speaker_label: null });
+  }, [line, load.state, jumpTo]);
 
   const lines = load.state === 'ready' ? load.lines : [];
   const passages = load.state === 'ready' ? load.passages : [];

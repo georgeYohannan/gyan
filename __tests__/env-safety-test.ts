@@ -69,20 +69,42 @@ describe('secrets safety', () => {
     }
   });
 
-  test('the recap server function reads the mailbox password from a server secret', () => {
-    const fn = fs.readFileSync(path.join(root, 'supabase/functions/recap/index.ts'), 'utf8');
-    expect(fn).toContain("Deno.env.get('SMTP_PASSWORD')");
-    // The password only ever goes into the sign in, never into a log.
-    expect(fn).not.toMatch(/console\.(log|error)[^;]*password/i);
-  });
+  // Two functions send email now: recap (a note's summary) and team (an invite). Both read the
+  // password from the same server secret and send through the same shared mailer.
+  test.each(['recap', 'team'])(
+    'the %s server function reads the mailbox password from a server secret',
+    (name) => {
+      const fn = fs.readFileSync(path.join(root, `supabase/functions/${name}/index.ts`), 'utf8');
+      expect(fn).toContain("Deno.env.get('SMTP_PASSWORD')");
+      // The password only ever goes into the sign in, never into a log.
+      expect(fn).not.toMatch(/console\.(log|error)[^;]*password/i);
+    },
+  );
 
-  test('the mail server is named in settings, not written into the code that sends', () => {
-    const settings = fs.readFileSync(path.join(root, 'supabase/functions/recap/settings.ts'), 'utf8');
-    expect(settings).toContain("hostname: 'smtp.hostinger.com'");
-    expect(settings).toContain('port: 465');
-    const fn = fs.readFileSync(path.join(root, 'supabase/functions/recap/index.ts'), 'utf8');
-    expect(fn).not.toContain('smtp.hostinger.com');
-    expect(fn).toContain('SMTP.hostname');
+  test('the mail server is named in ONE settings file, not in any code that sends', () => {
+    const sender = fs.readFileSync(path.join(root, 'supabase/functions/_shared/sender.ts'), 'utf8');
+    expect(sender).toContain("hostname: 'smtp.hostinger.com'");
+    expect(sender).toContain('port: 465');
+    expect(sender).toContain("email: 'gyan@gyantechai.com'");
+
+    // The one place that opens a connection reads the host and port from that file.
+    const mailer = fs.readFileSync(path.join(root, 'supabase/functions/_shared/mailer.ts'), 'utf8');
+    expect(mailer).toContain('SMTP.hostname');
+    expect(mailer).toContain('SMTP.port');
+    expect(mailer).not.toContain('smtp.hostinger.com');
+
+    // And no function that sends writes the address, the host or the port down a second time.
+    // Comments are taken out first: naming the mailbox in a note to the next person is the
+    // point, what must not happen is a second copy the code actually uses.
+    const withoutComments = (text: string) =>
+      text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const name of ['recap', 'team']) {
+      const fn = withoutComments(
+        fs.readFileSync(path.join(root, `supabase/functions/${name}/index.ts`), 'utf8'),
+      );
+      expect(fn).not.toContain('smtp.hostinger.com');
+      expect(fn).not.toContain('gyan@gyantechai.com');
+    }
   });
 
   test('no real key is written anywhere that gets committed', () => {
@@ -95,9 +117,69 @@ describe('secrets safety', () => {
       });
     for (const file of walk(root).filter((f) => /\.(ts|tsx|js|json|md|sql|yml)$/.test(f))) {
       const text = fs.readFileSync(file, 'utf8');
+      // Two files have to write key shapes down in order to look for them: the secret
+      // scanner and its own test. Both say so out loud in their first lines, and a test in
+      // secret-scan-test.ts checks that no third file ever claims the same exception.
+      if (text.split('\n', 25).join('\n').includes('secret-scanner: allow-patterns')) continue;
       // A real Anthropic key starts with sk-ant- and is long. Short things like the "sk-ant-..."
       // placeholder in the test checklist are fine; a real key could never be that short.
       expect(text).not.toMatch(/sk-ant-[A-Za-z0-9_-]{30,}/);
     }
+  });
+  // ---------------------------------------------------------------------------
+  // Added in the security round (prompt 11).
+  // ---------------------------------------------------------------------------
+
+  test('NO SERVER SECRET CAN EVER REACH THE APP BUNDLE under an EXPO_PUBLIC_ name', () => {
+    // Anything named EXPO_PUBLIC_* is compiled into the web page and the phone app, where
+    // anybody can read it. Five of Gyan's secrets are named EXPO_DEEPGRAM_KEY,
+    // EXPO_ANTHROPIC_KEY, EXPO_SMTP_PASSWORD and so on -- ONE WORD away from shipping.
+    // The only EXPO_PUBLIC_ name allowed to look like a key is the Supabase public key,
+    // which is meant to be public.
+    const allowed = new Set(['EXPO_PUBLIC_SUPABASE_KEY']);
+    const skip = new Set(['node_modules', '.git', '.expo', 'dist', 'web-build', '.playwright-mcp', 'example', 'test-results', 'playwright-report']);
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        if (skip.has(e.name)) return [];
+        const full = path.join(dir, e.name);
+        return e.isDirectory() ? walk(full) : [full];
+      });
+
+    const offenders: string[] = [];
+    for (const file of walk(root).filter((f) => /\.(ts|tsx|js|json|sql|md)$/.test(f))) {
+      // The scanner and its own test have to write these names down to look for them.
+      if (/scan-secrets\.js$|secret-scan-test\.ts$/.test(file)) continue;
+      const text = fs.readFileSync(file, 'utf8');
+      for (const hit of text.matchAll(/\bEXPO_PUBLIC_[A-Z0-9_]*(?:KEY|SECRET|PASSWORD|TOKEN|CREDENTIAL)\b/g)) {
+        if (!allowed.has(hit[0])) offenders.push(`${path.relative(root, file)}: ${hit[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test('.env and every .env.local stay ignored, and only .env.example is committed', () => {
+    const ignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+    const lines = ignore.split('\n').map((l) => l.trim());
+    expect(lines).toContain('.env');
+    expect(lines).toContain('.env.*');
+    expect(lines).toContain('.env*.local');
+    // The one deliberate exception, so the list of setting NAMES can be shared.
+    expect(lines).toContain('!.env.example');
+
+    // And git really is ignoring them, not just told to.
+    const { execFileSync } = require('node:child_process') as typeof import('child_process');
+    const committed = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+      .split('\n')
+      .filter((f) => /(^|\/)\.env/.test(f));
+    expect(committed).toEqual(['.env.example']);
+  });
+
+  test('the secret check is wired to run before every commit', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    // npm runs "prepare" by itself after npm install, so nobody has to remember.
+    expect(pkg.scripts.prepare).toBe('node scripts/install-hooks.js');
+    expect(pkg.scripts['scan:secrets']).toBe('node scripts/scan-secrets.js');
+    expect(fs.existsSync(path.join(root, 'scripts/scan-secrets.js'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'scripts/install-hooks.js'))).toBe(true);
   });
 });

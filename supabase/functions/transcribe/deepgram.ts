@@ -17,6 +17,21 @@ export function buildListenUrl(model: string): string {
     detect_language: 'true', // finds the spoken language
     utterances: 'true', // one line per speaker turn, with start and end times
     smart_format: 'true', // punctuation and tidy numbers
+
+    // KEEP OUR CUSTOMERS' MEETINGS OUT OF DEEPGRAM'S TRAINING DATA.
+    //
+    // This one is not a preference, and it must never be taken out. Deepgram's own
+    // documentation says requests "participate in the Model Improvement Program (MIP) by
+    // default, and Deepgram retains them" -- the audio AND the transcript. For an app whose
+    // whole job is private conversations, that is not an acceptable default.
+    //
+    // With this set, Deepgram says data is "Retained only for the duration needed to
+    // process the request."
+    //
+    // Checked on developers.deepgram.com (the Model Improvement Partnership Program page
+    // and trust-security/your-data) on 2026-11-21, not from memory. The console shows
+    // mip_opt_out as true under Usage > Logs, which is how to confirm it is really working.
+    mip_opt_out: 'true',
   });
   return `https://api.deepgram.com/v1/listen?${params.toString()}`;
 }

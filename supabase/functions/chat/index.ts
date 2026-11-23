@@ -4,6 +4,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@1.10.0';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
+import { RATE_LIMIT_MESSAGE, RateLimited, UUID, corsFor, pickKey, underRateLimit } from '../_shared/guard.ts';
 import { ChatError, MESSAGES, messageForStatus } from './chat.ts';
 import { runChat, type Ask, type Reply } from './pipeline.ts';
 import {
@@ -22,28 +23,6 @@ declare const Deno: { env: { get(name: string): string | undefined }; serve(hand
 
 const BUCKET = 'notes-files';
 
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function reply(body: Record<string, unknown>, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
-}
-
-/** Supabase gives keys either as one plain value (older) or as a small JSON list (newer). */
-function pickKey(plainName: string, jsonName: string): string | undefined {
-  const plain = Deno.env.get(plainName);
-  if (plain) return plain;
-  try {
-    return JSON.parse(Deno.env.get(jsonName) ?? '{}').default;
-  } catch {
-    return undefined;
-  }
-}
-
-const UUID = /^[0-9a-f-]{36}$/i;
 const MAX_QUESTION_LENGTH = 1000;
 
 /**
@@ -131,6 +110,12 @@ type Claimed = {
 };
 
 Deno.serve(async (req) => {
+  // Which websites may read the answer is decided per request now, not handed out to
+  // everybody with a star. A phone sends no Origin and is answered as before.
+  const cors = corsFor(req);
+  const reply = (body: Record<string, unknown>, status = 200): Response =>
+    new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return reply({ error: 'method_not_allowed' }, 405);
 
@@ -168,20 +153,52 @@ Deno.serve(async (req) => {
   // 2. Take a question: check the person may use the note, check today's limit, and save the
   // question. All in one database step, so two fast taps cannot slip past the limit.
   let claimed: Claimed | null = null;
+  let accountId: string | null = null;
   if (isRetry) {
     const { data, error } = await admin
       .rpc('claim_chat_retry', { p_message_id: body.retry_message_id, p_user_id: auth.user.id })
       .single<Claimed>();
     if (error || !data) return reply({ error: 'not_allowed' }, 403);
     claimed = data;
+
+    // SECOND LOCK ON THE RETRY PATH. claim_chat_retry does check in SQL that the chat
+    // belongs to the person asking, and that check is correct. But this was the one place
+    // where an id chosen by the caller went to the SERVER key with only one lock on it,
+    // while the path right below it had two. So the note the retry points at is now also
+    // checked under the person's OWN login, exactly as a new question is.
+    const { data: visible } = await asUser
+      .from('meetings')
+      .select('id, account_id')
+      .eq('id', claimed.meeting_id!)
+      .maybeSingle();
+    if (!visible) return reply({ error: 'not_allowed' }, 403);
+    accountId = (visible as { account_id?: string }).account_id ?? null;
+
+    // A retry used to be FREE and unlimited: claim_chat_retry reuses the question that is
+    // already saved, so it never touched the daily allowance, yet every go paid Claude
+    // again. The hourly limit now covers it.
+    try {
+      await underRateLimit(admin, 'chat', auth.user.id, accountId);
+    } catch (e) {
+      if (e instanceof RateLimited) return reply({ ok: false, message: RATE_LIMIT_MESSAGE }, 429);
+      throw e;
+    }
   } else {
     // The note must be one this person can really see, under their own login.
     const { data: visible } = await asUser
       .from('meetings')
-      .select('id')
+      .select('id, account_id')
       .eq('id', body.meeting_id!)
       .maybeSingle();
     if (!visible) return reply({ error: 'not_allowed' }, 403);
+    accountId = (visible as { account_id?: string }).account_id ?? null;
+
+    try {
+      await underRateLimit(admin, 'chat', auth.user.id, accountId);
+    } catch (e) {
+      if (e instanceof RateLimited) return reply({ ok: false, message: RATE_LIMIT_MESSAGE }, 429);
+      throw e;
+    }
 
     const { data, error } = await admin
       .rpc('claim_chat_message', {

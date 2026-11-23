@@ -20,7 +20,7 @@ A non-technical founder who has never built a mobile app. Explain what you are d
 - Meeting bot: Recall.ai
 - AI: Claude API for summaries, action items, mind map data, side chat, and translation
 - Payments: RevenueCat with Stripe
-- Email: Resend or a similar email API
+- Email: the app's own gyan@gyantechai.com mailbox at Hostinger, over SMTP (see supabase/functions/_shared/sender.ts)
 - Builds: EAS Build and EAS Submit
 
 ## Commands

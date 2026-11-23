@@ -9,6 +9,12 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { FAKE_USER, installFakes, openNote, signIn, TEAMMATE } from './fixtures/fake-api';
 
+/** The recap settings now live in Settings, so every test gets there the way a person would. */
+async function openRecapSettings(page: Page) {
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('link', { name: /^Recaps\./ }).click();
+}
+
 /** Opens a Ready note and opens the Send recap dialog. */
 async function openRecap(page: Page) {
   await openNote(page);
@@ -146,17 +152,15 @@ test('a note that is not finished has no Send recap to press', async ({ page }) 
   await expect(page.getByRole('button', { name: 'Send a recap of this note by email' })).toBeDisabled();
 });
 
-test('the recap settings open from the account box on Home, and say what is set', async ({ page }) => {
+test('the recap settings open from Settings, and the row says what is set', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
 
-  // The row leads with what is set, as a settings row should.
+  // The Settings row says what is set, so you can often check it without opening the page.
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
   await expect(page.getByText('The account owner only')).toBeVisible();
-  await expect(
-    page.getByText('Who gets a recap by email. Only sent when somebody presses Send recap.'),
-  ).toBeVisible();
 
-  await page.getByRole('button', { name: 'Recap emails' }).click();
+  await page.getByRole('link', { name: /^Recaps\./ }).click();
   await expect(page.getByRole('heading', { name: 'Recap emails' })).toBeVisible();
   await expect(
     page.getByText('Recaps go to the account owner only, only when somebody presses Send recap on a note.'),
@@ -166,7 +170,7 @@ test('the recap settings open from the account box on Home, and say what is set'
 test('the switches are grouped by who gets one and when, and say On or Off in words', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
-  await page.getByRole('button', { name: 'Recap emails' }).click();
+  await openRecapSettings(page);
 
   await expect(page.getByRole('heading', { name: 'Who gets a recap' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'When it is sent' })).toBeVisible();
@@ -182,7 +186,7 @@ test('the switches are grouped by who gets one and when, and say On or Off in wo
 test('the owner changes a switch, the sentence changes with it, and it is remembered', async ({ page }) => {
   const recorder = await installFakes(page);
   await signIn(page);
-  await page.getByRole('button', { name: 'Recap emails' }).click();
+  await openRecapSettings(page);
 
   await page.getByRole('switch', { name: 'Everyone on the team' }).click();
   await expect(page.getByText('Saved')).toBeVisible();
@@ -198,25 +202,24 @@ test('the owner changes a switch, the sentence changes with it, and it is rememb
     p_settings: { to_owner: true, to_members: true, auto_send: false },
   });
 
-  // The server remembers it, so coming back to Home shows the new state.
-  await page.getByLabel('Back to Home').click();
+  // The server remembers it, so going back to Settings shows the new state.
+  await page.getByRole('link', { name: 'Back to Settings' }).click();
   await expect(page.getByText('The account owner and the team')).toBeVisible();
 });
 
-test('turning the automatic send on says so in the sentence and on Home', async ({ page }) => {
+test('turning the automatic send on says so in the sentence and back in Settings', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
-  await page.getByRole('button', { name: 'Recap emails' }).click();
+  await openRecapSettings(page);
 
   await page.getByRole('switch', { name: 'Send on its own when a note is ready' }).click();
   await expect(
     page.getByText('Recaps go to the account owner only, as soon as a note is ready.'),
   ).toBeVisible();
 
-  await page.getByLabel('Back to Home').click();
-  await expect(
-    page.getByText('Who gets a recap by email. Sent on its own as soon as a note is ready.'),
-  ).toBeVisible();
+  // And the Settings row says it too, so it can be read without opening this page.
+  await page.getByRole('link', { name: 'Back to Settings' }).click();
+  await expect(page.getByRole('link', { name: /^Recaps\. The account owner only/ })).toBeVisible();
 });
 
 test('A TEAM MEMBER CAN SEE THE SETTINGS BUT NOT CHANGE THEM', async ({ page }) => {
@@ -225,7 +228,7 @@ test('A TEAM MEMBER CAN SEE THE SETTINGS BUT NOT CHANGE THEM', async ({ page }) 
     recapSettings: { to_owner: true, to_members: true, auto_send: true },
   });
   await signIn(page);
-  await page.getByRole('button', { name: 'Recap emails' }).click();
+  await openRecapSettings(page);
 
   // They can read what is set, so they know why they are getting emails.
   await expect(
@@ -248,7 +251,7 @@ test('A TEAM MEMBER CAN SEE THE SETTINGS BUT NOT CHANGE THEM', async ({ page }) 
 test('a save the server refuses puts the switch back and says why', async ({ page }) => {
   await installFakes(page, { saveSettingsError: 'not_owner' });
   await signIn(page);
-  await page.getByRole('button', { name: 'Recap emails' }).click();
+  await openRecapSettings(page);
 
   await page.getByRole('switch', { name: 'Everyone on the team' }).click();
   await expect(page.getByText('Only the account owner can change who gets recap emails.')).toBeVisible();
@@ -258,7 +261,7 @@ test('a save the server refuses puts the switch back and says why', async ({ pag
 test('the page says a recap can only ever go to people on the account', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
-  await page.getByRole('button', { name: 'Recap emails' }).click();
+  await openRecapSettings(page);
 
   await expect(
     page.getByText(

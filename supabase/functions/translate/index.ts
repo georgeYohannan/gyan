@@ -5,11 +5,13 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@1.10.0';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
+import { RATE_LIMIT_MESSAGE, RateLimited, UUID, corsFor, isOurOwnServer, pickKey, underRateLimit } from '../_shared/guard.ts';
 import {
   MESSAGES,
   messageForStatus,
   SUMMARY_TRANSLATION_SCHEMA,
   TRANSCRIPT_TRANSLATION_SCHEMA,
+  isLanguageWeOffer,
   TRANSLATE_KINDS,
   TranslateError,
   type TranslateKind,
@@ -28,47 +30,6 @@ import {
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Response | Promise<Response>): void };
 
 const BUCKET = 'notes-files';
-
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function reply(body: Record<string, unknown>, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
-}
-
-/** Supabase gives keys either as one plain value (older) or as a small JSON list (newer). */
-function pickKey(plainName: string, jsonName: string): string | undefined {
-  const plain = Deno.env.get(plainName);
-  if (plain) return plain;
-  try {
-    return JSON.parse(Deno.env.get(jsonName) ?? '{}').default;
-  } catch {
-    return undefined;
-  }
-}
-
-const UUID = /^[0-9a-f-]{36}$/i;
-/** 'en', 'pt-BR'. Short on purpose: the picker only ever sends a code from our own list. */
-const LANGUAGE_CODE = /^[a-z]{2}(-[A-Za-z0-9]{2,8})?$/;
-
-/**
- * True when this call came from one of our OWN server functions, not from a person.
- *
- * The only thing that carries the project's secret key is our own server code, so a request
- * holding it is ours. The recap function uses this to buy a translation for somebody who is
- * being emailed, including on the automatic send, where there is no login to read.
- *
- * It does NOT widen what may happen. Such a call has to name the person it is acting for, and
- * claim_translation still checks in the database that that person is on the note's account. The
- * decision stays in SQL, exactly where it was.
- */
-function isOurOwnServer(authHeader: string, secretKey: string): boolean {
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  return token !== '' && token === secretKey;
-}
 
 /**
  * The request we send Claude. The same one is used for the real call and for counting tokens first.
@@ -149,6 +110,12 @@ function makeCounter(client: Anthropic) {
 }
 
 Deno.serve(async (req) => {
+  // Which websites may read the answer is decided per request now, not handed out to
+  // everybody with a star. A phone sends no Origin and is answered as before.
+  const cors = corsFor(req);
+  const reply = (body: Record<string, unknown>, status = 200): Response =>
+    new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return reply({ error: 'method_not_allowed' }, 405);
 
@@ -169,11 +136,16 @@ Deno.serve(async (req) => {
 
   if (!body.meeting_id || !UUID.test(body.meeting_id)) return reply({ error: 'bad_request' }, 400);
   if (!body.kind || !TRANSLATE_KINDS.includes(body.kind as TranslateKind)) return reply({ error: 'bad_request' }, 400);
-  if (!body.language || !LANGUAGE_CODE.test(body.language)) return reply({ error: 'bad_request' }, 400);
+  // A code that merely LOOKS like a language used to be accepted and passed through. That
+  // was the most expensive hole in the whole system: translations are saved under (kind,
+  // note, language), so 'en-AA', 'en-AB' and so on each missed the saved copy and bought a
+  // fresh paid translation. A loop over made-up country codes was an unlimited bill.
+  if (!body.language || !isLanguageWeOffer(body.language)) return reply({ error: 'bad_language' }, 400);
 
   // 1. Who is calling? Either a signed-in person, or one of our own server functions.
   let userId: string;
-  if (isOurOwnServer(authHeader, secretKey)) {
+  let accountId: string | null = null;
+  if (await isOurOwnServer(authHeader, secretKey)) {
     // Our own server, acting for somebody it is emailing. It must say who, and the database
     // checks that person belongs to the note's account before anything is translated.
     if (!body.user_id || !UUID.test(body.user_id)) return reply({ error: 'bad_request' }, 400);
@@ -184,10 +156,17 @@ Deno.serve(async (req) => {
     const { data: auth, error: authError } = await asUser.auth.getUser();
     if (authError || !auth.user) return reply({ error: 'not_signed_in' }, 401);
 
-    // 2. The note must be one this person can really see, under their own login.
-    const { data: visible } = await asUser.from('meetings').select('id').eq('id', body.meeting_id).maybeSingle();
+    // 2. The note must be one this person can really see, under their own login. The
+    //    account comes back from the same question, so counting the limit per account costs
+    //    nothing extra.
+    const { data: visible } = await asUser
+      .from('meetings')
+      .select('id, account_id')
+      .eq('id', body.meeting_id)
+      .maybeSingle();
     if (!visible) return reply({ error: 'not_allowed' }, 403);
     userId = auth.user.id;
+    accountId = (visible as { account_id?: string }).account_id ?? null;
   }
 
   // 3. No key means Gyan cannot translate at all. Say so in plain words rather than hanging.
@@ -196,7 +175,16 @@ Deno.serve(async (req) => {
   const admin = createClient(url, secretKey, { auth: { persistSession: false } });
   const client = new Anthropic({ apiKey: anthropicKey });
 
-  // 4. Translate. The app is waiting, so this is not sent to the background.
+  // 4. Has this person had their turn for the hour? Counted BEFORE any money is spent. The
+  //    numbers live in the security_settings table, never here.
+  try {
+    await underRateLimit(admin, 'translate', userId, accountId);
+  } catch (e) {
+    if (e instanceof RateLimited) return reply({ ok: false, message: RATE_LIMIT_MESSAGE }, 429);
+    throw e;
+  }
+
+  // 5. Translate. The app is waiting, so this is not sent to the background.
   try {
     const result = await runTranslate({
       admin,

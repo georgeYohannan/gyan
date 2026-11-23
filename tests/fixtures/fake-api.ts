@@ -17,11 +17,22 @@ import type { Page, Route } from '@playwright/test';
  */
 export const PROMPT_VERSION = 2;
 
+/**
+ * The two characters the database wraps a matched search word in, copied from
+ * supabase/migrations/20261121150000_search_and_paging.sql and src/lib/notes-search.ts.
+ * They are private-use characters, never html. __tests__/notes-search-test.ts reads all three
+ * places and fails if they drift apart.
+ */
+export const MARK_START = '\uE000';
+export const MARK_END = '\uE001';
+
 export const FAKE_USER = { id: '11111111-1111-4111-8111-111111111111', email: 'test.a@example.com' };
 export const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 export const NOTE_ID = '33333333-3333-4333-8333-333333333333';
 export const FAILED_NOTE_ID = '44444444-4444-4444-8444-444444444444';
 export const TEXT_NOTE_ID = '55555555-5555-4555-8555-555555555555';
+/** The made up authenticator app, so the two-factor screens have something to show. */
+export const FAKE_FACTOR_ID = 'ffffffff-0000-4000-8000-00000000f1f1';
 /** A made up teammate, so the Send recap dialog has more than one person in it. */
 export const TEAMMATE = { id: '66666666-6666-4666-8666-666666666666', email: 'test.b@example.com' };
 
@@ -63,14 +74,60 @@ export type FakeData = {
   recapPeople: Row[];
   /** The account's saved recap settings, as get_recap_settings would hand them back. */
   recapSettings: { to_owner: boolean; to_members: boolean; auto_send: boolean };
+  /** True when the fake person already has an authenticator app set up. */
+  twoFactorOn: boolean;
+  /** Make asking for a copy of everything fail, to check the message. */
+  exportFails?: boolean;
+  /** Make one recording too big to fit, so it is linked instead. */
+  exportLinksFiles?: boolean;
+  /** The account's privacy and security settings, as get_account_privacy hands them back. */
+  privacy: { retention_days: number | null; email_summaries: boolean; inactivity_minutes: number };
+  /** What has happened on the account, as list_audit_log hands it back. Fake people only. */
+  auditLog: Row[];
   /** false makes this person a team member rather than the owner, so the settings lock. */
   isOwner: boolean;
   /** A plain message the recap function answers with instead of sending. */
   recapProblem?: string;
+  /** The person's own name, as the profiles table would hand it back. */
+  displayName: string;
+  /** The plan and usage answer, exactly as get_plan_and_usage hands it back. */
+  planAndUsage: Row;
+  /** The plans the test-only switch may offer. */
+  switchablePlans: Row[];
+  /** The team, exactly as list_team hands it back. */
+  team: Row;
+  /** A plain message the team server function answers with instead of inviting. */
+  inviteProblem?: string;
+  /** What can_delete_account answers. */
+  deleteCheck: Row;
+  /** A plain message the account server function answers with instead of deleting. */
+  deleteProblem?: string;
+  /** Make the test-only plan switch be refused, to check the message. */
+  switchPlanError?: string;
+  /** Make removing or promoting somebody be refused. */
+  teamActionError?: string;
+  /** Make joining a team be refused, to check each plain reason. */
+  acceptInviteError?: string;
+  /** Make deleting one note be refused. */
+  deleteNoteError?: string;
+
   /** Make one address fail, to check that one person failing does not stop the others. */
   recapFailsFor?: string[];
   /** An error message save_recap_settings answers with, for example 'not_owner'. */
   saveSettingsError?: string;
+
+  /**
+   * The words INSIDE a note, keyed by note id, for searching (prompt 12). A note that is not in
+   * here is still searchable by its title, which is why every script written before prompt 12
+   * keeps working without being touched.
+   */
+  searchText?: Record<string, { summary?: string; transcript?: string; startMs?: number }>;
+  /** Note ids that have at least one to-do still open, for the "open to-dos" filter. */
+  openActions?: string[];
+  /** Note ids made by SOMEBODY ELSE, so Select mode cannot tick them and delete refuses them. */
+  notMine?: string[];
+  /** Make searching the Home list fail, to check the message and the Retry. */
+  findNotesError?: string;
 };
 
 /** One made up answer from the chat function. `ok: false` is a problem with a Retry. */
@@ -281,6 +338,79 @@ export const RECAP_PEOPLE: Row[] = [
   },
 ];
 
+/**
+ * A Free plan the way get_plan_and_usage hands it back. Every number is in the answer, so the
+ * scripts prove the screen reads them rather than writing its own.
+ */
+export const PLAN_FREE: Row = {
+  account_id: ACCOUNT_ID,
+  is_owner: true,
+  plan_name: 'Free',
+  plan_description: 'For one person getting started.',
+  plan_features: [
+    '{meetings_per_month} meetings a month',
+    '{chat_messages_per_day} chat questions a day',
+    'Transcripts with speakers, summaries and action items',
+    '{seats_included} seat',
+  ],
+  is_test_plan: false,
+  meetings_per_month: 5,
+  chat_messages_per_day: 20,
+  seats_included: 1,
+  max_meeting_minutes: null,
+  meetings_used: 2,
+  chat_messages_used: 4,
+  chat_messages_left: 16,
+  seats_used: 1,
+  members_count: 1,
+  invites_pending: 0,
+};
+
+/** The stand-in Pro plan, with the bigger numbers the switch is there to show off. */
+export const PLAN_PRO: Row = {
+  ...PLAN_FREE,
+  plan_name: 'Pro',
+  plan_description: 'STAND-IN NUMBERS, for trying out the Plan screen. Not a real plan and not for sale.',
+  is_test_plan: true,
+  meetings_per_month: 50,
+  chat_messages_per_day: 200,
+  seats_included: 5,
+  max_meeting_minutes: 180,
+  plan_features: [
+    '{meetings_per_month} meetings a month',
+    '{chat_messages_per_day} chat questions a day',
+    'Up to {seats_included} people on the account',
+    'Notes up to {max_meeting_minutes} minutes long',
+  ],
+};
+
+/** A team of three, all made up. */
+export const TEAM: Row = {
+  account_id: ACCOUNT_ID,
+  is_owner: true,
+  seats_included: 5,
+  seats_used: 3,
+  members: [
+    { user_id: FAKE_USER.id, email: FAKE_USER.email, name: 'Sam Carter', role: 'owner', is_you: true },
+    { user_id: TEAMMATE.id, email: TEAMMATE.email, name: 'Ada Blake', role: 'member', is_you: false },
+  ],
+  pending_invites: [
+    { id: 'invite-1', email: 'test.c@example.com', created_at: '2026-11-18T09:00:00.000Z' },
+  ],
+};
+
+export const DELETE_CHECK: Row = {
+  account_id: ACCOUNT_ID,
+  is_owner: true,
+  can_delete: true,
+  reason: null,
+  what_goes:
+    'Everything you made goes: your login, your name, all 1 of your notes, their transcripts, summaries, to-dos, chats, and the files you uploaded. This cannot be undone.',
+  note_count: 1,
+  other_member_count: 0,
+  pending_invite_count: 0,
+};
+
 export const DEFAULTS: FakeData = {
   notes: [noteRow()],
   segments: SEGMENTS,
@@ -295,7 +425,77 @@ export const DEFAULTS: FakeData = {
   translations: ALL_TRANSLATIONS,
   recapPeople: RECAP_PEOPLE,
   recapSettings: { to_owner: true, to_members: false, auto_send: false },
+  twoFactorOn: false,
+  // Keep notes for ever, summaries allowed in email, and the 30 minutes the founder chose.
+  privacy: { retention_days: null, email_summaries: true, inactivity_minutes: 30 },
+  // A believable few days of activity, all made up. Newest first, as the database returns it.
+  auditLog: [
+    {
+      id: 7,
+      action: 'sign_in',
+      actor_user_id: FAKE_USER.id,
+      actor_name: 'Sam Carter',
+      target_type: null,
+      meeting_id: null,
+      meeting_title: null,
+      detail: {},
+      created_at: '2026-11-20T09:05:00Z',
+    },
+    {
+      id: 6,
+      action: 'note_share',
+      actor_user_id: FAKE_USER.id,
+      actor_name: 'Sam Carter',
+      target_type: 'meeting',
+      meeting_id: NOTE_ID,
+      meeting_title: 'Weekly team call',
+      detail: {},
+      created_at: '2026-11-20T08:40:00Z',
+    },
+    {
+      id: 5,
+      action: 'settings_change',
+      actor_user_id: FAKE_USER.id,
+      actor_name: 'Sam Carter',
+      target_type: 'account_privacy',
+      meeting_id: null,
+      meeting_title: null,
+      detail: { setting: 'retention_days', from: null, to: 365 },
+      created_at: '2026-11-19T16:20:00Z',
+    },
+    {
+      id: 4,
+      action: 'note_delete',
+      actor_user_id: TEAMMATE.id,
+      actor_name: 'Priya Raman',
+      target_type: 'meeting',
+      meeting_id: null,
+      meeting_title: 'Pricing workshop',
+      detail: {},
+      created_at: '2026-11-18T11:02:00Z',
+    },
+    {
+      id: 3,
+      action: 'two_factor_on',
+      actor_user_id: TEAMMATE.id,
+      actor_name: 'Priya Raman',
+      target_type: null,
+      meeting_id: null,
+      meeting_title: null,
+      detail: {},
+      created_at: '2026-11-17T14:30:00Z',
+    },
+  ],
   isOwner: true,
+  displayName: 'Sam Carter',
+  planAndUsage: PLAN_FREE,
+  switchablePlans: [
+    { name: 'Free', is_test: false, is_active: true, meetings_per_month: 5 },
+    { name: 'Pro', is_test: true, is_active: true, meetings_per_month: 50 },
+    { name: 'Team', is_test: true, is_active: true, meetings_per_month: 200 },
+  ],
+  team: TEAM,
+  deleteCheck: DELETE_CHECK,
 };
 
 /** Everything the scripts can ask about after the fact: which calls the app made. */
@@ -303,6 +503,14 @@ export type Recorder = {
   functionCalls: { name: string; body: unknown }[];
   updates: { table: string; body: unknown }[];
   uploads: string[];
+  /** Files the app asked storage to remove. One entry per call, each holding its paths. */
+  storageRemovals: string[][];
+  /**
+   * Questions the app ASKED, as against changes it made: searching and paging the note list.
+   * Kept apart from `updates` on purpose. They are reads, and a script checking that ticking a
+   * to-do saves nothing but the tick should not have to step over them to find out.
+   */
+  searches: { name: string; body: unknown }[];
 };
 
 const session = () => ({
@@ -334,7 +542,13 @@ const json = (route: Route, body: unknown, status = 200) =>
  */
 export async function installFakes(page: Page, overrides: Partial<FakeData> = {}): Promise<Recorder> {
   const data: FakeData = { ...DEFAULTS, ...overrides };
-  const recorder: Recorder = { functionCalls: [], updates: [], uploads: [] };
+  const recorder: Recorder = {
+    functionCalls: [],
+    updates: [],
+    uploads: [],
+    storageRemovals: [],
+    searches: [],
+  };
 
   // Login, logout and "who am I". No real account is used.
   await page.route('**/auth/v1/**', async (route) => {
@@ -345,9 +559,63 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
       }
       return json(route, session());
     }
-    if (url.pathname.endsWith('/user')) return json(route, session().user);
+    if (url.pathname.endsWith('/user')) {
+      // listFactors() reads the factors off the person, so once an authenticator app is
+      // set up it has to come back here too, exactly as the real server does it.
+      const factors = data.twoFactorOn
+        ? [
+            {
+              id: FAKE_FACTOR_ID,
+              friendly_name: 'Authenticator app',
+              factor_type: 'totp',
+              status: 'verified',
+              created_at: '2026-11-21T10:00:00Z',
+              updated_at: '2026-11-21T10:00:00Z',
+            },
+          ]
+        : [];
+      return json(route, { ...session().user, factors });
+    }
     if (url.pathname.endsWith('/logout')) return route.fulfill({ status: 204, body: '' });
     if (url.pathname.endsWith('/signup')) return json(route, session());
+
+    // --- two-factor sign in (prompt 11). Nothing real, and no real secret. ---------------
+    if (url.pathname.endsWith('/factors')) {
+      // Adding an authenticator app. The picture is a tiny square so a screenshot has
+      // something to show; the secret is obviously made up.
+      const qr =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 8 8">' +
+        '<rect width="8" height="8" fill="#fff"/>' +
+        '<path fill="#000" d="M0 0h3v3H0zM5 0h3v3H5zM0 5h3v3H0zM4 4h1v1H4zM6 4h1v1H6zM5 5h1v1H5zM7 5h1v1H7zM4 6h1v1H4zM6 6h1v1H6z"/>' +
+        '</svg>';
+      return json(route, {
+        id: FAKE_FACTOR_ID,
+        type: 'totp',
+        friendly_name: 'Authenticator app',
+        totp: { qr_code: qr, secret: 'FAKESECRETFORTESTSONLY', uri: 'otpauth://totp/gyan' },
+      });
+    }
+    if (url.pathname.includes('/factors/') && url.pathname.endsWith('/challenge')) {
+      return json(route, { id: 'fake-challenge-id', expires_at: 9999999999 });
+    }
+    if (url.pathname.includes('/factors/') && url.pathname.endsWith('/verify')) {
+      const asked = (() => {
+        try {
+          return route.request().postDataJSON() as { code?: string };
+        } catch {
+          return {};
+        }
+      })();
+      // Only one code works, so a test can check both a right and a wrong one.
+      if (asked.code !== '123456') {
+        return json(route, { error: 'invalid_code', msg: 'Invalid TOTP code entered' }, 400);
+      }
+      data.twoFactorOn = true;
+      return json(route, session());
+    }
+    if (url.pathname.endsWith('/aal')) {
+      return json(route, { currentLevel: 'aal1', nextLevel: data.twoFactorOn ? 'aal2' : 'aal1' });
+    }
     return json(route, {});
   });
 
@@ -363,6 +631,21 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
     }
     recorder.functionCalls.push({ name, body });
     const status = data.functionStatus?.[name] ?? 202;
+
+    // The export function hands back a link to a made-up file, so the screen has something
+    // to show. Nothing is really built and nothing is really downloaded.
+    if (name === 'export') {
+      if (data.exportFails) {
+        return json(route, { ok: false, message: 'Gyan could not put your copy together just now. Please try again.' });
+      }
+      return json(route, {
+        ok: true,
+        url: 'https://fake.supabase.co/storage/v1/object/sign/notes-files/acc/exports/made-up.zip?token=fake',
+        bytes: 4_404_019,
+        files_included: 2,
+        files_linked: data.exportLinksFiles ? 1 : 0,
+      });
+    }
 
     // The chat function answers with a made up answer, so the panel has something to show.
     if (name === 'chat') {
@@ -381,6 +664,37 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
         });
       }
       return json(route, { ok: false, message: picked.message, message_id: `q${questionsAsked}`, remaining: 18 });
+    }
+
+    // The team function sends the invite email. NOTHING IS REALLY SENT: it answers as if it had,
+    // so a script can walk the whole invite flow without an email ever leaving the machine.
+    if (name === 'team') {
+      if (status !== 202) return json(route, { error: 'problem' }, status);
+      if (data.inviteProblem) return json(route, { ok: false, message: data.inviteProblem });
+      const asked = body as { email?: string } | undefined;
+      const email = asked?.email ?? '';
+      // Remember the invite, so the Team screen shows it waiting, holding a seat.
+      data.team = {
+        ...data.team,
+        pending_invites: [
+          { id: `invite-${(data.team.pending_invites as Row[]).length + 1}`, email, created_at: '2026-11-19T09:00:00.000Z' },
+          ...(data.team.pending_invites as Row[]),
+        ],
+        seats_used: (data.team.seats_used as number) + 1,
+      };
+      return json(route, {
+        ok: true,
+        email,
+        seats_included: data.team.seats_included,
+        seats_used: data.team.seats_used,
+      });
+    }
+
+    // The account function deletes everything. Again, nothing really happens.
+    if (name === 'account') {
+      if (status !== 202) return json(route, { error: 'problem' }, status);
+      if (data.deleteProblem) return json(route, { ok: false, message: data.deleteProblem });
+      return json(route, { ok: true, workspaces_deleted: 1, files_removed: 1 });
     }
 
     // The translate function answers with a made up translation, so the page has something to show.
@@ -442,10 +756,22 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
 
   // Files. Nothing is really stored, and nothing real is ever downloaded.
   await page.route('**/storage/v1/**', async (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
     // Reading a pasted-text note's words back out of the bucket.
-    if (route.request().method() === 'GET') {
+    if (request.method() === 'GET') {
       return route.fulfill({ status: 200, contentType: 'text/plain', body: data.textWords });
+    }
+    // Deleting a note's recording. supabase-js sends the paths as "prefixes".
+    if (request.method() === 'DELETE') {
+      let prefixes: string[] = [];
+      try {
+        prefixes = (request.postDataJSON() as { prefixes?: string[] })?.prefixes ?? [];
+      } catch {
+        prefixes = [];
+      }
+      recorder.storageRemovals.push(prefixes);
+      return json(route, prefixes.map((name) => ({ name })));
     }
     recorder.uploads.push(path);
     return json(route, { Key: 'notes-files/fake' });
@@ -499,14 +825,168 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
         return json(route, data.recapSettings);
       }
 
+      // --- the Security page (prompt 11) --------------------------------------
+      if (fn === 'get_account_privacy') {
+        const row = {
+          account_id: ACCOUNT_ID,
+          retention_days: data.privacy.retention_days,
+          email_summaries: data.privacy.email_summaries,
+          inactivity_minutes: data.privacy.inactivity_minutes,
+          is_owner: data.isOwner,
+        };
+        return json(route, wantsOne ? row : [row]);
+      }
+
+      if (fn === 'save_account_privacy') {
+        recorder.updates.push({ table: fn, body });
+        const asked = (body as { p_settings?: Record<string, unknown> } | undefined)?.p_settings ?? {};
+        if (!data.isOwner) return json(route, { message: 'not_owner', code: 'P0001' }, 400);
+        // A NEW object, never a change to the one already there. The defaults are shared
+        // between every script in this file, so changing that object in place would leak
+        // one test's settings into the next -- which it did, once.
+        data.privacy = {
+          retention_days:
+            'retention_days' in asked ? (asked.retention_days as number | null) : data.privacy.retention_days,
+          email_summaries:
+            'email_summaries' in asked ? (asked.email_summaries as boolean) : data.privacy.email_summaries,
+          inactivity_minutes:
+            'inactivity_minutes' in asked
+              ? (asked.inactivity_minutes as number)
+              : data.privacy.inactivity_minutes,
+        };
+        return json(route, wantsOne ? data.privacy : [data.privacy]);
+      }
+
+      if (fn === 'list_audit_log') {
+        if (!data.isOwner) return json(route, { message: 'not_owner', code: 'P0001' }, 400);
+        return json(route, data.auditLog);
+      }
+
+      if (fn === 'record_my_action' || fn === 'record_consent') {
+        recorder.functionCalls.push({ name: fn, body });
+        return json(route, null);
+      }
+
+      if (fn === 'get_plan_and_usage') {
+        return json(route, wantsOne ? data.planAndUsage : [data.planAndUsage]);
+      }
+
+      if (fn === 'set_test_plan') {
+        recorder.updates.push({ table: fn, body });
+        const asked = (body as { p_plan_name?: string } | undefined)?.p_plan_name ?? 'Free';
+        if (data.switchPlanError) {
+          return json(route, { message: data.switchPlanError, code: 'P0001' }, 400);
+        }
+        // Remember it, so the numbers on the screen really follow the plan.
+        data.planAndUsage = asked === 'Free' ? PLAN_FREE : { ...PLAN_PRO, plan_name: asked };
+        const row = { plan_name: asked, is_test_plan: asked !== 'Free', seats_included: data.planAndUsage.seats_included };
+        return json(route, wantsOne ? row : [row]);
+      }
+
+      if (fn === 'list_team') {
+        return json(route, wantsOne ? data.team : [data.team]);
+      }
+
+      if (fn === 'revoke_invite') {
+        recorder.updates.push({ table: fn, body });
+        const id = (body as { p_invite_id?: string } | undefined)?.p_invite_id;
+        const invites = (data.team.pending_invites as Row[]).filter((i) => i.id !== id);
+        data.team = { ...data.team, pending_invites: invites, seats_used: (data.team.seats_used as number) - 1 };
+        return json(route, null);
+      }
+
+      if (fn === 'remove_member') {
+        recorder.updates.push({ table: fn, body });
+        if (data.teamActionError) return json(route, { message: data.teamActionError, code: 'P0001' }, 400);
+        const id = (body as { p_user_id?: string } | undefined)?.p_user_id;
+        const members = (data.team.members as Row[]).filter((m) => m.user_id !== id);
+        data.team = { ...data.team, members, seats_used: (data.team.seats_used as number) - 1 };
+        return json(route, [{ new_account_id: 'new-account' }]);
+      }
+
+      if (fn === 'change_member_role') {
+        recorder.updates.push({ table: fn, body });
+        if (data.teamActionError) return json(route, { message: data.teamActionError, code: 'P0001' }, 400);
+        const id = (body as { p_user_id?: string } | undefined)?.p_user_id;
+        // Handing over swaps the two roles, exactly as the database does.
+        const members = (data.team.members as Row[]).map((m) => ({
+          ...m,
+          role: m.user_id === id ? 'owner' : 'member',
+        }));
+        data.team = { ...data.team, members, is_owner: false };
+        return json(route, [{ owner_user_id: id }]);
+      }
+
+      if (fn === 'accept_invite') {
+        recorder.updates.push({ table: fn, body });
+        if (data.acceptInviteError) return json(route, { message: data.acceptInviteError, code: 'P0001' }, 400);
+        const row = { joined_account: ACCOUNT_ID, owner_name: 'Sam Carter' };
+        return json(route, wantsOne ? row : [row]);
+      }
+
+      if (fn === 'delete_note') {
+        recorder.updates.push({ table: fn, body });
+        if (data.deleteNoteError) return json(route, { message: data.deleteNoteError, code: 'P0001' }, 400);
+        const id = (body as { p_meeting_id?: string } | undefined)?.p_meeting_id;
+        data.notes = data.notes.filter((n) => n.id !== id);
+        return json(route, `${ACCOUNT_ID}/${id}/recording.mp3`);
+      }
+
+      // ---------------------------------------------------------------------------
+      // Searching and paging the Home list (prompt 12)
+      // ---------------------------------------------------------------------------
+      // These three do the real work in JavaScript -- filtering, sorting, paging, counting and
+      // marking the matched words -- because the browser scripts never touch a database. They
+      // read the SAME data.notes array every other answer here reads, which is what keeps every
+      // script written before prompt 12 passing without a line changed.
+      if (fn === 'find_notes') {
+        recorder.searches.push({ name: fn, body });
+        if (data.findNotesError) return json(route, { message: data.findNotesError, code: 'P0001' }, 400);
+        return json(route, findNotesFake(data, (body ?? {}) as Row));
+      }
+
+      if (fn === 'find_passages') {
+        recorder.searches.push({ name: fn, body });
+        return json(route, findPassagesFake(data, (body ?? {}) as Row));
+      }
+
+      if (fn === 'delete_notes') {
+        recorder.updates.push({ table: fn, body });
+        const ids = ((body as { p_ids?: string[] } | undefined)?.p_ids ?? []).slice();
+        const notMine = data.notMine ?? [];
+        const outcomes = ids.map((id) => {
+          const note = data.notes.find((n) => n.id === id);
+          if (!note) return { id, file_path: null, error_code: 'no_such_note' };
+          if (notMine.includes(id)) return { id, file_path: null, error_code: 'not_yours' };
+          return { id, file_path: (note.file_path as string | null) ?? null, error_code: null };
+        });
+        const removed = outcomes.filter((o) => o.error_code === null).map((o) => o.id);
+        data.notes = data.notes.filter((n) => !removed.includes(n.id as string));
+        return json(route, outcomes);
+      }
+
+      if (fn === 'can_delete_account') {
+        return json(route, wantsOne ? data.deleteCheck : [data.deleteCheck]);
+      }
+
       return json(route, null);
     }
 
-    const noteId = url.searchParams.get('id')?.replace('eq.', '');
+    // "id=eq.<one>" for a note page, and "id=in.(<a>,<b>)" for Home's poll of the busy notes.
+    // Reading only the first of those would hand back nothing for the poll, which would quietly
+    // blank every note still being worked on -- a failure that shows as empty rows, not an error.
+    const idFilter = url.searchParams.get('id') ?? '';
+    const wantedIds = ((): string[] | undefined => {
+      if (idFilter.startsWith('eq.')) return [idFilter.slice(3)];
+      const list = /^in\.\((.*)\)$/.exec(idFilter);
+      if (list) return list[1].split(',').map((v) => v.trim().replace(/^"|"$/g, '')).filter(Boolean);
+      return undefined;
+    })();
+    const noteId = wantedIds?.length === 1 ? wantedIds[0] : undefined;
     const rows: Row[] = (() => {
       switch (table) {
         case 'meetings':
-          return noteId ? data.notes.filter((n) => n.id === noteId) : data.notes;
+          return wantedIds ? data.notes.filter((n) => wantedIds.includes(n.id as string)) : data.notes;
         case 'transcript_segments':
           return data.segments;
         case 'summaries':
@@ -528,9 +1008,12 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
         case 'usage':
           return [{ meetings_used: data.usage.used }];
         case 'plans':
-          return [{ name: 'Free', meetings_per_month: data.usage.limit }];
+          // The Plan screen asks for every active plan, to fill the test-only switch.
+          return url.searchParams.has('is_active')
+            ? data.switchablePlans
+            : [{ name: 'Free', meetings_per_month: data.usage.limit }];
         case 'profiles':
-          return [{ preferred_language: data.preferredLanguage }];
+          return [{ preferred_language: data.preferredLanguage, display_name: data.displayName }];
         case 'translations': {
           // Only a translation that is ALREADY saved is handed back here. Anything else is a miss,
           // so the app has to ask the server function for it, exactly as it would for real.
@@ -589,4 +1072,204 @@ export async function signIn(page: Page): Promise<void> {
 /** Opens one note page straight away (after signIn). */
 export async function openNote(page: Page, id: string = NOTE_ID): Promise<void> {
   await gotoApp(page, `/note/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// The made up search (prompt 12)
+// ---------------------------------------------------------------------------
+// Not a copy of the database's search -- it could not be, and pretending otherwise would be
+// worse than useless. It behaves the same way in the ways the SCREEN can tell apart: which
+// notes come back, in what order, how many there are in total, which part of the note matched,
+// and what a snippet with its marked words looks like. Whether "meeting" also finds "meetings"
+// is the database's job, and scripts/db-check/02-behaviour-checks.sql turns the handle on that.
+
+type SearchBody = {
+  p_query?: string | null;
+  p_from?: string | null;
+  p_to?: string | null;
+  p_statuses?: string[] | null;
+  p_sources?: string[] | null;
+  p_open_actions?: boolean | null;
+  p_limit?: number | null;
+  p_before?: string | null;
+  p_before_id?: string | null;
+  p_offset?: number | null;
+};
+
+const words = (query: string): string[] =>
+  query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/^[-"]+|"+$/g, ''))
+    .filter(Boolean);
+
+/** Does this text hold every word asked for? The database's "and" between words. */
+const holdsAll = (text: string, asked: string[]): boolean => {
+  const lower = text.toLowerCase();
+  return asked.length > 0 && asked.every((w) => lower.includes(w));
+};
+
+/** A few words either side of the first match, with the matched words marked. */
+const snippetOf = (text: string, asked: string[]): string => {
+  const lower = text.toLowerCase();
+  let at = -1;
+  for (const w of asked) {
+    const found = lower.indexOf(w);
+    if (found >= 0 && (at < 0 || found < at)) at = found;
+  }
+  if (at < 0) return '';
+  let start = Math.max(0, at - 40);
+  let end = Math.min(text.length, at + 80);
+  // Cut between words, never through one: "anks for joining" is not what the database does.
+  while (start > 0 && !/\s/.test(text[start - 1])) start -= 1;
+  while (end < text.length && !/\s/.test(text[end])) end += 1;
+  let piece = text.slice(start, end).trim();
+  for (const w of asked) {
+    piece = piece.replace(new RegExp(`(${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'),
+      `${MARK_START}$1${MARK_END}`);
+  }
+  return (start > 0 ? '... ' : '') + piece + (end < text.length ? ' ...' : '');
+};
+
+function findNotesFake(data: FakeData, body: Row): Row[] {
+  const ask = body as SearchBody;
+  const query = (ask.p_query ?? '').trim();
+  const asked = words(query);
+  const searching = asked.length > 0;
+  const limit = Math.min(Math.max(ask.p_limit ?? 10, 1), 30);
+  const openOnly = ask.p_open_actions === true;
+  const openActions = data.openActions ?? [];
+  const notMine = data.notMine ?? [];
+
+  let found = data.notes.filter((note) => {
+    const id = note.id as string;
+    const inside = data.searchText?.[id] ?? {};
+    const title = (note.title as string | null) ?? '';
+
+    if (searching) {
+      const all = [title, inside.summary ?? '', inside.transcript ?? ''].join(' \n ');
+      if (!holdsAll(all, asked)) return false;
+    }
+    const at = new Date(note.created_at as string).getTime();
+    if (ask.p_from && at < new Date(ask.p_from).getTime()) return false;
+    if (ask.p_to && at >= new Date(ask.p_to).getTime()) return false;
+    if (ask.p_statuses && !ask.p_statuses.includes(note.status as string)) return false;
+    if (ask.p_sources && !ask.p_sources.includes(note.source as string)) return false;
+    if (openOnly && !openActions.includes(id)) return false;
+    return true;
+  });
+
+  const matchedIn = (note: Row): string[] => {
+    if (!searching) return [];
+    const id = note.id as string;
+    const inside = data.searchText?.[id] ?? {};
+    const where: string[] = [];
+    if (holdsAll((note.title as string | null) ?? '', asked)) where.push('title');
+    if (holdsAll(inside.summary ?? '', asked)) where.push('summary');
+    if (holdsAll(inside.transcript ?? '', asked)) where.push('transcript');
+    return where;
+  };
+
+  const newestFirst = (a: Row, b: Row) =>
+    new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime();
+
+  if (searching) {
+    // Best match first: the database weights the title above the summary above the transcript.
+    const weight = (note: Row) => {
+      const where = matchedIn(note);
+      if (where.includes('title')) return 3;
+      if (where.includes('summary')) return 2;
+      return 1;
+    };
+    found.sort((a, b) => weight(b) - weight(a) || newestFirst(a, b));
+    found = found.slice(ask.p_offset ?? 0);
+  } else {
+    found.sort(newestFirst);
+    // Paging by date walks past the last row already shown, rather than counting from the start.
+    if (ask.p_before) {
+      const edge = new Date(ask.p_before).getTime();
+      found = found.filter((note) => {
+        const at = new Date(note.created_at as string).getTime();
+        if (at !== edge) return at < edge;
+        return (note.id as string) < (ask.p_before_id ?? '');
+      });
+    }
+  }
+
+  const total = searching
+    ? found.length + (ask.p_offset ?? 0)
+    : data.notes.filter((note) => {
+        // The count is over everything the filters allow, not just this page -- so it must not
+        // be affected by where the page starts.
+        const id = note.id as string;
+        const inside = data.searchText?.[id] ?? {};
+        const at = new Date(note.created_at as string).getTime();
+        if (ask.p_from && at < new Date(ask.p_from).getTime()) return false;
+        if (ask.p_to && at >= new Date(ask.p_to).getTime()) return false;
+        if (ask.p_statuses && !ask.p_statuses.includes(note.status as string)) return false;
+        if (ask.p_sources && !ask.p_sources.includes(note.source as string)) return false;
+        if (openOnly && !openActions.includes(id)) return false;
+        void inside;
+        return true;
+      }).length;
+
+  return found.slice(0, limit).map((note) => {
+    const id = note.id as string;
+    const inside = data.searchText?.[id] ?? {};
+    const where = matchedIn(note);
+    const fromTranscript = where.includes('transcript');
+    const snippet = !searching
+      ? null
+      : fromTranscript
+        ? snippetOf(inside.transcript ?? '', asked)
+        : where.includes('summary')
+          ? snippetOf(inside.summary ?? '', asked)
+          : null;
+    return {
+      id,
+      title: note.title ?? null,
+      source: note.source,
+      status: note.status,
+      error_message: note.error_message ?? null,
+      created_at: note.created_at,
+      has_open_actions: openActions.includes(id),
+      can_delete: !notMine.includes(id),
+      matched_in: where,
+      snippet: snippet || null,
+      snippet_start_ms: fromTranscript ? (inside.startMs ?? 60000) : null,
+      snippet_segment_id: fromTranscript ? `seg-${id}` : null,
+      total_count: total,
+    };
+  });
+}
+
+function findPassagesFake(data: FakeData, body: Row): Row[] {
+  const ask = body as SearchBody;
+  const asked = words((ask.p_query ?? '').trim());
+  if (asked.length === 0) return [];
+  const limit = Math.min(Math.max(ask.p_limit ?? 10, 1), 30);
+  const firstNote = data.notes[0];
+
+  const found = data.segments
+    .filter((seg) => holdsAll((seg.text as string) ?? '', asked))
+    .map((seg) => {
+      const noteId = (seg.meeting_id as string | undefined) ?? (firstNote?.id as string);
+      const note = data.notes.find((n) => n.id === noteId) ?? firstNote;
+      return {
+        segment_id: seg.id,
+        meeting_id: noteId,
+        note_title: (note?.title as string | null) ?? null,
+        note_created_at: note?.created_at ?? new Date().toISOString(),
+        speaker_label: seg.speaker_label ?? null,
+        start_ms: seg.start_ms ?? 0,
+        line: snippetOf((seg.text as string) ?? '', asked),
+      };
+    });
+
+  const noteCount = new Set(found.map((f) => f.meeting_id)).size;
+  return found.slice(ask.p_offset ?? 0).slice(0, limit).map((row) => ({
+    ...row,
+    total_count: found.length,
+    note_count: noteCount,
+  }));
 }

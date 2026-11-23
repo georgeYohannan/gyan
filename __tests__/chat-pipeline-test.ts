@@ -132,8 +132,12 @@ describe('answering a question', () => {
     expect(finish[0].args.p_cost).toBeCloseTo(0.011, 6);
 
     // The whole transcript went in as numbered passages, and the question on its own.
-    expect(asks[0].system).toContain('[1] Weekly team call, 17 November 2026, at 0:00:');
-    expect(asks[0].question).toBe('USER QUESTION\nWhat were the decisions?');
+    // The note is named once, above the fence, instead of on every line.
+    expect(asks[0].system).toContain('[1] 17 November 2026, at 0:00:');
+    expect(asks[0].system).toContain('The note is called "Weekly team call".');
+    expect(asks[0].question).toMatch(
+      /^USER QUESTION\n<<<BEGIN_QUESTION_[0-9a-f]{16}>>>\nWhat were the decisions\?\n<<<END_QUESTION_[0-9a-f]{16}>>>$/,
+    );
     expect(call).toHaveBeenCalledTimes(1);
   });
 
@@ -326,8 +330,8 @@ describe('a pasted-text note', () => {
     await runChat({ ...text, question: 'Who is it for?', admin, call });
 
     // Paragraph 1 is passage 1, paragraph 2 is passage 2, and so on.
-    expect(asks[0].system).toContain('[1] Weekly team call, 17 November 2026: The module ingests financial documents.');
-    expect(asks[0].system).toContain('[2] Weekly team call, 17 November 2026: Audience: forensic accountants and family-law attorneys.');
+    expect(asks[0].system).toContain('[1] 17 November 2026: The module ingests financial documents.');
+    expect(asks[0].system).toContain('[2] 17 November 2026: Audience: forensic accountants and family-law attorneys.');
     // Nobody spoke these words, so there is no speaker and no time to invent.
     expect(asks[0].system).not.toContain('Speaker');
     expect(asks[0].system).not.toContain(' at 0:00');

@@ -4,7 +4,7 @@
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import RecapEmailsScreen, { stateSentence } from '@/app/(app)/(home)/recap-emails';
+import RecapEmailsScreen, { stateSentence } from '@/app/(app)/settings/recaps';
 import { RecapDialog } from '@/components/notes/recap-dialog';
 import { MESSAGES } from '@/lib/recaps';
 
@@ -13,10 +13,11 @@ const mockSend = jest.fn();
 const mockGetSettings = jest.fn();
 const mockSaveSettings = jest.fn();
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 const mockOpenSettings = jest.fn();
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
 }));
 
 jest.mock('@/lib/recaps', () => ({
@@ -398,12 +399,12 @@ describe('the Recap emails page', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   });
 
-  test('there is a way back to Home', async () => {
+  test('there is a way back to Settings', async () => {
     mockGetSettings.mockResolvedValue({ isOwner: true, settings: { toOwner: true, toMembers: false, autoSend: false } });
     await act(async () => {
       render(<RecapEmailsScreen />);
     });
-    await act(async () => fireEvent.press(await screen.findByLabelText('Back to Home')));
-    expect(mockReplace).toHaveBeenCalledWith('/');
+    await act(async () => fireEvent.press(await screen.findByLabelText('Back to Settings')));
+    expect(mockPush).toHaveBeenCalledWith('/settings');
   });
 });

@@ -33,21 +33,18 @@ export type AdminLike = {
   ): PromiseLike<RpcResult> & {
     single<T>(): PromiseLike<{ data: T | null; error: { message: string } | null }>;
   };
-  from(table: string): {
-    select(columns: string): {
-      eq(
-        column: string,
-        value: string,
-      ): {
-        eq(
-          column: string,
-          value: string,
-        ): {
-          eq(column: string, value: string): { maybeSingle(): PromiseLike<{ data: unknown; error: unknown }> };
-        };
-      };
-    };
-  };
+  from(table: string): { select(columns: string): Narrowing };
+};
+
+/**
+ * A query being narrowed down. Written so eq() can be called as many times as a question
+ * needs, and the answer asked for at any point -- which is how the real client behaves.
+ * It used to insist on exactly three eq() calls, because that was all the one query here
+ * needed at the time.
+ */
+type Narrowing = {
+  eq(column: string, value: string): Narrowing;
+  maybeSingle<T = unknown>(): PromiseLike<{ data: T | null; error: unknown }>;
 };
 
 /** One person who could get a recap. Every one of them is on the account. */
@@ -360,6 +357,22 @@ export async function runRecap(o: RecapOptions): Promise<RecapRunResult> {
     );
   }
 
+  // Does this account allow what was said to go out by email? Read ONCE, for everybody on
+  // this send, so two people on the same account can never get different treatment.
+  //
+  // Not found, or a problem reading it, means YES -- which is how recaps behaved before the
+  // setting existed. Failing the other way would silently strip every recap in the product
+  // the first time this query had a bad day.
+  let summariesInEmail = true;
+  {
+    const { data } = await o.admin
+      .from('account_privacy')
+      .select('email_summaries')
+      .eq('account_id', claim.account_id)
+      .maybeSingle<{ email_summaries: boolean }>();
+    if (data && data.email_summaries === false) summariesInEmail = false;
+  }
+
   const outcomes: RecapOutcome[] = [];
 
   for (const person of people) {
@@ -373,6 +386,7 @@ export async function runRecap(o: RecapOptions): Promise<RecapRunResult> {
       noteUrl,
       settingsUrl,
       sender: o.sender,
+      summariesInEmail,
     });
 
     let providerId: string | null = null;

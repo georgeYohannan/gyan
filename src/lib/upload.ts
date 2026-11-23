@@ -1,3 +1,4 @@
+import { markActivity } from '@/hooks/use-inactivity-signout';
 import { Platform } from 'react-native';
 
 import { getSupabase } from '@/lib/supabase';
@@ -29,9 +30,23 @@ export async function uploadFile(
       xhr.setRequestHeader('apikey', process.env.EXPO_PUBLIC_SUPABASE_KEY ?? '');
       xhr.setRequestHeader('Content-Type', contentType);
       xhr.setRequestHeader('x-upsert', 'true');
-      xhr.upload.onprogress = (e) => onProgress?.(e.lengthComputable ? e.loaded / e.total : undefined);
+      xhr.upload.onprogress = (e) => {
+        // Tell the automatic sign out that something is still happening. A 50 MB file on a
+        // slow connection can take longer than the whole timeout with nobody touching the
+        // screen, and being signed out mid-upload would be a worse failure than the one the
+        // timeout prevents.
+        markActivity();
+        onProgress?.(e.lengthComputable ? e.loaded / e.total : undefined);
+      };
       xhr.onload = () =>
-        xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(xhr.status === 413 ? 'too_big' : `upload_failed_${xhr.status}: ${xhr.responseText}`));
+        xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(
+              new Error(
+                // The status only. This used to paste the store's whole reply into the
+                // error, which put somebody else's internal wording (and the file path)
+                // into a message that can end up in a crash report.
+                xhr.status === 413 ? 'too_big' : `upload_failed_${xhr.status}`,
+              ),
+            );
       xhr.onerror = () => reject(new Error('network'));
       xhr.ontimeout = () => reject(new Error('timeout'));
       xhr.send(body);

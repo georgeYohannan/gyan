@@ -513,7 +513,7 @@ describe('what the sender is told afterwards', () => {
     const r = rig();
     await run(r);
     expect(r.sentTo[0].html).toContain('Turn off recaps');
-    expect(r.sentTo[0].html).toContain('https://app.example.test/recap-emails');
+    expect(r.sentTo[0].html).toContain('https://app.example.test/settings/recaps');
     expect(r.sentTo[0].html).toContain('https://app.example.test/note/mmmmmmmm-mmmm-mmmm-mmmm-mmmmmmmmmmmm');
     expect(r.sentTo[0].subject).toBe('Recap: Monday planning call');
   });

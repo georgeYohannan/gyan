@@ -3,13 +3,24 @@ export function friendlyAuthError(error: { code?: string; message?: string; stat
   switch (error.code) {
     case 'invalid_credentials':
       return 'That email and password do not match. Check them and try again.';
+    // Changing a password now asks for the current one, so this one has to say WHICH
+    // password was wrong. "That email and password do not match" would be baffling on a
+    // screen where no email was typed.
+    case 'wrong_current_password':
+      return 'That is not your current password. Check it and try again.';
+    case 'session_not_found':
+      return 'You are not signed in any more. Sign in again, then change your password.';
+    case 'same_password':
+      return 'That is the password you already have. Pick a different one.';
+    case 'reauthentication_needed':
+      return 'For your security, sign out and back in before changing your password.';
     case 'email_not_confirmed':
       return 'Please confirm your email first. Open the email we sent you and tap the link.';
     case 'user_already_exists':
     case 'email_exists':
       return 'That email already has an account. Try logging in instead.';
     case 'weak_password':
-      return 'That password is too easy to guess. Use at least 8 characters.';
+      return `That password is too easy to guess. Use at least ${MIN_PASSWORD_LENGTH} characters.`;
     case 'email_address_invalid':
     case 'validation_failed':
       return 'That email does not look right. Check it and try again.';
@@ -30,4 +41,15 @@ export function looksLikeEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
-export const MIN_PASSWORD_LENGTH = 8;
+/**
+ * The shortest password Gyan accepts.
+ *
+ * Twelve, not eight. Supabase's own guidance says anything under eight is not recommended,
+ * and length is what actually makes a password hard to guess -- far more than forcing a
+ * capital letter and a symbol, which mostly produces "Password1!" and a sticky note.
+ *
+ * Gyan only checks this BEFORE asking the server, so somebody gets a quick answer instead of
+ * a round trip. The real rule is the one set in the Supabase dashboard, which is in the
+ * hand-over list, because no amount of app code can enforce it.
+ */
+export const MIN_PASSWORD_LENGTH = 12;
