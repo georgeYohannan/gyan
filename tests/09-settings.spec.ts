@@ -325,3 +325,70 @@ test('Settings works at phone width', async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+/**
+ * The "Delete a note" panel used to draw EVERY note with a Delete button beside it, and ask
+ * the server for all of them in one request. These two scripts are what stops that returning.
+ */
+const DAY = 24 * 60 * 60 * 1000;
+
+/** `count` notes, newest first, one a day apart so paging by date has something to walk. */
+function pageOfNotes(count: number) {
+  const now = Date.now();
+  return Array.from({ length: count }, (_, i) =>
+    noteRow({
+      id: `note-${String(i + 1).padStart(2, '0')}`,
+      title: `Note ${String(i + 1).padStart(2, '0')}`,
+      created_at: new Date(now - i * DAY).toISOString(),
+      file_path: `acct/note-${String(i + 1).padStart(2, '0')}/recording.mp3`,
+    }),
+  );
+}
+
+test('Data and privacy: the note list opens with ten, and Show more brings the rest', async ({ page }) => {
+  const recorder = await installFakes(page, { notes: pageOfNotes(12) });
+  await signIn(page);
+  await openSettings(page);
+  await page.getByRole('link', { name: /^Data and privacy\./ }).click();
+
+  // Ten drawn, twelve counted, and the panel says which is which.
+  await expect(shown(page.getByText('12 notes, showing the 10 newest'))).toBeVisible();
+  await expect(shown(page.getByText('Note 01')).first()).toBeVisible();
+  await expect(shown(page.getByText('Note 10')).first()).toBeVisible();
+  await expect(shown(page.getByText('Note 11')).first()).toBeHidden();
+
+  await shown(page.getByRole('button', { name: 'Show more' })).first().click();
+
+  await expect(shown(page.getByText('Note 12')).first()).toBeVisible();
+  await expect(shown(page.getByText('12 notes'))).toBeVisible();
+  // Everything is drawn, so there is nothing more to ask for.
+  await expect(shown(page.getByRole('button', { name: 'Show more' }))).toBeHidden();
+
+  // THE RULE: never more than thirty notes in one request.
+  const asks = recorder.searches.filter((s) => s.name === 'find_notes');
+  expect(asks.length).toBeGreaterThanOrEqual(2);
+  for (const ask of asks) {
+    expect((ask.body as { p_limit: number }).p_limit).toBeLessThanOrEqual(30);
+  }
+});
+
+test("Data and privacy: a teammate's note is not offered a Delete button", async ({ page }) => {
+  await installFakes(page, {
+    notes: [
+      noteRow({ id: 'mine', title: 'My own call', created_at: '2026-11-18T10:00:00Z' }),
+      noteRow({ id: 'theirs', title: 'A call Priya made', created_at: '2026-11-17T10:00:00Z' }),
+    ],
+    notMine: ['theirs'],
+  });
+  await signIn(page);
+  await openSettings(page);
+  await page.getByRole('link', { name: /^Data and privacy\./ }).click();
+
+  await expect(shown(page.getByText('A call Priya made')).first()).toBeVisible();
+  await expect(
+    shown(page.getByText('Somebody else made this note, so you cannot delete it.')).first(),
+  ).toBeVisible();
+  // One Delete button, for the one note that can go. Pressing it used to be the only way to
+  // find out the database would refuse.
+  await expect(shown(page.getByRole('button', { name: 'Delete', exact: true }))).toHaveCount(1);
+});

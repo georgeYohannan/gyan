@@ -5,7 +5,15 @@
  */
 import { expect, test } from '@playwright/test';
 
-import { CHAT_MESSAGES, installFakes, noteRow, openNote, signIn, type FakeData } from './fixtures/fake-api';
+import {
+  CHAT_MESSAGES,
+  DELETE_CHECK,
+  installFakes,
+  noteRow,
+  openNote,
+  signIn,
+  type FakeData,
+} from './fixtures/fake-api';
 
 const IMAGES = 'docs/help/images';
 // Each picture gets a tall enough window to show the whole thing, with no empty space below.
@@ -318,11 +326,53 @@ for (const w of WIDTHS) {
     await shootSettings(
       { page, context },
       `settings-data-${w.name}.png`,
-      { width: w.width, height: w.full },
+      // Taller than the other Settings pictures: ten note rows and the Show more button sit
+      // between the panels and the Delete account box, and React Native Web scrolls an inner
+      // element, so anything past the viewport is simply not in the picture. The phone needs
+      // more again, because everything wraps onto more lines at 390.
+      { width: w.width, height: w.full + (w.width < 768 ? 1500 : 1000) },
       'Data and privacy',
       'Data and privacy',
+      // Twelve notes, so the picture shows what somebody with a real pile of them sees: the
+      // count, the ten newest, and a Show more button. With one note there was nothing to show.
+      // The account panel's count has to agree with the list, or the picture contradicts itself.
+      {
+        notes: dataNotes(),
+        deleteCheck: {
+          ...DELETE_CHECK,
+          note_count: 12,
+          what_goes: (DELETE_CHECK.what_goes as string).replace('all 1 of your notes', 'all 12 of your notes'),
+        },
+      },
     );
   });
+}
+
+/** Twelve believable notes, one of them a teammate's, for the Data and privacy picture. */
+function dataNotes() {
+  const now = Date.now();
+  const titles = [
+    'Weekly team call',
+    'Customer call: Northwind',
+    'Pricing review',
+    'Notes from the roadmap chat',
+    'Design review',
+    'Hiring catch-up',
+    'Support handover',
+    'Board prep',
+    'Onboarding walkthrough',
+    'Partner intro call',
+    'Quarterly numbers',
+    'Retro: the launch',
+  ];
+  return titles.map((title, i) =>
+    noteRow({
+      id: `data-${String(i + 1).padStart(2, '0')}`,
+      title,
+      source: i % 4 === 0 ? 'text' : i % 3 === 0 ? 'bot' : 'upload',
+      created_at: new Date(now - i * DAY).toISOString(),
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------

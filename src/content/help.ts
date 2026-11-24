@@ -775,6 +775,8 @@ export const HELP: Record<string, HelpEntry> = {
         items: [
           'It does not give you the meeting back this month. It was already counted.',
           'Only the person who made a note, or the account owner, can delete it.',
+          'A note somebody else made has no Delete button, and says why.',
+          'The ten newest notes are listed, with how many you have in all. Show more brings twenty more.',
         ],
       },
       {
@@ -791,7 +793,7 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/settings-data-390.png'),
-        alt: 'Data and privacy on a phone, with a list of made up notes to delete and a red Delete account panel.',
+        alt: 'Data and privacy on a phone: how long notes are kept, what recap emails carry, downloading a copy, then "12 notes, showing the 10 newest" above ten made up notes each with a Delete button, a Show more button, and a red Delete account panel.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports

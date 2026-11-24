@@ -71,10 +71,10 @@ jest.mock('@/lib/recaps', () => ({
   getRecapSettings: (...a: unknown[]) => mockGetRecapSettings(...a),
 }));
 
-const mockListNotes = jest.fn();
-jest.mock('@/lib/notes', () => ({
-  ...jest.requireActual('@/lib/notes'),
-  listNotes: (...a: unknown[]) => mockListNotes(...a),
+const mockFindNotes = jest.fn();
+jest.mock('@/lib/notes-search', () => ({
+  ...jest.requireActual('@/lib/notes-search'),
+  findNotes: (...a: unknown[]) => mockFindNotes(...a),
 }));
 
 const mockCanDelete = jest.fn();
@@ -125,7 +125,7 @@ beforeEach(() => {
   mockGetRecapSettings
     .mockReset()
     .mockResolvedValue({ isOwner: true, settings: { toOwner: true, toMembers: false, autoSend: false } });
-  mockListNotes.mockReset().mockResolvedValue([]);
+  mockFindNotes.mockReset().mockResolvedValue({ notes: [], total: 0 });
   mockCanDelete.mockReset().mockResolvedValue({
     isOwner: true,
     canDelete: true,

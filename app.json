@@ -8,9 +8,11 @@
     "scheme": "gyan",
     "userInterfaceStyle": "dark",
     "ios": {
+      "bundleIdentifier": "com.gyantechai.gyan",
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.gyantechai.gyan",
       "adaptiveIcon": {
         "backgroundColor": "#0B1220",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -38,6 +40,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "21f7db10-69e0-432f-a915-2e5df2dd3c54"
+      }
+    },
+    "owner": "kygeorge"
   }
 }
