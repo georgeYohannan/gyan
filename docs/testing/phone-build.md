@@ -81,9 +81,15 @@ iPhone builds**, so this costs nothing — but the free queue can be slow, and E
 npx eas-cli@latest build --platform android --profile development
 ```
 
-When it finishes you get a web address and a QR code. Open that address **on the Android phone**,
-download the file, and let it install. Android will warn you that it did not come from the Play
-Store; that warning is expected, because it did not.
+**This has already been run for you, and it worked.** You do not need the command above unless
+you change the app. Open this page **on your Android phone** and tap Install:
+
+https://expo.dev/accounts/kygeorge/projects/gyan/builds/30c6565b-1b3a-4600-9b38-8c36b2937c2b
+
+Android will warn you that the app did not come from the Play Store. That warning is expected,
+because it did not. Allow it.
+
+Run the command above yourself only after you change the app and want a new build on the phone.
 
 **You should see:** Gyan's icon on your home screen. Opening it shows a developer screen first.
 Run `npx expo start --dev-client` on your Mac and the app connects to it.
