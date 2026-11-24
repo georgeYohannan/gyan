@@ -8,6 +8,7 @@ import { expect, test } from '@playwright/test';
 import {
   CHAT_MESSAGES,
   DELETE_CHECK,
+  gotoApp,
   installFakes,
   noteRow,
   openNote,
@@ -97,14 +98,17 @@ async function shootChat(
 }
 
 for (const w of WIDTHS) {
+  // Taller than the other pictures on purpose. The chat is a TAB now, so it fills the window
+  // and scrolls itself to the newest message -- in a short window that cut the question off
+  // the top and left a picture of an answer to nothing.
   test(`the chat with a conversation at ${w.name} pixels`, async ({ page, context }) => {
-    await shootChat({ page, context }, `note-chat-${w.name}.png`, { width: w.width, height: w.short }, {
+    await shootChat({ page, context }, `note-chat-${w.name}.png`, { width: w.width, height: w.full }, {
       chatMessages: CHAT_MESSAGES,
     });
   });
 
   test(`the chat with its suggested questions at ${w.name} pixels`, async ({ page, context }) => {
-    await shootChat({ page, context }, `note-chat-empty-${w.name}.png`, { width: w.width, height: w.short }, {});
+    await shootChat({ page, context }, `note-chat-empty-${w.name}.png`, { width: w.width, height: w.full }, {});
   });
 
   test(`a highlighted transcript line at ${w.name} pixels`, async ({ page, context }) => {
@@ -249,6 +253,74 @@ for (const w of WIDTHS) {
     await shootRecapSettings({ page, context }, `recap-settings-${w.name}.png`, {
       width: w.width,
       height: w.full,
+    });
+  });
+}
+
+
+/**
+ * The five screens that had no generator at all until prompt 13.
+ *
+ * `design`, `login`, `signup`, `new-note` and `note-transcript` were taken BY HAND, so they
+ * sat unchanged while the app moved underneath them. That is exactly the failure
+ * docs/decisions.md records for Home's pictures in prompt 12, and a redesign is the worst
+ * possible time for it: ten pictures would have quietly gone on showing the old layout while
+ * the words beside them described the new one. Every help picture is made here now.
+ */
+async function shootScreen(
+  { page, context }: { page: import('@playwright/test').Page; context: import('@playwright/test').BrowserContext },
+  file: string,
+  size: { width: number; height: number },
+  go: (page: import('@playwright/test').Page) => Promise<void>,
+  options: { signedIn?: boolean; data?: Partial<FakeData> } = {},
+) {
+  await page.setViewportSize(size);
+  // The fakes go in even for the signed-out screens, so Supabase is still intercepted and no
+  // real address is ever called from a picture.
+  await installFakes(page, options.data ?? {});
+  if (options.signedIn !== false) await signIn(page);
+  await go(page);
+  await page.waitForTimeout(700); // let the fonts settle
+  await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
+  await context.clearCookies();
+}
+
+for (const w of WIDTHS) {
+  const size = { width: w.width, height: w.short };
+
+  test(`the Log in screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `login-${w.name}.png`, size, async (p) => {
+      await gotoApp(p, '/log-in');
+      await expect(p.getByTestId('auth-screen-log-in')).toBeVisible();
+    }, { signedIn: false });
+  });
+
+  test(`the Sign up screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `signup-${w.name}.png`, size, async (p) => {
+      await gotoApp(p, '/sign-up');
+      await expect(p.getByTestId('auth-screen-sign-up')).toBeVisible();
+    }, { signedIn: false });
+  });
+
+  test(`the New note screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `new-note-${w.name}.png`, { width: w.width, height: w.full }, async (p) => {
+      await p.getByTestId('nav-new-note').click();
+      await expect(p.getByTestId('new-note-screen')).toBeVisible();
+    });
+  });
+
+  test(`the Transcript tab at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `note-transcript-${w.name}.png`, { width: w.width, height: w.full }, async (p) => {
+      await openNote(p);
+      await p.getByTestId('note-tab-transcript').click();
+      await expect(p.getByText('Thanks for joining. Let us start with the sign up screen.')).toBeVisible();
+    });
+  });
+
+  test(`the builders-only design page at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `design-${w.name}.png`, { width: w.width, height: w.full }, async (p) => {
+      await gotoApp(p, '/design');
+      await expect(p.getByRole('heading', { name: 'Design', level: 1 })).toBeVisible();
     });
   });
 }

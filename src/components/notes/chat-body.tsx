@@ -169,7 +169,11 @@ export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBody
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
         contentContainerStyle={{ padding: Spacing.three, gap: Spacing.three }}>
         {loading ? (
-          <View style={{ gap: Spacing.two }} accessibilityLabel="Loading your questions">
+          /* "Reading your chat", not "Loading your questions". The question box below is
+             labelled "Your question", and a label that CONTAINS another label is a trap:
+             Playwright's getByLabel matches a substring, so for the half second this was on
+             screen, looking for the question box found two things. */
+          <View style={{ gap: Spacing.two }} accessibilityLabel="Reading your chat">
             <Skeleton width="70%" />
             <Skeleton width="90%" height={18} />
           </View>

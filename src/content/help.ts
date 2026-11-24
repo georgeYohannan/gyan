@@ -39,12 +39,12 @@ export const HELP: Record<string, HelpEntry> = {
         // Metro needs require() for local images.
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/design-390.png'),
-        alt: 'The design page on a phone-sized window, with dark navy panels and a glowing blue button.',
+        alt: 'The builders-only Design page on a phone, headed Design. A Text panel shows a Schibsted Grotesk heading and IBM Plex Sans body text, then a Buttons panel shows the primary, secondary and record buttons in their normal, pressed, off and loading states.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/design-1280.png'),
-        alt: 'The design page on a wide web window, with the same panels laid out wider.',
+        alt: 'The same Design page on a wide web window, with the navigation as a sidebar down the left and the panels laid out wider.',
       },
     ],
   },
@@ -53,9 +53,9 @@ export const HELP: Record<string, HelpEntry> = {
     title: 'Home',
     sentences: [
       'Home shows your 10 newest notes. Show more adds 20 more at a time.',
-      'Tap New note to add a conversation.',
+      'Tap New note to add a conversation. It is also in the bar along the bottom.',
       'Search looks inside the title, the summary and every word that was said.',
-      'The box at the top shows how many meetings you have used this month, and how many your plan allows.',
+      'A note only stands out when it needs something from you.',
     ],
     lists: [
       {
@@ -77,6 +77,25 @@ export const HELP: Record<string, HelpEntry> = {
           'The number of notes found is shown above the list.',
           'Each filter you have on appears as a pill you can tap to take off. Clear filters takes off all of them.',
           'Today and This month are counted where you are. The monthly meeting count is kept in UTC time, so around the 1st the two can differ by a few hours.',
+        ],
+      },
+      {
+        heading: 'What a colour on a note means',
+        items: [
+          'An orange edge down the left: this note still has something to do.',
+          'A thin blue line underneath: Gyan is still working on it.',
+          'A red card: it did not work. The message on it says why.',
+          'No colour at all: it is finished and nothing is owed.',
+        ],
+      },
+      {
+        heading: 'Sharing or deleting one note',
+        items: [
+          'Tap the three dots on the right of a note.',
+          'On a phone you can also swipe the note to the left.',
+          'Share sends a recap email. There is no share link yet.',
+          'Delete asks you first, names the note, and lists what will go.',
+          'A note somebody else made cannot be deleted, and the menu says so.',
         ],
       },
       {
@@ -106,6 +125,7 @@ export const HELP: Record<string, HelpEntry> = {
           'Your plan lets you finish a set number of meetings each month.',
           'A meeting counts only when it is Ready.',
           'Pasted text never counts. Failed notes never count.',
+          'Home says nothing about this until your last meeting of the month. The whole count is on the New note screen, and in Settings under Plan and usage.',
           'When you have used them all, uploads wait until the 1st of next month.',
         ],
       },
@@ -114,17 +134,17 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/home-notes-390.png'),
-        alt: 'The Home screen on a phone-sized window. A box says 2 of 5 meetings used, a blue New note button sits below it, then a search box and a Filters button, then notes grouped under Today and Yesterday with Ready, Transcribing and Failed labels.',
+        alt: 'Home on a phone, headed Your notes, with a glowing blue New note button under it, then a search box, a Filters button, and a line saying 6 notes with Select on the right. The notes are grouped under Today, Yesterday and November. Weekly team call has an orange edge down its left and says Still has something to do. Customer call: Northwind has a blue Transcribing label and a thin blue line underneath. Design review sits in a red card saying We could not read this audio file. Every note has three dots on its right. A bar along the bottom holds Home, Search, New note, Ask and Settings.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/home-empty-390.png'),
-        alt: 'The Home screen on a phone-sized window with no notes yet. It says No notes yet and asks you to upload a file or paste some text.',
+        alt: 'Home on a phone with no notes yet, headed Your notes. A glowing blue New note button sits above one panel that says No notes yet and asks you to add your first conversation by uploading a file or pasting some text.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/home-notes-1280.png'),
-        alt: 'The Home screen on a wide web window, with the same box, button, search box and list of notes laid out wider.',
+        alt: 'The same Home screen on a wide web window. The navigation is a sidebar down the left, under the Gyan name, holding Home, Search, New note, Ask and Settings, and the New note button is the width of its words rather than the whole page.',
       },
     ],
   },
@@ -152,12 +172,12 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/search-390.png'),
-        alt: 'The Search screen on a phone-sized window. A search box holds a word, a line below says how many lines matched in how many notes, and each result card shows a note title, a date, a speaker name, the matching line with the searched word picked out in blue, and a timestamp pill.',
+        alt: 'The Search screen on a phone, headed Search, with sign up typed in the box and a line saying 2 lines in 1 note. Each result is a flat row with a hairline under it: the note title on the left, the date on the right, the speaker name in small spaced capitals, the line they said with the searched words picked out in blue, and a pill holding the moment it was said.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/search-1280.png'),
-        alt: 'The Search screen on a wide web window, with the same search box and result cards laid out wider.',
+        alt: 'The same Search screen on a wide web window, with the sidebar down the left and the results laid out wider.',
       },
     ],
   },
@@ -195,12 +215,12 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/new-note-390.png'),
-        alt: 'The New note screen on a phone-sized window. It shows 4 choices: Record and Meeting link are dimmed with a Coming soon label, and Upload and Paste text are ready to tap.',
+        alt: 'The New note screen on a phone. Under the title, a heading asks How do you want to add it? with a line under it, then 4 choices: Record and Meeting link are dimmed with a Coming soon label, and Upload and Paste text are ready to tap. Below them: Meetings used this month, 2 of 5, a meter of five blocks with two filled, and the words Free plan.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/new-note-1280.png'),
-        alt: 'The New note screen on a wide web window with the same 4 choices.',
+        alt: 'The same New note screen on a wide web window, with the same 4 choices and the same meter.',
       },
     ],
   },
@@ -208,7 +228,7 @@ export const HELP: Record<string, HelpEntry> = {
     id: 'note',
     title: 'Your note',
     sentences: [
-      'This page shows one note. It has two tabs: Summary and Transcript.',
+      'This page shows one note. It has three tabs: Summary, Transcript and Chat.',
       'The Summary tab has a short summary of the meeting and a to-do list you can tick off.',
       'The Transcript tab shows what people said, line by line, with who spoke and when.',
       'The label under the title tells you where the note is right now.',
@@ -223,6 +243,15 @@ export const HELP: Record<string, HelpEntry> = {
           'Open questions: things nobody answered yet.',
           'Action items: the to-do list, with a name and a date when somebody said one.',
           'A part is left out when the meeting had nothing to put in it.',
+        ],
+      },
+      {
+        heading: 'What is behind More',
+        items: [
+          'Your language: the language Gyan writes your summaries, to-dos and chat answers in.',
+          'Translate this summary or transcript into another language.',
+          'Send a recap by email to people on your account.',
+          'A line that cannot be used yet says why, rather than just going grey.',
         ],
       },
       {
@@ -295,17 +324,17 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-summary-390.png'),
-        alt: 'The Summary tab of a note on a phone-sized window. A green Ready label sits under the title, then Summary and Transcript tabs, then a few sentences about the meeting, then Key points, Decisions, Open questions, and an Action items list with tick boxes. One item is ticked and crossed out.',
+        alt: 'The Summary tab of a note on a phone. The title Weekly team call is set large with a green Ready label under it, then three underlined tabs — Summary, Transcript and Chat — and a More button. The summary opens with one large paragraph, then Key points, Decisions and Open questions as headings with a hairline under each, then Action items with 1 of 3 done, a thin orange meter, and three to-dos with tick boxes. One is ticked and crossed out. Copy and Regenerate sit at the bottom.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-summary-1280.png'),
-        alt: 'The same Summary tab on a wide web window, with a Copy button and a Regenerate button under the action items.',
+        alt: 'The same Summary tab on a wide web window, with the sidebar down the left and the Copy and Regenerate buttons under the action items.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-summary-empty-390.png'),
-        alt: 'A note on a phone-sized window with a blue Summarizing label. A panel says "No summary yet" and that Gyan is reading the note and writing the summary.',
+        alt: 'A note on a phone with a blue Summarizing label under its large title. One panel says No summary yet, that Gyan is reading the note and writing the summary, and that the page updates by itself.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -315,22 +344,22 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-transcript-390.png'),
-        alt: 'A note on a phone-sized window. The title and a green Ready label are at the top, then a Transcript tab, then lines from Speaker 1 and Speaker 2 with the time of each line.',
+        alt: 'The Transcript tab of a note on a phone. Under the tabs a quiet line says Spoken language: en, then each line of the conversation: the speaker name in small spaced capitals with the time beside it, the words underneath, and a hairline between one line and the next.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-transcript-1280.png'),
-        alt: 'The same note on a wide web window, with the transcript lines laid out wider.',
+        alt: 'The same Transcript tab on a wide web window, with the sidebar down the left and the lines laid out wider.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-failed-390.png'),
-        alt: 'A Failed note on a phone-sized window. A red Failed label sits under the title, and a panel explains what went wrong, says the note did not use up a meeting, and has a Retry summary button.',
+        alt: 'A Failed note on a phone. A red Failed label sits under the large title, and a red-edged panel says This note did not work, that Gyan could not write a summary, that the note did not use up one of your meetings, that the transcript is still on the Transcript tab, and offers a Retry summary button.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-failed-1280.png'),
-        alt: 'The same Failed note on a wide web window, with the same message and Retry summary button.',
+        alt: 'The same Failed note on a wide web window, with the sidebar down the left and the same message and Retry summary button.',
       },
     ],
   },
@@ -338,7 +367,7 @@ export const HELP: Record<string, HelpEntry> = {
     id: 'noteChat',
     title: 'Asking about your note',
     sentences: [
-      'Tap Ask to open the chat and ask anything about this note.',
+      'Open the Chat tab to ask anything about this note.',
       'Gyan only reads this one note. It never makes things up, and it never looks anything up elsewhere.',
       'Every answer shows small numbers. Tap one to jump to the place the answer came from.',
       'This works on recordings and on notes you pasted or uploaded as text.',
@@ -358,7 +387,7 @@ export const HELP: Record<string, HelpEntry> = {
         heading: 'What the little numbers mean',
         items: [
           'A small number in an answer is the part of the note that answer came from.',
-          'Tap it. The chat closes, the Transcript tab opens, and that part is outlined in blue.',
+          'Tap it. The Transcript tab opens and that part is outlined in blue.',
           'On a recording it points at a spoken line. On a pasted note it points at a paragraph.',
           'Tap a different number to move the blue outline there.',
           'Switching tab by hand clears the outline.',
@@ -370,7 +399,7 @@ export const HELP: Record<string, HelpEntry> = {
           'Gyan says "I could not find that in your notes" when the answer is not in this note.',
           'That is on purpose. It would rather say nothing than make something up.',
           'It then suggests a question that this note can answer.',
-          'A note needs its words before you can ask about it. Until then the Ask button is greyed out.',
+          'A note needs its words before you can ask about it. Until then the Chat tab says so.',
         ],
       },
       {
@@ -395,32 +424,32 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-chat-390.png'),
-        alt: 'The chat on a phone-sized window, slid up from the bottom. A question from You says "What were the decisions?" and an answer from Gyan says the sign up screen ships on Friday, with a small round number 3 at the end.',
+        alt: 'The Chat tab of a note on a phone. The tabs read Summary, Transcript and Chat, with Chat underlined in blue. A question from You says "What were the decisions?" and an answer from Gyan says the sign up screen ships on Friday, with a small round number 3 at the end. The question box and a Send button are pinned along the bottom.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-chat-empty-390.png'),
-        alt: 'A new chat on a phone-sized window, with 3 suggested questions as buttons: What were the decisions?, What did I promise to do?, and What is still open?',
+        alt: 'A new Chat tab on a phone. It says Gyan answers only from what was said in this note and shows you where each answer came from. Three questions are offered as buttons above the question box: What were the decisions?, What did I promise to do?, and What is still open?',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-chat-cited-390.png'),
-        alt: 'The Transcript tab on a phone-sized window after tapping a number. The line at 1 minute 5 seconds, where Priya says she will send the test plan on Friday, is outlined in blue.',
+        alt: 'The Transcript tab on a phone after tapping a number in an answer. The line at 1 minute 5 seconds, where Priya says she will send the test plan on Friday, sits in a raised card with a blue edge down its left.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-chat-1280.png'),
-        alt: 'The same chat on a wide web window, floating down the right side of the note while the note stays on the left.',
+        alt: 'The same Chat tab on a wide web window, filling the page under the tabs, with the navigation as a sidebar down the left.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-chat-empty-1280.png'),
-        alt: 'A new chat on a wide web window, with the same 3 suggested questions.',
+        alt: 'A new Chat tab on a wide web window, with the same three suggested questions above the question box.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-chat-cited-1280.png'),
-        alt: 'The Transcript tab on a wide web window with the line at 1 minute 5 seconds outlined in blue, and an Ask button beside the tabs.',
+        alt: 'The Transcript tab on a wide web window, with the line at 1 minute 5 seconds in a raised card with a blue edge, and the Summary, Transcript and Chat tabs above it.',
       },
     ],
   },
@@ -428,7 +457,7 @@ export const HELP: Record<string, HelpEntry> = {
     id: 'translation',
     title: 'Languages and translating',
     sentences: [
-      'Your account, at the bottom of Home, is where you choose the language Gyan writes in. Your summaries, your to-dos and the chat answers all use it.',
+      'More on a note, or Profile in Settings, is where you choose the language Gyan writes in. Your summaries, your to-dos and the chat answers all use it.',
       'Tap Translate to turn the note you are reading into any other language, without changing your own setting.',
       'Translated words always say "Translated by AI", because a person did not write them.',
       'Tap Show original at any time to put the first words back.',
@@ -459,12 +488,12 @@ export const HELP: Record<string, HelpEntry> = {
         // Metro needs require() for local images.
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/language-picker-390.png'),
-        alt: 'The list of languages open on a phone, each language shown in its own letters.',
+        alt: 'The list of languages open on a phone, headed Translate this summary, with each language shown in its own letters above its English name, and a Close button along the bottom.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/note-translated-390.png'),
-        alt: 'A summary in Spanish on a phone, with the words Translated by AI above it.',
+        alt: 'A summary in Spanish on a phone. A panel above it says Translated by AI, Spanish, names, numbers and times are unchanged, and offers Show original. The headings Key points, Decisions and Open questions stay in English while the words under them are Spanish.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -524,7 +553,7 @@ export const HELP: Record<string, HelpEntry> = {
         // Metro needs require() for local images.
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/recap-dialog-390.png'),
-        alt: 'The Send recap box open on a phone, listing two made up addresses with a tick box each.',
+        alt: 'The Send recap box slid up over a note on a phone, listing two made-up addresses with a tick box each — one marked you, one marked on your team, in Hindi — with Send recap and Change recap settings along the bottom.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -560,30 +589,41 @@ export const HELP: Record<string, HelpEntry> = {
     sentences: [
       'Settings is where you change things about you and about your account.',
       'Each row says what it is set to now, so you can often check something without opening it.',
+      'The rows are in two groups: your account, and how Gyan works on your behalf.',
       'Tap a row to open it. The ? button on every page explains that page.',
     ],
     lists: [
       {
-        heading: 'What is in each section',
+        heading: 'Your account',
         items: [
           'Profile: your name, your email, the language Gyan writes in, and your password.',
           'Plan and usage: which plan you are on, and how much of it you have used.',
           'Team: the people who share this account, and inviting more of them.',
-          'Recaps: who gets a recap email, and when.',
-          'Data and privacy: deleting a note, or deleting your account.',
         ],
+      },
+      {
+        heading: 'How Gyan works',
+        items: [
+          'Recaps: who gets a recap email, and when.',
+          'Security: two-factor sign in, when you are signed out, and what has happened on the account.',
+          'Data and privacy: how long notes are kept, downloading a copy, deleting a note, or deleting your account.',
+        ],
+      },
+      {
+        heading: 'Signing out',
+        items: ['Log out is at the bottom of the page, under the email you are signed in as.'],
       },
     ],
     images: [
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/settings-390.png'),
-        alt: 'The Settings list on a phone, with five rows: Profile, Plan and usage, Team, Recaps, and Data and privacy.',
+        alt: 'The Settings list on a phone, in two named groups. Your account holds Profile, Plan and usage and Team; How Gyan works holds Recaps, Security and Data and privacy, with a hairline between rows. Each row says what it is set to right now. Signed in as test.a@example.com and a Log out button sit quietly at the bottom.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/settings-1280.png'),
-        alt: 'The same Settings list on a wide web window.',
+        alt: 'The same Settings list on a wide web window, with the navigation as a sidebar down the left.',
       },
     ],
   },
@@ -642,7 +682,7 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/settings-plan-390.png'),
-        alt: 'Plan and usage on a phone, with a meter showing meetings used this month and a list of what the plan includes.',
+        alt: 'Plan and usage on a phone. One panel says Meetings used this month, 2 of 5, with a meter of five blocks and two filled, and the line 3 left. They start again on the 1st. Below it: Chat questions today 4 of 20, what the Free plan includes, and a greyed-out Upgrade — coming soon.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -815,12 +855,12 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/signup-390.png'),
-        alt: 'The Sign up screen with an Email box, a Password box, and a blue Sign up button on a phone-sized window.',
+        alt: 'The Sign up screen on a phone. Create your account is set large, with Free to start. You get 5 meetings a month under it, then one panel holding an Email box, a Password box, the line At least 12 characters, and a glowing blue Sign up button. Already have an account? Log in sits below.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/signup-1280.png'),
-        alt: 'The Sign up screen with an Email box, a Password box, and a blue Sign up button on a wide web window.',
+        alt: 'The same Sign up screen on a wide web window, with the panel and the glowing blue Sign up button laid out wider.',
       },
     ],
   },
@@ -837,12 +877,12 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/login-390.png'),
-        alt: 'The Log in screen with an Email box, a Password box, and a blue Log in button on a phone-sized window.',
+        alt: 'The Log in screen on a phone. Welcome back is set large, with Log in to see your notes under it, then one panel holding an Email box, a Password box and a glowing blue Log in button. New to Gyan? Sign up sits below.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/login-1280.png'),
-        alt: 'The Log in screen with an Email box, a Password box, and a blue Log in button on a wide web window.',
+        alt: 'The same Log in screen on a wide web window, with the panel and the glowing blue Log in button laid out wider.',
       },
     ],
   },

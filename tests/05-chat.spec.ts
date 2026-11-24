@@ -35,7 +35,9 @@ test('a note with words has a Chat tab, and it opens the chat', async ({ page })
   await openChat(page);
 
   await expect(page.getByText(/answers only from what was said in it/)).toBeVisible();
-  await expect(page.getByLabel('Your question')).toBeVisible();
+  // Exact, because getByLabel matches a SUBSTRING: while the chat is still reading itself
+  // the skeleton beside it is labelled "Reading your chat" for exactly this reason.
+  await expect(page.getByLabel('Your question', { exact: true })).toBeVisible();
 });
 
 test('the empty chat offers 3 questions to start with', async ({ page }) => {
@@ -71,7 +73,7 @@ test('typing a question of your own works too', async ({ page }) => {
   await signIn(page);
   await openChat(page);
 
-  await page.getByLabel('Your question').fill('Who tested the sign up screen?');
+  await page.getByLabel('Your question', { exact: true }).fill('Who tested the sign up screen?');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page.getByText(/agreed to ship the sign up screen on Friday/)).toBeVisible();
@@ -102,7 +104,7 @@ test('a question the note cannot answer gets an honest reply, with no chips', as
   await signIn(page);
   await openChat(page);
 
-  await page.getByLabel('Your question').fill('What is the budget for next year?');
+  await page.getByLabel('Your question', { exact: true }).fill('What is the budget for next year?');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page.getByText(/could not find that in your notes/)).toBeVisible();
@@ -128,7 +130,7 @@ test('AT THE LIMIT: a friendly message replaces the question box', async ({ page
   await signIn(page);
   await openChat(page);
 
-  await page.getByLabel('Your question').fill('One more question?');
+  await page.getByLabel('Your question', { exact: true }).fill('One more question?');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page.getByText(/used all your questions for today/)).toBeVisible();
@@ -155,7 +157,7 @@ test('a problem shows plain words and a Retry that works', async ({ page }) => {
   await signIn(page);
   await openChat(page);
 
-  await page.getByLabel('Your question').fill('What were the decisions?');
+  await page.getByLabel('Your question', { exact: true }).fill('What were the decisions?');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
 
   await expect(page.getByText(/answering service is busy/)).toBeVisible();
@@ -176,7 +178,7 @@ test('a note with no words yet cannot be asked about, and the tab says why', asy
   // The tab is not switched off. A tab you cannot press says nothing about why.
   await page.getByTestId('note-tab-chat').click();
   await expect(page.getByText('You can ask questions once this note has its words.')).toBeVisible();
-  await expect(page.getByLabel('Your question')).toBeHidden();
+  await expect(page.getByLabel('Your question', { exact: true })).toBeHidden();
 });
 
 test('leaving the Chat tab leaves the note exactly as it was', async ({ page }) => {
@@ -213,7 +215,9 @@ test('a pasted-text note shows numbered paragraphs and CAN be asked about', asyn
   await openNote(page, TEXT_NOTE_ID);
 
   await page.getByTestId('note-tab-chat').click();
-  await expect(page.getByLabel('Your question')).toBeVisible();
+  // Exact, because getByLabel matches a SUBSTRING: while the chat is still reading itself
+  // the skeleton beside it is labelled "Reading your chat" for exactly this reason.
+  await expect(page.getByLabel('Your question', { exact: true })).toBeVisible();
   await expect(page.getByText('You can ask questions once this note has its words.')).toBeHidden();
 
   await page.getByRole('tab', { name: 'Transcript' }).click();
