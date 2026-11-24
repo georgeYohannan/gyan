@@ -1,7 +1,18 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render as renderRaw, screen } from '@testing-library/react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import HomeScreen from '@/app/(app)/(home)/index';
 import { HELP } from '@/content/help';
+
+/**
+ * Draws a screen with a gesture root above it, the way the real app does.
+ *
+ * Note rows can be swiped now, and react-native-gesture-handler refuses to draw a gesture
+ * that has no `GestureHandlerRootView` above it -- a good error, because a gesture with no
+ * root silently does nothing. The real one lives at the very top of `src/app/_layout.tsx`;
+ * a test that draws one screen on its own has to supply it.
+ */
+const render = (ui: React.ReactElement) => renderRaw(<GestureHandlerRootView>{ui}</GestureHandlerRootView>);
 
 const mockSignOut = jest.fn();
 const mockPush = jest.fn();

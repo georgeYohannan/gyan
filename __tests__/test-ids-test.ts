@@ -50,6 +50,8 @@ const EXACT = [
   'home-clear-filters',
   'home-see-lines',
   'home-select',
+  'home-note-action-share',
+  'home-note-action-delete',
   'home-select-cancel',
   'home-select-delete',
   // The other four screens.
@@ -93,6 +95,9 @@ const EXACT = [
 const BUILT = [
   ['a name per sign-in screen', 'auth-screen-${mode}'],
   ['a name per note row', 'home-note-row-${note.id}'],
+  ['a name per row menu button', 'home-note-more-${note.id}'],
+  ['a name per swipe Share', 'home-note-share-${note.id}'],
+  ['a name per swipe Delete', 'home-note-delete-${note.id}'],
   ['a name per filter chip', 'home-filter-chip-${label}'],
   ['a name per help button', 'help-button-${helpId}'],
   ['a name per note tab', '${testIDPrefix}-${tab.toLowerCase()'],
@@ -121,6 +126,7 @@ describe('stable test names', () => {
     expect(text).toContain('testIDPrefix="note-tab"');
     expect(text).toContain('testIDPrefix="home-delete"');
     expect(text).toContain('testIDPrefix="note-more"');
+    expect(text).toContain('testIDPrefix="home-note-actions"');
   });
 
   test('brand blue is never used as a test name, because names are not styling', () => {

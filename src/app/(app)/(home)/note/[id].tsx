@@ -4,7 +4,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
 import { ChatBody } from '@/components/notes/chat-body';
-import { NoteMoreMenu, type MoreItem } from '@/components/notes/note-more-menu';
+
 import { LanguagePicker } from '@/components/notes/language-picker';
 import { RecapDialog } from '@/components/notes/recap-dialog';
 import { SummaryTab } from '@/components/notes/summary-tab';
@@ -13,6 +13,7 @@ import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
 import { GlassPanel } from '@/components/ui/glass-panel';
 import { Heading } from '@/components/ui/heading';
+import { ActionMenu, type ActionItem as MenuItem } from '@/components/ui/action-menu';
 import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -103,7 +104,7 @@ const POLL_MS = 3000;
 
 /** Note detail: a Summary tab, a Transcript tab, and the side chat. Mind map comes later. */
 export default function NoteDetailScreen() {
-  const { id, line } = useLocalSearchParams<{ id: string; line?: string }>();
+  const { id, line, recap } = useLocalSearchParams<{ id: string; line?: string; recap?: string }>();
   const router = useRouter();
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [tab, setTab] = useState<Tab>('Summary');
@@ -233,6 +234,15 @@ export default function NoteDetailScreen() {
     jumpTo({ n: 0, segment_id: line, start_ms: 0, speaker_label: null });
   }, [line, load.state, jumpTo]);
 
+  /**
+   * A row on Home asked to share this note, as "?recap=1".
+   *
+   * Share means "send a recap by email", because that is the only sharing Gyan has. It runs
+   * once per visit and only when there is something to send, so arriving at a half-finished
+   * note opens the note rather than an empty dialog.
+   */
+  const openedRecap = useRef(false);
+
   const lines = load.state === 'ready' ? load.lines : [];
   const passages = load.state === 'ready' ? load.passages : [];
   const isText = load.state === 'ready' && load.note.source === 'text';
@@ -309,7 +319,7 @@ export default function NoteDetailScreen() {
   }
 
   /** Everything on this page that is not reading the note. */
-  const moreItems: MoreItem[] = [
+  const moreItems: MenuItem[] = [
     {
       testID: 'note-language',
       title: `Your language: ${languageName(languageCode)}`,
@@ -350,6 +360,12 @@ export default function NoteDetailScreen() {
       },
     },
   ];
+
+  useEffect(() => {
+    if (recap !== '1' || openedRecap.current || !canSendRecap) return;
+    openedRecap.current = true;
+    setRecapOpen(true);
+  }, [recap, canSendRecap]);
 
   const translationBar = tabTranslation || translateBusy || translateError ? (
     <TranslationBar
@@ -521,7 +537,13 @@ export default function NoteDetailScreen() {
         />
       ) : null}
 
-      <NoteMoreMenu visible={moreOpen} onClose={() => setMoreOpen(false)} items={moreItems} />
+      <ActionMenu
+        visible={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        title="More"
+        testIDPrefix="note-more"
+        items={moreItems}
+      />
 
       <LanguagePicker
         title="Your language"

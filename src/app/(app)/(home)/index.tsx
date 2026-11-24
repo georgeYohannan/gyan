@@ -6,6 +6,7 @@ import { FilterSheet } from '@/components/notes/filter-sheet';
 import { NoteList } from '@/components/notes/note-list';
 import { SearchField } from '@/components/notes/search-field';
 import { UsageLine } from '@/components/notes/usage-line';
+import { ActionMenu, type ActionItem } from '@/components/ui/action-menu';
 import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -109,6 +110,8 @@ export default function HomeScreen() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string>();
   const [deleteNews, setDeleteNews] = useState<string>();
+  /** The note whose "..." menu is open, if any. One menu for the whole list, not one per row. */
+  const [acting, setActing] = useState<NoteHit>();
 
   const filters = useMemo(() => filtersFor(view), [view]);
   const searching = view.query.trim() !== '';
@@ -234,6 +237,60 @@ export default function HomeScreen() {
   };
 
   const chosen = notes.filter((n) => picked.includes(n.id));
+
+  /**
+   * Delete one note from its row.
+   *
+   * It goes through the SAME box, the same wording and the same delete as Select mode, by
+   * picking exactly one note and opening the dialog Home already has. Nothing here is new
+   * copy, and nothing can drift: the line about not getting the meeting back this month is
+   * written once.
+   */
+  const deleteOne = (note: NoteHit) => {
+    setActing(undefined);
+    setPicked([note.id]);
+    setConfirming(true);
+  };
+
+  /**
+   * Share one note.
+   *
+   * There is no per-note share link in Gyan, and inventing one here would be inventing a
+   * feature. The nearest real thing is the recap email, so Share opens the Send recap dialog
+   * on that note. docs/testing/prompt-13.md says this in plain words, because somebody
+   * reading "Share" expects a link.
+   */
+  const shareOne = (note: NoteHit) => {
+    setActing(undefined);
+    router.push({ pathname: '/note/[id]', params: { id: note.id, recap: '1' } });
+  };
+
+  const actingTitle = acting ? noteTitle(acting) : '';
+  const actionItems: ActionItem[] = acting
+    ? [
+        {
+          testID: 'home-note-action-share',
+          title: 'Send a recap by email',
+          summary:
+            acting.status === 'Ready'
+              ? 'The summary and the to-dos, to people on this account.'
+              : 'There is nothing to send until this note is finished.',
+          accessibilityLabel: `Send a recap of ${actingTitle} by email`,
+          enabled: acting.status === 'Ready',
+          onPress: () => shareOne(acting),
+        },
+        {
+          testID: 'home-note-action-delete',
+          title: 'Delete this note',
+          summary: acting.canDelete
+            ? 'The transcript, summary, to-dos and chat go too.'
+            : 'Somebody else made this note, so you cannot delete it.',
+          accessibilityLabel: `Delete ${actingTitle}`,
+          enabled: !!acting.canDelete,
+          onPress: () => deleteOne(acting),
+        },
+      ]
+    : [];
 
   const doDelete = () => {
     setDeleting(true);
@@ -491,8 +548,19 @@ export default function HomeScreen() {
           more={more}
           loadingMore={loadingMore}
           onShowMore={showMore}
+          onMore={setActing}
+          onShare={shareOne}
+          onDelete={deleteOne}
         />
       )}
+
+      <ActionMenu
+        visible={!!acting}
+        onClose={() => setActing(undefined)}
+        title={actingTitle}
+        testIDPrefix="home-note-actions"
+        items={actionItems}
+      />
 
       <FilterSheet
         visible={filtersOpen}

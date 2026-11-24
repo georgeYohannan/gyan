@@ -5,7 +5,7 @@ import { Heading } from '@/components/ui/heading';
 import { SlidePanel } from '@/components/ui/slide-panel';
 import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 
-export type MoreItem = {
+export type ActionItem = {
   testID: string;
   title: string;
   /** What this does, or -- when it cannot be done yet -- why not. */
@@ -16,34 +16,34 @@ export type MoreItem = {
 };
 
 /**
- * Everything on the note page that is not reading it.
+ * A short list of things you can do, in a panel that comes in over the page.
  *
- * The note page used to carry two tabs and four round-ended buttons on one line: Language,
- * Translate, Ask and Send recap. On a phone that pushed the page sideways, which
- * docs/decisions.md recorded at the time as a thing to fix. Ask became the third tab, and the
- * other three live here -- so the line above a note is two things now, the tabs and this,
- * instead of six.
- *
- * The rows keep the names the buttons had (`note-language`, `note-translate`,
- * `note-send-recap`), because what they DO has not changed and a name is for the purpose, not
- * the place.
+ * Two places use it. The note page puts Language, Translate and Send recap behind one "More",
+ * because that line used to carry six things and pushed the page sideways on a phone. A note
+ * row on Home puts Share and Delete behind one "..." -- which is also the way anybody who is
+ * not swiping reaches those two.
  *
  * A row that cannot be used yet is not simply greyed out: it says why in its own line, which
  * is the one thing a disabled button can never do.
  */
-export function NoteMoreMenu({
+export function ActionMenu({
   visible,
   onClose,
+  title,
+  testIDPrefix,
   items,
 }: {
   visible: boolean;
   onClose: () => void;
-  items: MoreItem[];
+  /** What this menu is about: "More", or the name of the note it belongs to. */
+  title: string;
+  testIDPrefix: string;
+  items: ActionItem[];
 }) {
   return (
-    <SlidePanel visible={visible} onClose={onClose} label="More" testIDPrefix="note-more">
+    <SlidePanel visible={visible} onClose={onClose} label={title} testIDPrefix={testIDPrefix}>
       <ScrollView contentContainerStyle={{ padding: Spacing.four, gap: Spacing.three }}>
-        <Heading level={3}>More</Heading>
+        <Heading level={3}>{title}</Heading>
 
         <View>
           {items.map((item, i) => (

@@ -44,6 +44,10 @@ type NoteListProps = {
   more: boolean;
   loadingMore: boolean;
   onShowMore: () => void;
+  /** Open the two things you can do to one note. One menu for the whole list, not one each. */
+  onMore: (note: NoteHit) => void;
+  onShare: (note: NoteHit) => void;
+  onDelete: (note: NoteHit) => void;
 };
 
 /**
@@ -63,6 +67,9 @@ export function NoteList({
   more,
   loadingMore,
   onShowMore,
+  onMore,
+  onShare,
+  onDelete,
 }: NoteListProps) {
   const entries = groupByDay(notes, searching);
 
@@ -102,6 +109,11 @@ export function NoteList({
             hasOpenActions={entry.note.hasOpenActions}
             snippetStartMs={entry.note.snippetStartMs}
             snippetSegmentId={entry.note.snippetSegmentId}
+            onMore={() => onMore(entry.note)}
+            onShare={() => onShare(entry.note)}
+            canShare={entry.note.status === 'Ready'}
+            canDelete={entry.note.canDelete}
+            onDelete={() => onDelete(entry.note)}
           />
         );
       })}

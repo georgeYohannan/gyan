@@ -21,6 +21,7 @@ import { DarkTheme, Stack, ThemeProvider, useRouter, type Theme } from 'expo-rou
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/splash-overlay';
 import { Colors, FontFamily } from '@/constants/theme';
@@ -63,15 +64,19 @@ export default function TabLayout() {
   }
 
   return (
-    <ThemeProvider value={GyanTheme}>
-      <StatusBar style="light" />
-      <AnimatedSplashOverlay />
-      <AuthProvider>
-        <ProfileProvider>
-          <RootNavigator />
-        </ProfileProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    // Outermost, and NOT inside (app)/_layout: React Native draws a Modal in its own host, so
+    // a gesture inside one only works if this sits above it. It is a plain View on the web.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={GyanTheme}>
+        <StatusBar style="light" />
+        <AnimatedSplashOverlay />
+        <AuthProvider>
+          <ProfileProvider>
+            <RootNavigator />
+          </ProfileProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
