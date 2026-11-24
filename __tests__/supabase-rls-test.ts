@@ -21,12 +21,26 @@ import path from 'path';
  * The Expo test setup replaces the global fetch with a stand-in that does no network calls.
  * This test must really talk to Supabase, so it uses this small fetch built on Node's https.
  */
+/**
+ * One socket pool, which this file owns and closes itself.
+ *
+ * Node keeps connections alive between requests, which is what makes 48 live calls take
+ * seconds rather than minutes. The cost is that an open socket keeps the process awake:
+ * without the afterAll below, every test passes and then Jest sits there for ever saying
+ * nothing, and the only way out is Ctrl+C.
+ */
+const pool = new https.Agent({ keepAlive: true });
+
+afterAll(() => {
+  pool.destroy();
+});
+
 const realFetch: typeof fetch = (input, init) =>
   new Promise((resolve, reject) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
     const headers: Record<string, string> = {};
     new Headers(init?.headers).forEach((value, name) => (headers[name] = value));
-    const req = https.request(url, { method: init?.method ?? 'GET', headers }, (res) => {
+    const req = https.request(url, { agent: pool, method: init?.method ?? 'GET', headers }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
@@ -373,7 +387,12 @@ maybe('Supabase test project: privacy between users', () => {
   });
 
   test('signed out visitors cannot read anything', async () => {
-    const anon = createClient(url!, key!, { global: { fetch: realFetch }, auth: { persistSession: false } });
+    // autoRefreshToken off like every other client here: a refresh timer left running is
+    // the other thing that stops Jest exiting after a clean run.
+    const anon = createClient(url!, key!, {
+      global: { fetch: realFetch },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
     const plans = await anon.from('plans').select('id');
     expect(plans.error ?? plans.data?.length === 0).toBeTruthy();
     const profiles = await anon.from('profiles').select('id');
