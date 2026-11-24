@@ -13,6 +13,11 @@ type SearchFieldProps = {
   label?: string;
   autoFocus?: boolean;
   onSubmit?: () => void;
+  /**
+   * Start of a stable name for tests. The box becomes `<prefix>-field` and the clear
+   * button `<prefix>-clear`, so a test can type and clear without knowing the words.
+   */
+  testIDPrefix?: string;
 };
 
 /**
@@ -30,6 +35,7 @@ export function SearchField({
   label = 'Search your notes',
   autoFocus,
   onSubmit,
+  testIDPrefix = 'search',
 }: SearchFieldProps) {
   const [focused, setFocused] = useState(false);
 
@@ -59,6 +65,7 @@ export function SearchField({
         {'⌕'}
       </Body>
       <TextInput
+        testID={`${testIDPrefix}-field`}
         accessibilityLabel={label}
         value={value}
         onChangeText={onChange}
@@ -84,6 +91,7 @@ export function SearchField({
       />
       {value !== '' ? (
         <Pressable
+          testID={`${testIDPrefix}-clear`}
           accessibilityRole="button"
           accessibilityLabel="Clear the search"
           onPress={() => onChange('')}

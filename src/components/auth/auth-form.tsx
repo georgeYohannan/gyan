@@ -87,7 +87,7 @@ export function AuthForm({
   }
 
   return (
-    <Screen>
+    <Screen testID={`auth-screen-${mode}`}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
         <View style={{ flex: 1 }}>
           <Heading level={1}>{w.title}</Heading>
@@ -98,6 +98,7 @@ export function AuthForm({
 
       <GlassPanel style={{ gap: Spacing.three }}>
         <TextField
+          testID="auth-email"
           label="Email"
           value={email}
           onChangeText={setEmail}
@@ -110,6 +111,7 @@ export function AuthForm({
           placeholder="name@example.com"
         />
         <TextField
+          testID="auth-password"
           label="Password"
           value={password}
           onChangeText={setPassword}
@@ -135,12 +137,12 @@ export function AuthForm({
             {notice}
           </Body>
         ) : null}
-        <Button label={w.button} loading={busy} onPress={submit} />
+        <Button testID="auth-submit" label={w.button} loading={busy} onPress={submit} />
       </GlassPanel>
 
       <View style={{ flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' }}>
         <Body color="textSecondary">{w.switchText}</Body>
-        <Link href={w.switchHref} accessibilityRole="link">
+        <Link testID="auth-switch-mode" href={w.switchHref} accessibilityRole="link">
           <Body color="link">{w.switchLabel}</Body>
         </Link>
       </View>

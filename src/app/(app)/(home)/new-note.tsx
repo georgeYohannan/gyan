@@ -139,7 +139,7 @@ export default function NewNoteScreen() {
   const progress = phase.name === 'preparing' || phase.name === 'uploading' ? phase.fraction : undefined;
 
   return (
-    <Screen>
+    <Screen testID="new-note-screen">
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
         <View style={{ flex: 1 }}>
           <Heading level={1}>New note</Heading>
@@ -156,8 +156,15 @@ export default function NewNoteScreen() {
       ) : null}
 
       <View style={{ gap: Spacing.three }}>
-        <ChoiceCard title="Record" description="Record a conversation with your phone." disabled disabledLabel="Coming soon" />
         <ChoiceCard
+          testID="new-note-record"
+          title="Record"
+          description="Record a conversation with your phone."
+          disabled
+          disabledLabel="Coming soon"
+        />
+        <ChoiceCard
+          testID="new-note-upload"
           title="Upload"
           description="Audio, video, or a text file."
           selected={mode === 'upload'}
@@ -169,6 +176,7 @@ export default function NewNoteScreen() {
           }}
         />
         <ChoiceCard
+          testID="new-note-paste"
           title="Paste text"
           description="Paste a transcript or your own notes."
           selected={mode === 'text'}
@@ -178,7 +186,13 @@ export default function NewNoteScreen() {
             setPhase({ name: 'idle' });
           }}
         />
-        <ChoiceCard title="Meeting link" description="Send a bot to a Zoom, Meet, or Teams call." disabled disabledLabel="Coming soon" />
+        <ChoiceCard
+          testID="new-note-meeting-link"
+          title="Meeting link"
+          description="Send a bot to a Zoom, Meet, or Teams call."
+          disabled
+          disabledLabel="Coming soon"
+        />
       </View>
 
       {mode === 'upload' && !limitReached ? (
@@ -190,8 +204,15 @@ export default function NewNoteScreen() {
 
       {mode === 'text' ? (
         <GlassPanel style={{ gap: Spacing.three }}>
-          <TextField label="Title (optional)" value={title} onChangeText={setTitle} editable={!busy} />
           <TextField
+            testID="new-note-title"
+            label="Title (optional)"
+            value={title}
+            onChangeText={setTitle}
+            editable={!busy}
+          />
+          <TextField
+            testID="new-note-text"
             label="Your text"
             value={text}
             onChangeText={setText}
@@ -200,7 +221,7 @@ export default function NewNoteScreen() {
             error={fieldError}
             numberOfLines={8}
           />
-          <Button label="Add note" disabled={busy} onPress={submitText} />
+          <Button testID="new-note-add" label="Add note" disabled={busy} onPress={submitText} />
         </GlassPanel>
       ) : null}
 

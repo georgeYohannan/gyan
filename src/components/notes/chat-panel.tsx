@@ -191,7 +191,12 @@ export function ChatPanel({ meetingId, visible, onClose, onJump }: ChatPanelProp
     <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: side ? 'flex-start' : 'flex-end', alignItems: side ? 'flex-end' : 'stretch' }}>
       <Animated.View style={[{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#000' }, backdropStyle]}>
-        <Pressable accessibilityLabel="Close chat" style={{ flex: 1 }} onPress={onClose} />
+        <Pressable
+          testID="chat-backdrop"
+          accessibilityLabel="Close chat"
+          style={{ flex: 1 }}
+          onPress={onClose}
+        />
       </Animated.View>
 
       <Animated.View
@@ -221,6 +226,7 @@ export function ChatPanel({ meetingId, visible, onClose, onJump }: ChatPanelProp
               <HelpButton helpId="noteChat" />
               <Pressable
                 accessibilityRole="button"
+                testID="chat-close"
                 accessibilityLabel="Close chat"
                 onPress={onClose}
                 style={{ minHeight: MinTouchTarget, minWidth: MinTouchTarget, alignItems: 'center', justifyContent: 'center' }}>

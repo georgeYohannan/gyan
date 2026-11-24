@@ -83,7 +83,7 @@ export default function SettingsScreen() {
   const name = displayName.trim() === '' ? email.split('@')[0] : displayName;
 
   return (
-    <Screen>
+    <Screen testID="settings-screen">
       <View
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
         <View style={{ flex: 1 }}>
@@ -101,11 +101,13 @@ export default function SettingsScreen() {
       ) : (
         <GlassPanel>
           <NavRow
+            testID="settings-row-profile"
             title="Profile"
             summary={`${name}. Gyan writes in ${languageName(languageCode)}.`}
             href="/settings/profile"
           />
           <NavRow
+            testID="settings-row-plan"
             title="Plan and usage"
             summary={
               plan
@@ -115,21 +117,25 @@ export default function SettingsScreen() {
             href="/settings/plan"
           />
           <NavRow
+            testID="settings-row-team"
             title="Team"
             summary={team ? seatsSentence(team) : 'The people who share this account.'}
             href="/settings/team"
           />
           <NavRow
+            testID="settings-row-recaps"
             title="Recaps"
             summary={shortRecipients(recap)}
             href="/settings/recaps"
           />
           <NavRow
+            testID="settings-row-security"
             title="Security"
             summary={securitySummary(security, twoFactor)}
             href="/settings/security"
           />
           <NavRow
+            testID="settings-row-data"
             title="Data and privacy"
             summary="Delete a note, or delete your account."
             href="/settings/data"
@@ -145,7 +151,7 @@ export default function SettingsScreen() {
             {logOutError}
           </Body>
         ) : null}
-        <Button label="Log out" variant="secondary" loading={busy} onPress={logOut} />
+        <Button testID="settings-log-out" label="Log out" variant="secondary" loading={busy} onPress={logOut} />
       </GlassPanel>
 
       <View style={{ height: Spacing.six }} />

@@ -311,10 +311,11 @@ export default function NoteDetailScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <Screen scrollRef={pageRef}>
+      <Screen testID="note-screen" scrollRef={pageRef}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
           <Pressable
             accessibilityRole="button"
+            testID="note-back"
             accessibilityLabel="Back to Home"
             onPress={() => router.replace('/')}
             style={{ minHeight: MinTouchTarget, minWidth: MinTouchTarget, justifyContent: 'center' }}>
@@ -356,6 +357,7 @@ export default function NoteDetailScreen() {
             <View style={{ gap: Spacing.two }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two, flexWrap: 'wrap' }}>
                 <TabBar
+                  testIDPrefix="note-tab"
                   tabs={TABS}
                   selected={tab}
                   onSelect={(next) => {
@@ -374,24 +376,28 @@ export default function NoteDetailScreen() {
                     flexShrink: 1,
                   }}>
                   <Pill
+                    testID="note-language"
                     label={`Language: ${languageName(languageCode)}`}
                     accessibilityLabel={`Your language: ${languageName(languageCode)}`}
                     tone="quiet"
                     onPress={() => setPicker('mine')}
                   />
                   <Pill
+                    testID="note-translate"
                     label="Translate"
                     accessibilityLabel={`Translate this ${tab.toLowerCase()}`}
                     enabled={canTranslate}
                     onPress={() => setPicker('translate')}
                   />
                   <Pill
+                    testID="note-ask"
                     label="Ask"
                     accessibilityLabel="Ask about this note"
                     enabled={canAsk}
                     onPress={() => setChatOpen(true)}
                   />
                   <Pill
+                    testID="note-send-recap"
                     label="Send recap"
                     accessibilityLabel="Send a recap of this note by email"
                     enabled={canSendRecap}
@@ -495,16 +501,19 @@ function Pill({
   onPress,
   enabled = true,
   tone = 'action',
+  testID,
 }: {
   label: string;
   accessibilityLabel: string;
   onPress: () => void;
   enabled?: boolean;
   tone?: 'action' | 'quiet';
+  testID?: string;
 }) {
   const quiet = tone === 'quiet';
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: !enabled }}

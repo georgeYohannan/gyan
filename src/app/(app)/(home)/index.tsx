@@ -250,7 +250,7 @@ export default function HomeScreen() {
   const more = load.state === 'ready' && load.notes.length < load.total;
 
   return (
-    <Screen>
+    <Screen testID="home-screen">
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
         <View style={{ flex: 1 }}>
           <Heading level={1}>Home</Heading>
@@ -260,16 +260,17 @@ export default function HomeScreen() {
 
       <UsagePanel usage={usage} loading={load.state === 'loading' && !usage} />
 
-      <Button label="New note" onPress={() => router.push('/new-note')} />
+      <Button testID="home-new-note" label="New note" onPress={() => router.push('/new-note')} />
 
       {/* Hidden only when this person genuinely has no notes at all. Searching nothing, and
           filtering a list that does not exist, would just crowd the one thing worth doing. */}
       {load.state === 'ready' && load.total === 0 && !narrowed ? null : (
       <View style={{ gap: Spacing.two }}>
-        <SearchField value={typed} onChange={typeInto} />
+        <SearchField value={typed} onChange={typeInto} testIDPrefix="home-search" />
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two }}>
           <Pressable
+            testID="home-filters"
             accessibilityRole="button"
             accessibilityLabel={onFilters === 0 ? 'Filters' : `Filters, ${onFilters} on`}
             onPress={() => setFiltersOpen(true)}
@@ -312,6 +313,7 @@ export default function HomeScreen() {
 
           {narrowed ? (
             <Pressable
+              testID="home-clear-filters"
               accessibilityRole="button"
               accessibilityLabel="Clear filters"
               onPress={clearAll}
@@ -346,6 +348,7 @@ export default function HomeScreen() {
                 that is exactly when looking line by line is the useful next thing to try. */}
             {searching ? (
               <Pressable
+                testID="home-see-lines"
                 accessibilityRole="link"
                 accessibilityLabel="See every matching line"
                 onPress={() => router.push({ pathname: '/search', params: { q: view.query } })}
@@ -362,6 +365,7 @@ export default function HomeScreen() {
               selecting ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.three }}>
                   <Pressable
+                    testID="home-select-cancel"
                     accessibilityRole="button"
                     accessibilityLabel="Cancel selecting"
                     onPress={stopSelecting}
@@ -371,6 +375,7 @@ export default function HomeScreen() {
                     </Body>
                   </Pressable>
                   <Pressable
+                    testID="home-select-delete"
                     accessibilityRole="button"
                     accessibilityLabel="Delete selected notes"
                     accessibilityState={{ disabled: picked.length === 0 }}
@@ -384,6 +389,7 @@ export default function HomeScreen() {
                 </View>
               ) : (
                 <Pressable
+                  testID="home-select"
                   accessibilityRole="button"
                   accessibilityLabel="Select notes"
                   onPress={() => setSelecting(true)}
@@ -493,6 +499,7 @@ export default function HomeScreen() {
       />
 
       <ConfirmDialog
+        testIDPrefix="home-delete"
         visible={confirming}
         title={chosen.length === 1 ? 'Delete this note?' : `Delete ${chosen.length} notes?`}
         // Which notes go in the message, and what that means in the list below it. Putting the
@@ -535,6 +542,7 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   return (
     <Pressable
       accessibilityRole="button"
+      testID={`home-filter-chip-${label}`}
       accessibilityLabel={`Remove the ${label} filter`}
       onPress={onRemove}
       style={({ pressed }) => ({

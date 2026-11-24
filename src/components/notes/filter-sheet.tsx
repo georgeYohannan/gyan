@@ -95,7 +95,12 @@ export function FilterSheet({ visible, view, onApply, onClose, onClear, now = ne
             { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
             backdropStyle,
           ]}>
-          <Pressable accessibilityLabel="Close the filters" style={{ flex: 1 }} onPress={onClose} />
+          <Pressable
+            testID="filters-backdrop"
+            accessibilityLabel="Close the filters"
+            style={{ flex: 1 }}
+            onPress={onClose}
+          />
         </Animated.View>
 
         <Animated.View

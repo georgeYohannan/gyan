@@ -78,6 +78,10 @@ export function NoteRow({ note, ...extras }: { note: Note } & NoteRowExtras) {
 
   return (
     <Pressable
+      // Built from the note's own id, so a test can count rows and press one by name
+      // however the row is drawn. Counting by the title broke the moment a redesign
+      // repeated the title anywhere else in the row.
+      testID={`home-note-row-${note.id}`}
       accessibilityRole={selectable ? 'checkbox' : 'link'}
       accessibilityState={selectable ? { checked: !!selected, disabled: !!cannotSelect } : undefined}
       accessibilityLabel={spoken}

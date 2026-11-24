@@ -15,10 +15,18 @@ type ActionItemRowProps = {
   saving?: boolean;
   /** The language the words are in. Set when a translation is on screen. */
   language?: string;
+  /** A stable name for tests, so a visual change does not break them. */
+  testID?: string;
 };
 
 /** One to-do, with a tick box big enough for a thumb (44 by 44). */
-export function ActionItemRow({ item, onToggle, saving, language = DEFAULT_LANGUAGE }: ActionItemRowProps) {
+export function ActionItemRow({
+  item,
+  onToggle,
+  saving,
+  language = DEFAULT_LANGUAGE,
+  testID,
+}: ActionItemRowProps) {
   const extras: string[] = [];
   if (item.owner_name?.trim()) extras.push(item.owner_name.trim());
   if (item.due_text?.trim()) extras.push(item.due_text.trim());
@@ -26,6 +34,7 @@ export function ActionItemRow({ item, onToggle, saving, language = DEFAULT_LANGU
 
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="checkbox"
       accessibilityLabel={item.text}
       accessibilityState={{ checked: item.done, busy: !!saving, disabled: !!saving }}

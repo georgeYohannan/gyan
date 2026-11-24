@@ -10,6 +10,8 @@ type NavRowProps = {
   /** What is set in there right now, in a few words, so you can often skip going in. */
   summary: string;
   href: string;
+  /** A stable name for tests, so a visual change does not break them. */
+  testID?: string;
 };
 
 /**
@@ -19,10 +21,11 @@ type NavRowProps = {
  * rather than the setting itself. The quiet line underneath is what saves a trip: somebody
  * checking who gets recap emails can often read the answer without opening anything.
  */
-export function NavRow({ title, summary, href }: NavRowProps) {
+export function NavRow({ title, summary, href, testID }: NavRowProps) {
   const router = useRouter();
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="link"
       accessibilityLabel={`${title}. ${summary}`}
       onPress={() => router.push(href as never)}

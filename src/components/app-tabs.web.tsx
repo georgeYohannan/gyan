@@ -23,10 +23,10 @@ export default function AppTabs() {
       <TabList asChild>
         <CustomTabList>
           <TabTrigger name="(home)" href="/" asChild>
-            <TabButton>Home</TabButton>
+            <TabButton testID="nav-home">Home</TabButton>
           </TabTrigger>
           <TabTrigger name="settings" href="/settings" asChild>
-            <TabButton>Settings</TabButton>
+            <TabButton testID="nav-settings">Settings</TabButton>
           </TabTrigger>
           {/* Builders-only page at /design. It has a route but no button in the bar. */}
           <TabTrigger name="design" href="/design" style={{ display: 'none' }} />
@@ -36,9 +36,12 @@ export default function AppTabs() {
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+export function TabButton({ children, isFocused, testID, ...props }: TabTriggerSlotProps & { testID?: string }) {
   return (
-    <Pressable {...(props as PressableProps)} style={({ pressed }) => pressed && styles.pressed}>
+    <Pressable
+      {...(props as PressableProps)}
+      testID={testID}
+      style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
         style={styles.tabButtonView}>

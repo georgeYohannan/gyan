@@ -17,10 +17,11 @@ const look: Record<Status, { fill: string; border: string; text: 'text' | 'link'
 };
 
 /** A small pill that says where a note is in its journey. Always shows the word, not just a color. */
-export function StatusBadge({ status }: { status: Status }) {
+export function StatusBadge({ status, testID }: { status: Status; testID?: string }) {
   const v = look[status];
   return (
     <View
+      testID={testID}
       accessibilityLabel={`Status: ${status}`}
       style={{
         alignSelf: 'flex-start',

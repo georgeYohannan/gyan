@@ -88,7 +88,7 @@ export default function SearchScreen() {
   const more = load.state === 'ready' && load.passages.length < load.total;
 
   return (
-    <Screen>
+    <Screen testID="search-screen">
       <BackLink label="Home" href="/" helpId="search" />
 
       <View style={{ gap: Spacing.two }}>

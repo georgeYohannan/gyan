@@ -179,7 +179,12 @@ export function RecapDialog({ meetingId, visible, onClose, noteLanguage, onOpenS
     <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: side ? 'flex-start' : 'flex-end', alignItems: side ? 'flex-end' : 'stretch' }}>
         <Animated.View style={[{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.55)' }, backdropStyle]}>
-          <Pressable accessibilityLabel="Close the recap dialog" style={{ flex: 1 }} onPress={onClose} />
+          <Pressable
+            testID="recap-backdrop"
+            accessibilityLabel="Close the recap dialog"
+            style={{ flex: 1 }}
+            onPress={onClose}
+          />
         </Animated.View>
 
         <Animated.View
