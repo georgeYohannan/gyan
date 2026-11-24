@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'rea
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
+import { ChatBody } from '@/components/notes/chat-body';
 import { ChatPanel } from '@/components/notes/chat-panel';
 import { LanguagePicker } from '@/components/notes/language-picker';
 import { RecapDialog } from '@/components/notes/recap-dialog';
@@ -55,11 +56,18 @@ type Ready = {
 
 type Load = { state: 'loading' } | { state: 'error' } | { state: 'missing' } | Ready;
 
-const TABS = ['Summary', 'Transcript'] as const;
+const TABS = ['Summary', 'Transcript', 'Chat'] as const;
 type Tab = (typeof TABS)[number];
 
-/** Each tab translates its own thing. */
-const KIND_FOR_TAB: Record<Tab, TranslateKind> = { Summary: 'summary', Transcript: 'transcript' };
+/**
+ * Each tab translates its own thing -- and Chat translates nothing.
+ *
+ * This map used to be a `Record<Tab, ...>`, so adding Chat was a compile error until the
+ * question "what does translating a conversation mean?" had an answer. It means nothing: a
+ * chat is written in your own language already, because Gyan answers in it. So Chat is left
+ * out of the map and the Translate button is off while that tab is open.
+ */
+const KIND_FOR_TAB: Partial<Record<Tab, TranslateKind>> = { Summary: 'summary', Transcript: 'transcript' };
 
 /** One tab's translation: the language it is in, and the words. */
 type TabTranslation = { language: string; content: TranslationContent };
@@ -229,8 +237,9 @@ export default function NoteDetailScreen() {
   const canAsk = lines.length > 0 || passages.length > 0;
 
   const summary = load.state === 'ready' ? load.summary : undefined;
-  // The Summary tab can be translated once a summary exists. The Transcript tab, once it has words.
-  const canTranslate = tab === 'Summary' ? !!summary : canAsk;
+  // The Summary tab can be translated once a summary exists. The Transcript tab, once it has
+  // words. The Chat tab, never.
+  const canTranslate = tab === 'Summary' ? !!summary : tab === 'Transcript' ? canAsk : false;
   // There is only something worth emailing once the note is finished and has a summary.
   const canSendRecap = load.state === 'ready' && load.note.status === 'Ready' && !!summary;
   /** The language the words on this tab are already in. */
@@ -257,6 +266,7 @@ export default function NoteDetailScreen() {
   async function pickTranslation(code: string) {
     if (!id) return;
     const kind = KIND_FOR_TAB[tab];
+    if (!kind) return;
     const language = baseCode(code);
     setPicker(undefined);
     setTranslateError(undefined);
@@ -311,7 +321,15 @@ export default function NoteDetailScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <Screen testID="note-screen" scrollRef={pageRef}>
+      {/* The Chat tab does its own scrolling, so the page must not. Two scrolling things
+          inside each other on a phone walks the question box off the bottom of the screen --
+          and that is the likeliest place for this whole redesign to go wrong, so it is said
+          out loud here rather than left to be discovered. */}
+      <Screen
+        testID="note-screen"
+        scrollRef={pageRef}
+        scroll={tab !== 'Chat'}
+        style={tab === 'Chat' ? { flex: 1 } : undefined}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
           <Pressable
             accessibilityRole="button"
@@ -432,7 +450,7 @@ export default function NoteDetailScreen() {
                 translationLanguage={tabTranslation?.language}
                 translationBar={translationBar}
               />
-            ) : (
+            ) : tab === 'Transcript' ? (
               <TranscriptTab
                 note={load.note}
                 lines={load.lines}
@@ -448,7 +466,22 @@ export default function NoteDetailScreen() {
                 translationLanguage={tabTranslation?.language}
                 translationBar={translationBar}
               />
-            )}
+            ) : canAsk && id ? (
+              <View
+                style={{
+                  flex: 1,
+                  minHeight: 320,
+                  borderWidth: 1,
+                  borderColor: Colors.glassBorder,
+                  borderRadius: Radius.panel,
+                  overflow: 'hidden',
+                }}>
+                {/* Coming back to this tab reads the conversation from the database again,
+                    which is where it lives -- so a refresh, a different device and a trip to
+                    the Transcript and back all show the same thing. */}
+                <ChatBody testID="note-chat" meetingId={id} active onJump={jumpTo} />
+              </View>
+            ) : null}
           </>
         )}
       </Screen>
