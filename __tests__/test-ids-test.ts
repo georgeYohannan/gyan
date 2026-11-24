@@ -73,6 +73,7 @@ const EXACT = [
   'note-screen',
   'note-chat',
   'note-back',
+  'note-more',
   'note-language',
   'note-translate',
   'note-send-recap',
@@ -97,13 +98,17 @@ const BUILT = [
   ['a name per note tab', '${testIDPrefix}-${tab.toLowerCase()'],
   ['a name per search box', '${testIDPrefix}-field'],
   ['a name per confirm dialog', '${testIDPrefix}-confirm'],
+  ['a name per slide panel backdrop', '${testIDPrefix}-backdrop'],
 ] as const;
 
 describe('stable test names', () => {
   const text = sourceText();
 
   test.each(EXACT)('%s is still in the app', (id) => {
-    expect(text).toContain(`"${id}`);
+    // Either quote. Most names are written as a JSX attribute, `testID="note-back"`, but the
+    // ones the "More" menu is built from are values in an array of items, where the project's
+    // own style is single quotes. A name is a name whichever way it is written down.
+    expect(`${text.includes(`"${id}`)}|${text.includes(`'${id}'`)}`).not.toBe('false|false');
   });
 
   test.each(BUILT)('%s is still built (%s)', (_what, snippet) => {
@@ -115,6 +120,7 @@ describe('stable test names', () => {
     expect(text).toContain('testIDPrefix="home-search"');
     expect(text).toContain('testIDPrefix="note-tab"');
     expect(text).toContain('testIDPrefix="home-delete"');
+    expect(text).toContain('testIDPrefix="note-more"');
   });
 
   test('brand blue is never used as a test name, because names are not styling', () => {

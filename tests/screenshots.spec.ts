@@ -140,6 +140,7 @@ async function shootTranslate(
 
   if (options.tab === 'Transcript') await page.getByRole('tab', { name: 'Transcript' }).click();
   const tab = (options.tab ?? 'Summary').toLowerCase();
+  await page.getByTestId('note-more').click();
   await page.getByTestId('note-translate').click();
   await expect(page.getByRole('heading', { name: `Translate this ${tab}` })).toBeVisible();
 
@@ -212,6 +213,7 @@ async function shootRecap(
   await installFakes(page, data);
   await signIn(page);
   await openNote(page);
+  await page.getByTestId('note-more').click();
   await page.getByTestId('note-send-recap').click();
   await expect(page.getByRole('heading', { name: 'Send recap' })).toBeVisible();
   await page.waitForTimeout(700); // let the panel finish sliding in

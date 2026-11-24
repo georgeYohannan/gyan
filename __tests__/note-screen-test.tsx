@@ -442,6 +442,20 @@ describe('help for the note screen', () => {
   });
 });
 
+/**
+ * Opens the "More" menu, which is where Language, Translate and Send recap live now.
+ *
+ * They used to be three buttons on the line above the note, beside the tabs. The line had
+ * grown to six things and pushed the page sideways on a phone, so everything that is not
+ * reading the note moved behind one button. The actions themselves are unchanged -- same
+ * names, same labels, same behaviour -- so these tests gained one press each and nothing more.
+ */
+async function openMore() {
+  await act(async () => {
+    fireEvent.press(await screen.findByTestId('note-more'));
+  });
+}
+
 describe('<NoteDetailScreen /> the Chat tab', () => {
   const CHAT = [
     { id: 'c1', role: 'user' as const, content: 'What were the decisions?', sources: [], created_at: 'x' },
@@ -668,6 +682,7 @@ describe('<NoteDetailScreen /> your language', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Your language: English' }));
     });
@@ -680,6 +695,7 @@ describe('<NoteDetailScreen /> your language', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Your language: English' }));
     });
@@ -689,12 +705,13 @@ describe('<NoteDetailScreen /> your language', () => {
     expect(mockSetLanguage).toHaveBeenCalledWith('hi');
   });
 
-  test('a language that is already saved shows on the pill after a reload', async () => {
+  test('a language that is already saved shows in the menu after a reload', async () => {
     mockMyLanguage = 'ja';
     mockGetNote.mockResolvedValue(note());
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     expect(await screen.findByRole('button', { name: 'Your language: Japanese' })).toBeTruthy();
   });
 });
@@ -720,18 +737,23 @@ describe('<NoteDetailScreen /> translating', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Translate this summary' }));
     });
   }
 
-  test('the Translate button is off until there is something to translate', async () => {
+  test('Translate is off until there is something to translate, and says why', async () => {
     mockGetNote.mockResolvedValue(note({ status: 'Queued' }));
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     const button = await screen.findByRole('button', { name: 'Translate this summary' });
     expect(button.props.accessibilityState).toMatchObject({ disabled: true });
+    // A row that cannot be used says why, which is the one thing a greyed-out button cannot.
+    expect(screen.getByText('There is nothing to translate yet.')).toBeTruthy();
   });
 
   test('a translated summary shows the Spanish words and says it was translated by AI', async () => {
@@ -824,6 +846,7 @@ describe('<NoteDetailScreen /> translating', () => {
       await render(<NoteDetailScreen />);
     });
     await openTranscript();
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Translate this transcript' }));
     });
@@ -862,6 +885,7 @@ describe('<NoteDetailScreen /> translating', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Translate this summary' }));
     });
@@ -917,6 +941,7 @@ describe('<NoteDetailScreen /> sending a recap', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     const button = await screen.findByLabelText('Send a recap of this note by email');
     expect(button.props.accessibilityState.disabled).toBe(false);
   });
@@ -928,10 +953,14 @@ describe('<NoteDetailScreen /> sending a recap', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     expect(
       (await screen.findByLabelText('Send a recap of this note by email')).props.accessibilityState
         .disabled,
     ).toBe(true);
+    expect(
+      screen.getByText('There is nothing to send until this note is finished and has a summary.'),
+    ).toBeTruthy();
   });
 
   test('a note that is still being made has nothing to send either', async () => {
@@ -940,6 +969,7 @@ describe('<NoteDetailScreen /> sending a recap', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     expect(
       (await screen.findByLabelText('Send a recap of this note by email')).props.accessibilityState
         .disabled,
@@ -953,6 +983,7 @@ describe('<NoteDetailScreen /> sending a recap', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     await act(async () =>
       fireEvent.press(await screen.findByLabelText('Send a recap of this note by email')),
     );

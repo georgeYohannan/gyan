@@ -4,6 +4,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
 import { ChatBody } from '@/components/notes/chat-body';
+import { NoteMoreMenu, type MoreItem } from '@/components/notes/note-more-menu';
 import { LanguagePicker } from '@/components/notes/language-picker';
 import { RecapDialog } from '@/components/notes/recap-dialog';
 import { SummaryTab } from '@/components/notes/summary-tab';
@@ -111,6 +112,7 @@ export default function NoteDetailScreen() {
   const [savingItemId, setSavingItemId] = useState<string>();
   const [itemError, setItemError] = useState(false);
   const [recapOpen, setRecapOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   /** The transcript line a passage number pointed at. It stays lit until another one is tapped. */
   const [highlightId, setHighlightId] = useState<string>();
 
@@ -306,6 +308,49 @@ export default function NoteDetailScreen() {
     return undefined;
   }
 
+  /** Everything on this page that is not reading the note. */
+  const moreItems: MoreItem[] = [
+    {
+      testID: 'note-language',
+      title: `Your language: ${languageName(languageCode)}`,
+      summary: 'Gyan writes summaries, to-dos and chat answers in this language.',
+      accessibilityLabel: `Your language: ${languageName(languageCode)}`,
+      enabled: true,
+      onPress: () => {
+        setMoreOpen(false);
+        setPicker('mine');
+      },
+    },
+    {
+      testID: 'note-translate',
+      title: `Translate this ${tab.toLowerCase()}`,
+      summary: canTranslate
+        ? 'Read it in another language, with the original a tap away.'
+        : tab === 'Chat'
+          ? 'Gyan already answers in your language, so there is nothing to translate.'
+          : 'There is nothing to translate yet.',
+      accessibilityLabel: `Translate this ${tab.toLowerCase()}`,
+      enabled: canTranslate,
+      onPress: () => {
+        setMoreOpen(false);
+        setPicker('translate');
+      },
+    },
+    {
+      testID: 'note-send-recap',
+      title: 'Send a recap by email',
+      summary: canSendRecap
+        ? 'The summary and the to-dos, to people on this account.'
+        : 'There is nothing to send until this note is finished and has a summary.',
+      accessibilityLabel: 'Send a recap of this note by email',
+      enabled: canSendRecap,
+      onPress: () => {
+        setMoreOpen(false);
+        setRecapOpen(true);
+      },
+    },
+  ];
+
   const translationBar = tabTranslation || translateBusy || translateError ? (
     <TranslationBar
       language={translateBusy ?? tabTranslation?.language ?? languageCode}
@@ -378,6 +423,9 @@ export default function NoteDetailScreen() {
             </View>
 
             <View style={{ gap: Spacing.two }}>
+              {/* Two things on this line, not six. The tabs, and everything that is not
+                  reading the note. Four pills and two tabs used to share it, and on a phone
+                  that pushed the whole page sideways. */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two, flexWrap: 'wrap' }}>
                 <TabBar
                   testIDPrefix="note-tab"
@@ -388,38 +436,13 @@ export default function NoteDetailScreen() {
                     setHighlightId(undefined);
                   }}
                 />
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: Spacing.two,
-                    flexWrap: 'wrap',
-                    // Without this the group keeps its content width and pushes the page
-                    // sideways on a phone. With it, the pills wrap onto a second line.
-                    flexShrink: 1,
-                  }}>
-                  <Pill
-                    testID="note-language"
-                    label={`Language: ${languageName(languageCode)}`}
-                    accessibilityLabel={`Your language: ${languageName(languageCode)}`}
-                    tone="quiet"
-                    onPress={() => setPicker('mine')}
-                  />
-                  <Pill
-                    testID="note-translate"
-                    label="Translate"
-                    accessibilityLabel={`Translate this ${tab.toLowerCase()}`}
-                    enabled={canTranslate}
-                    onPress={() => setPicker('translate')}
-                  />
-                  <Pill
-                    testID="note-send-recap"
-                    label="Send recap"
-                    accessibilityLabel="Send a recap of this note by email"
-                    enabled={canSendRecap}
-                    onPress={() => setRecapOpen(true)}
-                  />
-                </View>
+                <Pill
+                  testID="note-more"
+                  label="More"
+                  accessibilityLabel="More things to do with this note"
+                  tone="quiet"
+                  onPress={() => setMoreOpen(true)}
+                />
               </View>
               {translateNote ? (
                 <Body small color="textSecondary" accessibilityRole="alert">
@@ -493,6 +516,8 @@ export default function NoteDetailScreen() {
           onOpenSettings={() => router.push('/recap-emails')}
         />
       ) : null}
+
+      <NoteMoreMenu visible={moreOpen} onClose={() => setMoreOpen(false)} items={moreItems} />
 
       <LanguagePicker
         title="Your language"

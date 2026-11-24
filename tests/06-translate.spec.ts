@@ -16,10 +16,24 @@ import {
   TRANSCRIPT_TRANSLATIONS,
 } from './fixtures/fake-api';
 
+/**
+ * Opens the "More" menu on a note page.
+ *
+ * Language, Translate and Send recap used to be three buttons on the line above the note,
+ * beside the tabs. That line had grown to six things and pushed the page sideways on a phone,
+ * so everything that is not reading the note moved behind one button. The actions kept their
+ * names, so these scripts gained one press each and nothing else changed.
+ */
+async function openMore(page: Page) {
+  await page.getByTestId('note-more').click();
+  await expect(page.getByRole('heading', { name: 'More' })).toBeVisible();
+}
+
 /** Opens a note and opens the Translate list on the tab that is showing. */
 async function openTranslate(page: Page, tab: 'summary' | 'transcript' = 'summary') {
   await openNote(page);
   if (tab === 'transcript') await page.getByRole('tab', { name: 'Transcript' }).click();
+  await openMore(page);
   await page.getByTestId('note-translate').click();
   await expect(page.getByRole('heading', { name: `Translate this ${tab}` })).toBeVisible();
 }
@@ -65,10 +79,11 @@ test('a saved translation made by OLDER rules is not shown, so a rule change rea
   expect(recorder.functionCalls.filter((c) => c.name === 'translate')).toHaveLength(1);
 });
 
-test('the note page shows which language you are on', async ({ page }) => {
+test('the More menu shows which language you are on', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
   await openNote(page);
+  await openMore(page);
 
   await expect(page.getByRole('button', { name: 'Your language: English' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Translate this summary' })).toBeEnabled();
@@ -79,12 +94,15 @@ test('picking your language saves it, and it is still there after a refresh', as
   await signIn(page);
   await openNote(page);
 
+  await openMore(page);
   await page.getByTestId('note-language').click();
   await expect(page.getByText('Gyan writes your summaries, your to-dos and its chat answers in this language.')).toBeVisible();
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
 
-  // The pill changes at once, and the choice is sent to the profiles table.
+  // The menu says the new language at once, and the choice is sent to the profiles table.
+  await openMore(page);
   await expect(page.getByRole('button', { name: 'Your language: Spanish' })).toBeVisible();
+  await page.getByTestId('note-more-backdrop').click();
   const saved = recorder.updates.filter((u) => u.table === 'profiles');
   expect(saved).toHaveLength(1);
   expect(saved[0].body).toEqual({ preferred_language: 'es' });
@@ -92,6 +110,7 @@ test('picking your language saves it, and it is still there after a refresh', as
   // Now the server remembers it, so a refresh still shows Spanish.
   await installFakes(page, { preferredLanguage: 'es' });
   await page.reload();
+  await openMore(page);
   await expect(page.getByRole('button', { name: 'Your language: Spanish' })).toBeVisible();
 });
 
@@ -100,6 +119,7 @@ test('the language list shows every language in its own letters', async ({ page 
   await signIn(page);
   await openNote(page);
 
+  await openMore(page);
   await page.getByTestId('note-language').click();
   for (const name of ['Español', 'हिन्दी', 'العربية', '日本語', 'Français']) {
     await expect(page.getByText(name, { exact: true })).toBeVisible();
@@ -241,6 +261,7 @@ test('a pasted-text note translates paragraph by paragraph', async ({ page }) =>
   await signIn(page);
   await openNote(page, TEXT_NOTE_ID);
   await page.getByRole('tab', { name: 'Transcript' }).click();
+  await openMore(page);
   await page.getByTestId('note-translate').click();
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
 
@@ -265,12 +286,14 @@ test('a problem shows a plain sentence, and the note is still readable', async (
   await expect(page.getByText(/could not reach its translating service/)).toBeHidden();
 });
 
-test('a note with no summary cannot be translated yet', async ({ page }) => {
+test('a note with no summary cannot be translated yet, and says so', async ({ page }) => {
   await installFakes(page, { notes: [noteRow({ status: 'queued' })], summary: null, segments: [] });
   await signIn(page);
   await openNote(page);
+  await openMore(page);
 
   await expect(page.getByRole('button', { name: 'Translate this summary' })).toBeDisabled();
+  await expect(page.getByText('There is nothing to translate yet.')).toBeVisible();
 });
 
 test('each tab keeps its own translation', async ({ page }) => {
