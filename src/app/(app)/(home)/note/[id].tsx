@@ -417,8 +417,12 @@ export default function NoteDetailScreen() {
           </GlassPanel>
         ) : (
           <>
-            <View style={{ gap: Spacing.two }}>
-              <Heading level={1}>{noteTitle(load.note)}</Heading>
+            {/* The title is this page's one large thing. A note is a document, and a
+                document opens with its name. */}
+            <View style={{ gap: Spacing.three }}>
+              <Heading level={1} display>
+                {noteTitle(load.note)}
+              </Heading>
               <StatusBadge status={load.note.status} />
             </View>
 
@@ -704,41 +708,103 @@ function TranscriptTab({
           Spoken language: {note.spoken_language}
         </Body>
       ) : null}
-      {passages.map((p, i) => {
-        const lit = p.id === highlightId;
-        return (
-          <GlassPanel
+      <View>
+        {passages.map((p, i) => (
+          <TranscriptLine
             key={p.id}
-            onLayout={(e) => onLineLayout?.(p.id, e.nativeEvent.layout.y)}
-            style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
-            accessibilityLabel={`Paragraph ${i + 1}. ${wordsFor(i, p.text)}${lit ? '. Highlighted' : ''}`}>
-            <Body color="link" weight="semibold">
-              Paragraph {i + 1}
-            </Body>
-            <ScriptText language={language}>{wordsFor(i, p.text)}</ScriptText>
-          </GlassPanel>
-        );
-      })}
-      {lines.map((l, i) => {
-        const lit = l.id === highlightId;
-        return (
-          <GlassPanel
+            id={p.id}
+            speaker={`Paragraph ${i + 1}`}
+            lit={p.id === highlightId}
+            last={i === passages.length - 1}
+            onLineLayout={onLineLayout}
+            language={language}
+            words={wordsFor(i, p.text)}
+            spoken={`Paragraph ${i + 1}. ${wordsFor(i, p.text)}`}
+          />
+        ))}
+        {lines.map((l, i) => (
+          <TranscriptLine
             key={l.id}
-            onLayout={(e) => onLineLayout?.(l.id, e.nativeEvent.layout.y)}
-            style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
-            accessibilityLabel={`${l.speaker_label ?? 'Speaker'}, ${formatTime(l.start_ms)}. ${wordsFor(i, l.text)}${lit ? '. Highlighted' : ''}`}>
-            <View style={{ flexDirection: 'row', gap: Spacing.three, alignItems: 'baseline' }}>
-              <Body color="link" weight="semibold">
-                {l.speaker_label ?? 'Speaker'}
-              </Body>
-              <Body small color="textSecondary">
-                {formatTime(l.start_ms)}
-              </Body>
-            </View>
-            <ScriptText language={language}>{wordsFor(i, l.text)}</ScriptText>
-          </GlassPanel>
-        );
-      })}
+            id={l.id}
+            speaker={l.speaker_label ?? 'Speaker'}
+            time={formatTime(l.start_ms)}
+            lit={l.id === highlightId}
+            last={i === lines.length - 1}
+            onLineLayout={onLineLayout}
+            language={language}
+            words={wordsFor(i, l.text)}
+            spoken={`${l.speaker_label ?? 'Speaker'}, ${formatTime(l.start_ms)}. ${wordsFor(i, l.text)}`}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * One line of a transcript: who spoke, when, and what they said.
+ *
+ * Every line used to be its own glass card, so a three minute conversation was forty
+ * identical boxes. A transcript is a script, so it is set like one now: a hairline between
+ * lines, and the speaker's name small, spaced and in capitals above the words. That last
+ * detail is in `docs/design/sleek/brief.txt` and had never been built.
+ *
+ * THE CAPITALS ARE `textTransform`, never a changed string. `getByText('Speaker 1')` and the
+ * line a screen reader reads out both get the real words.
+ */
+function TranscriptLine({
+  id,
+  speaker,
+  time,
+  words,
+  spoken,
+  language,
+  lit,
+  last,
+  onLineLayout,
+}: {
+  id: string;
+  speaker: string;
+  time?: string;
+  words: string;
+  /** What a screen reader reads, in the order somebody would say it. */
+  spoken: string;
+  language: string;
+  lit: boolean;
+  last: boolean;
+  onLineLayout?: (lineId: string, y: number) => void;
+}) {
+  return (
+    <View
+      onLayout={(e) => onLineLayout?.(id, e.nativeEvent.layout.y)}
+      accessibilityLabel={`${spoken}${lit ? '. Highlighted' : ''}`}
+      style={{
+        flexDirection: 'row',
+        overflow: 'hidden',
+        borderRadius: lit ? Radius.panel : 0,
+        backgroundColor: lit ? Colors.backgroundSelected : 'transparent',
+        marginVertical: lit ? Spacing.two : 0,
+        ...(lit || last ? {} : { borderBottomWidth: 1, borderBottomColor: Colors.glassBorder }),
+      }}>
+      {/* The blue edge marks the line a passage number pointed at, and nothing else does. */}
+      <View style={{ width: 3, backgroundColor: lit ? Colors.brand : 'transparent' }} />
+      <View style={{ flex: 1, gap: Spacing.one, paddingVertical: Spacing.three, paddingLeft: Spacing.two }}>
+        <View style={{ flexDirection: 'row', gap: Spacing.three, alignItems: 'baseline' }}>
+          <Body
+            small
+            color="textSecondary"
+            weight="medium"
+            style={{ letterSpacing: 1, textTransform: 'uppercase' }}>
+            {speaker}
+          </Body>
+          {time ? (
+            <Body small color="textSecondary">
+              {time}
+            </Body>
+          ) : null}
+        </View>
+        <ScriptText language={language}>{words}</ScriptText>
+      </View>
     </View>
   );
 }
