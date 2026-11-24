@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test';
 
 import { installFakes, noteRow, signIn } from './fixtures/fake-api';
 
-test('Home lists notes with their status and the meetings used this month', async ({ page }) => {
+test('Home lists notes with their status, and leaves the month alone', async ({ page }) => {
   await installFakes(page, {
     notes: [noteRow({ id: 'n-ready', title: 'Weekly team call', status: 'ready' }), noteRow({ id: 'n-busy', title: 'Budget chat', status: 'transcribing' })],
     usage: { used: 2, limit: 5 },
@@ -17,7 +17,19 @@ test('Home lists notes with their status and the meetings used this month', asyn
   await expect(page.getByText('Budget chat')).toBeVisible();
   await expect(page.getByLabel('Status: Ready')).toBeVisible();
   await expect(page.getByLabel('Status: Transcribing')).toBeVisible();
-  await expect(page.getByText('Meetings used this month: 2 of 5')).toBeVisible();
+  // Three of five meetings still to go, so Home says nothing about them. The meter lives on
+  // New note and on Settings -> Plan and usage; Home only speaks up near the limit.
+  await expect(page.getByText(/Meetings used this month/)).toBeHidden();
+  await expect(page.getByText(/meetings? left this month/)).toBeHidden();
+});
+
+test('with one meeting left, Home says so in one quiet line', async ({ page }) => {
+  await installFakes(page, { notes: [noteRow({ title: 'Weekly team call' })], usage: { used: 4, limit: 5 } });
+  await signIn(page);
+
+  await expect(
+    page.getByText('1 meeting left this month on the Free plan. Pasted text is always free.'),
+  ).toBeVisible();
 });
 
 test('a new person with no notes is invited to make one', async ({ page }) => {
@@ -51,7 +63,7 @@ test('pasted text is sent, and asks for a summary with no transcript step', asyn
   await page.getByRole('button', { name: 'Add note' }).click();
 
   // Back on Home once it is sent.
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your notes' })).toBeVisible();
   const asked = recorder.functionCalls.map((c) => c.name);
   expect(asked).toContain('summarize');
   expect(asked).not.toContain('transcribe');

@@ -44,7 +44,9 @@ test('a good login lands on Home', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
 
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  // Home is called what it holds. A page titled "Home" told nobody anything, which is why
+  // the redesign took that heading away.
+  await expect(page.getByRole('heading', { name: 'Your notes' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New note' })).toBeVisible();
 });
 

@@ -177,7 +177,7 @@ test('joining from an invite link lands the person on the team', async ({ page }
   await expect(page.getByRole('heading', { name: 'You are in' })).toBeVisible();
   await expect(page.getByText(/You are now on Sam Carter's account/)).toBeVisible();
   await page.getByRole('button', { name: 'Go to Home' }).click();
-  await expect(page.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your notes', level: 1 })).toBeVisible();
 });
 
 test.describe('an invite link that will not work says why, in plain words', () => {

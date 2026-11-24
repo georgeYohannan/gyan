@@ -312,7 +312,13 @@ test('the search and the filters survive a refresh, and the back button', async 
 
   // Opening a note and pressing back comes back to the same view too.
   await page.getByText('Note 03').click();
-  await expect(page.getByRole('heading', { name: 'Note' }).first()).toBeVisible();
+  // Wait for the note page BY NAME, not by a heading called "Note".
+  //
+  // `getByRole(name:)` matches a substring, so once Home's title became "Your notes" that
+  // heading assertion passed on Home itself, the instant it was asked -- before the note had
+  // opened at all. The back button then went back past the app to a blank page, and the
+  // failure looked like a layout bug three lines further down. A name is unambiguous.
+  await expect(page.getByTestId('note-screen')).toBeVisible();
   await page.goBack();
   await expect(homeSearch(page)).toHaveValue('pricing');
   await expect(rows(page)).toHaveCount(1);

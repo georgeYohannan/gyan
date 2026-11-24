@@ -3,15 +3,15 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
-import { HelpButton } from '@/components/help/help-button';
 import { ChoiceCard } from '@/components/notes/choice-card';
 import { FilePickButton } from '@/components/notes/file-pick-button';
 import { UsagePanel } from '@/components/notes/usage-panel';
 import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
 import { GlassPanel } from '@/components/ui/glass-panel';
-import { Heading } from '@/components/ui/heading';
+import { PageHeader } from '@/components/ui/page-header';
 import { Screen } from '@/components/ui/screen';
+import { Section } from '@/components/ui/section';
 import { TextField } from '@/components/ui/text-field';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { canExtractAudio, extractAudio } from '@/lib/audio-extract';
@@ -140,22 +140,13 @@ export default function NewNoteScreen() {
 
   return (
     <Screen testID="new-note-screen">
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
-        <View style={{ flex: 1 }}>
-          <Heading level={1}>New note</Heading>
-        </View>
-        <HelpButton helpId="newNote" />
-      </View>
-      <Body color="textSecondary">Pick how you want to add your conversation.</Body>
+      {/* No line under the title: the section heading below already asks the question, and
+          saying it twice in two sizes is how a screen starts to feel padded. */}
+      <PageHeader title="New note" helpId="newNote" />
 
-      <UsagePanel usage={usage} loading={!usage && !usageFailed} />
-      {usageFailed ? (
-        <Body small color="danger" accessibilityRole="alert">
-          We could not check your meetings used this month. Go back and try again.
-        </Body>
-      ) : null}
-
-      <View style={{ gap: Spacing.three }}>
+      {/* The four ways in come FIRST now. The meetings meter used to sit above them, which
+          put a number nobody came here for between the title and the only thing to do. */}
+      <Section title="How do you want to add it?">
         <ChoiceCard
           testID="new-note-record"
           title="Record"
@@ -193,7 +184,7 @@ export default function NewNoteScreen() {
           disabled
           disabledLabel="Coming soon"
         />
-      </View>
+      </Section>
 
       {mode === 'upload' && !limitReached ? (
         <GlassPanel style={{ gap: Spacing.three }}>
@@ -252,6 +243,15 @@ export default function NewNoteScreen() {
           {attempt ? <Button label="Retry" variant="secondary" onPress={retry} /> : null}
         </GlassPanel>
       ) : null}
+
+      <View style={{ gap: Spacing.two, paddingTop: Spacing.two }}>
+        <UsagePanel usage={usage} loading={!usage && !usageFailed} />
+        {usageFailed ? (
+          <Body small color="danger" accessibilityRole="alert">
+            We could not check your meetings used this month. Go back and try again.
+          </Body>
+        ) : null}
+      </View>
     </Screen>
   );
 }

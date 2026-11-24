@@ -430,7 +430,7 @@ async function shootHome(
   await page.setViewportSize(size);
   await installFakes(page, data);
   await signIn(page);
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your notes' })).toBeVisible();
   if (then) await then(page);
   // Tapping a note part-way down scrolls the list. React Native Web scrolls an element inside
   // the page rather than the page itself, so fullPage would otherwise photograph it mid-list.
