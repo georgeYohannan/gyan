@@ -83,8 +83,8 @@ async function shootChat(
   await signIn(page);
   await openNote(page);
 
-  await page.getByTestId('note-ask').click();
-  await expect(page.getByRole('heading', { name: 'Ask about this note' })).toBeVisible();
+  await page.getByTestId('note-tab-chat').click();
+  await expect(page.getByTestId('note-chat')).toBeVisible();
 
   if (options.cite) {
     await page.getByRole('link', { name: 'Go to the line at 1:05' }).click();

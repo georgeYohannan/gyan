@@ -442,7 +442,7 @@ describe('help for the note screen', () => {
   });
 });
 
-describe('<NoteDetailScreen /> the side chat', () => {
+describe('<NoteDetailScreen /> the Chat tab', () => {
   const CHAT = [
     { id: 'c1', role: 'user' as const, content: 'What were the decisions?', sources: [], created_at: 'x' },
     {
@@ -455,36 +455,52 @@ describe('<NoteDetailScreen /> the side chat', () => {
     },
   ];
 
-  test('a Ready note with words has an Ask button', async () => {
+  /** The Chat tab, which is how anybody reaches the chat now. */
+  const openChat = async () => {
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('tab', { name: 'Chat' }));
+    });
+  };
+
+  test('a Ready note with words offers a Chat tab', async () => {
     mockGetNote.mockResolvedValue(note());
     mockList.mockResolvedValue(lines);
     await render(<NoteDetailScreen />);
 
-    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
-    expect(ask.props.accessibilityState).toMatchObject({ disabled: false });
+    expect(await screen.findByRole('tab', { name: 'Chat' })).toBeTruthy();
   });
 
-  test('a note with no words yet cannot be asked about, and says why', async () => {
+  test('a note with no words yet says why there is nothing to ask about', async () => {
     mockGetNote.mockResolvedValue(note({ status: 'Transcribing' }));
     mockList.mockResolvedValue([]);
     await render(<NoteDetailScreen />);
+    await openChat();
 
-    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
-    expect(ask.props.accessibilityState).toMatchObject({ disabled: true });
+    // The tab is NOT switched off. A tab you cannot press says nothing about why; a tab that
+    // explains itself does. It also means the chat is never somewhere people cannot look.
     expect(screen.getByText('You can ask questions once this note has its words.')).toBeTruthy();
+    expect(mockChatList).not.toHaveBeenCalled();
   });
 
-  test('Ask opens the chat panel, and the chat is read from the database', async () => {
+  test('opening the Chat tab reads the conversation from the database', async () => {
     mockGetNote.mockResolvedValue(note());
     mockList.mockResolvedValue(lines);
     await render(<NoteDetailScreen />);
+    await openChat();
+
+    expect(mockChatList).toHaveBeenCalledWith('n1');
+  });
+
+  test('the ? at the top follows the tab, so Chat opens the chat help', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    await render(<NoteDetailScreen />);
+    await openChat();
 
     await act(async () => {
-      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+      fireEvent.press(screen.getByTestId('help-button-noteChat'));
     });
-
-    expect(screen.getByRole('header', { name: 'Ask about this note' })).toBeTruthy();
-    expect(mockChatList).toHaveBeenCalledWith('n1');
+    expect(screen.getByRole('header', { name: HELP.noteChat.title })).toBeTruthy();
   });
 
   test('tapping a passage number opens the Transcript tab and lights up that line', async () => {
@@ -493,9 +509,7 @@ describe('<NoteDetailScreen /> the side chat', () => {
     mockChatList.mockResolvedValue(CHAT);
     await render(<NoteDetailScreen />);
 
-    await act(async () => {
-      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
-    });
+    await openChat();
     await act(async () => {
       fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 1:05' }));
     });
@@ -514,9 +528,7 @@ describe('<NoteDetailScreen /> the side chat', () => {
     mockChatList.mockResolvedValue(CHAT);
     await render(<NoteDetailScreen />);
 
-    await act(async () => {
-      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
-    });
+    await openChat();
     await act(async () => {
       fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 1:05' }));
     });
@@ -531,7 +543,7 @@ describe('<NoteDetailScreen /> the side chat', () => {
   });
 });
 
-describe('help for the chat panel', () => {
+describe('help for the chat', () => {
   const entry = HELP.noteChat;
   const words = [...entry.sentences, ...(entry.lists ?? []).flatMap((l) => [l.heading, ...l.items])].join(' ');
 
@@ -591,8 +603,10 @@ describe('<NoteDetailScreen /> a pasted-text note', () => {
     mockPassages.mockResolvedValue(PARAGRAPHS);
     await render(<NoteDetailScreen />);
 
-    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
-    expect(ask.props.accessibilityState).toMatchObject({ disabled: false });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('tab', { name: 'Chat' }));
+    });
+    expect(screen.getByLabelText('Your question')).toBeTruthy();
     expect(screen.queryByText('You can ask questions once this note has its words.')).toBeNull();
   });
 
@@ -612,7 +626,7 @@ describe('<NoteDetailScreen /> a pasted-text note', () => {
     await render(<NoteDetailScreen />);
 
     await act(async () => {
-      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+      fireEvent.press(await screen.findByRole('tab', { name: 'Chat' }));
     });
     await act(async () => {
       fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 0:00' }));
@@ -627,9 +641,11 @@ describe('<NoteDetailScreen /> a pasted-text note', () => {
     mockPassages.mockResolvedValue([]);
     await render(<NoteDetailScreen />);
 
-    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
-    expect(ask.props.accessibilityState).toMatchObject({ disabled: true });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('tab', { name: 'Chat' }));
+    });
     expect(screen.getByText('This note has no words in it, so there is nothing to ask about.')).toBeTruthy();
+    expect(screen.queryByLabelText('Your question')).toBeNull();
 
     await openTranscript();
     expect(screen.getByText('No words')).toBeTruthy();

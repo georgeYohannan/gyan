@@ -1,11 +1,16 @@
 /**
- * The chat panel: every state a person can see, and what each button does.
+ * The chat: every state a person can see, and what each button does.
  * The real server and the real AI are never called here.
+ *
+ * This used to drive `ChatPanel`, the slide-in panel the chat arrived in. The chat is a tab
+ * on the note page now and the panel is gone, so these drive `ChatBody` -- the same markup,
+ * the same state, one wrapper less. The two tests about closing the panel went with it:
+ * leaving a tab is pressing another tab, which `tests/05-chat.spec.ts` covers.
  */
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { AnswerText, splitAnswer } from '@/components/notes/answer-text';
-import { ChatPanel } from '@/components/notes/chat-panel';
+import { ChatBody } from '@/components/notes/chat-body';
 import { ChatLimitError, LIMIT_MESSAGE, SEND_PROBLEM_MESSAGE, SUGGESTED, type ChatMessage } from '@/lib/chat';
 
 const mockList = jest.fn();
@@ -34,7 +39,7 @@ beforeEach(() => {
 
 /** Draws the panel already open, and waits for it to finish reading the chat. */
 async function open(onJump = jest.fn()) {
-  const view = await render(<ChatPanel meetingId="n1" visible onClose={jest.fn()} onJump={onJump} />);
+  const view = await render(<ChatBody meetingId="n1" active onJump={onJump} />);
   await waitFor(() => expect(mockList).toHaveBeenCalledWith('n1'));
   return { view, onJump };
 }
@@ -196,19 +201,9 @@ describe('when something goes wrong', () => {
   });
 });
 
-describe('closing it', () => {
-  test('there is a Close button, and nothing is drawn when it is shut', async () => {
-    const onClose = jest.fn();
-    await render(<ChatPanel meetingId="n1" visible onClose={onClose} onJump={jest.fn()} />);
-    await waitFor(() => expect(mockList).toHaveBeenCalled());
-
-    await press('Close chat');
-    expect(onClose).toHaveBeenCalled();
-  });
-
-  test('a shut panel draws nothing at all', async () => {
-    await render(<ChatPanel meetingId="n1" visible={false} onClose={jest.fn()} onJump={jest.fn()} />);
-    expect(screen.queryByLabelText('Ask about this note')).toBeNull();
+describe('when it is not the open tab', () => {
+  test('a chat nobody is looking at asks the server for nothing', async () => {
+    await render(<ChatBody meetingId="n1" active={false} onJump={jest.fn()} />);
     expect(mockList).not.toHaveBeenCalled();
   });
 });

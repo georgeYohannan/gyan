@@ -1,6 +1,11 @@
 /**
- * The side chat: what prompt 7 added.
+ * The chat: what prompt 7 added, as the tab it became in prompt 13.
  * The AI is never called here: tests/fixtures/fake-api.ts answers with a made up answer.
+ *
+ * It used to be a panel reached from an "Ask" button, which is why these scripts were written
+ * around opening and closing one. The chat is the third tab on the note page now, so opening
+ * it is pressing a tab and leaving it is pressing another: the two tests about closing a
+ * panel have gone, because there is no longer a panel to close.
  */
 import { expect, test } from '@playwright/test';
 
@@ -17,14 +22,14 @@ import {
   textNoteRow,
 } from './fixtures/fake-api';
 
-/** Opens a note and opens the chat panel on it. */
+/** Opens a note and goes to its Chat tab. */
 async function openChat(page: import('@playwright/test').Page) {
   await openNote(page);
-  await page.getByTestId('note-ask').click();
-  await expect(page.getByRole('heading', { name: 'Ask about this note' })).toBeVisible();
+  await page.getByTestId('note-tab-chat').click();
+  await expect(page.getByTestId('note-chat')).toBeVisible();
 }
 
-test('a note with words has an Ask button, and it opens the chat', async ({ page }) => {
+test('a note with words has a Chat tab, and it opens the chat', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
   await openChat(page);
@@ -86,8 +91,8 @@ test('tapping a chip jumps to that transcript line and lights it up', async ({ p
 
   await page.getByRole('link', { name: 'Go to the line at 1:05' }).click();
 
-  // The chat closed, the Transcript tab opened, and the right line is marked.
-  await expect(page.getByRole('heading', { name: 'Ask about this note' })).toBeHidden();
+  // The Transcript tab opened -- which IS leaving the chat -- and the right line is marked.
+  await expect(page.getByTestId('note-chat')).toBeHidden();
   await expect(page.getByRole('tab', { name: 'Transcript' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByLabel(/Priya will send the test plan on Friday.*Highlighted/)).toBeVisible();
 });
@@ -112,7 +117,7 @@ test('the conversation is still there after a refresh', async ({ page }) => {
 
   // Reload the whole page, the way a person pressing refresh would.
   await page.reload();
-  await page.getByTestId('note-ask').click();
+  await page.getByTestId('note-tab-chat').click();
 
   await expect(page.getByLabel('You: What were the decisions?')).toBeVisible();
   await expect(page.getByText(/agreed to ship the sign up screen on Friday/)).toBeVisible();
@@ -163,24 +168,27 @@ test('a problem shows plain words and a Retry that works', async ({ page }) => {
   expect(calls[1].body).toEqual({ retry_message_id: 'q1' });
 });
 
-test('a note with no words yet cannot be asked about, and says why', async ({ page }) => {
+test('a note with no words yet cannot be asked about, and the tab says why', async ({ page }) => {
   await installFakes(page, { notes: [noteRow({ status: 'transcribing' })], segments: [], summary: null, actionItems: [] });
   await signIn(page);
   await openNote(page);
 
+  // The tab is not switched off. A tab you cannot press says nothing about why.
+  await page.getByTestId('note-tab-chat').click();
   await expect(page.getByText('You can ask questions once this note has its words.')).toBeVisible();
-  await expect(page.getByTestId('note-ask')).toBeDisabled();
+  await expect(page.getByLabel('Your question')).toBeHidden();
 });
 
-test('the chat closes again, and the note is still there behind it', async ({ page }) => {
+test('leaving the Chat tab leaves the note exactly as it was', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
   await openChat(page);
 
-  await page.getByRole('button', { name: 'Close chat' }).click();
+  await page.getByTestId('note-tab-summary').click();
 
-  await expect(page.getByRole('heading', { name: 'Ask about this note' })).toBeHidden();
-  await expect(page.getByRole('tab', { name: 'Summary' })).toBeVisible();
+  await expect(page.getByTestId('note-chat')).toBeHidden();
+  await expect(page.getByRole('tab', { name: 'Summary' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'Key points' })).toBeVisible();
 });
 
 test('on a phone-sized window the chat still works', async ({ page }) => {
@@ -204,7 +212,8 @@ test('a pasted-text note shows numbered paragraphs and CAN be asked about', asyn
   await signIn(page);
   await openNote(page, TEXT_NOTE_ID);
 
-  await expect(page.getByTestId('note-ask')).toBeEnabled();
+  await page.getByTestId('note-tab-chat').click();
+  await expect(page.getByLabel('Your question')).toBeVisible();
   await expect(page.getByText('You can ask questions once this note has its words.')).toBeHidden();
 
   await page.getByRole('tab', { name: 'Transcript' }).click();
@@ -230,7 +239,7 @@ test('a number in an answer jumps to the right paragraph of a pasted-text note',
   await signIn(page);
   await openNote(page, TEXT_NOTE_ID);
 
-  await page.getByTestId('note-ask').click();
+  await page.getByTestId('note-tab-chat').click();
   await expect(page.getByText(/Forensic accountants, family-law attorneys/)).toBeVisible();
 
   await page.getByRole('link', { name: 'Go to the line at 0:00' }).click();

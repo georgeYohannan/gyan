@@ -4,7 +4,6 @@ import { Pressable, ScrollView, View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
 import { ChatBody } from '@/components/notes/chat-body';
-import { ChatPanel } from '@/components/notes/chat-panel';
 import { LanguagePicker } from '@/components/notes/language-picker';
 import { RecapDialog } from '@/components/notes/recap-dialog';
 import { SummaryTab } from '@/components/notes/summary-tab';
@@ -111,7 +110,6 @@ export default function NoteDetailScreen() {
   const [startError, setStartError] = useState(false);
   const [savingItemId, setSavingItemId] = useState<string>();
   const [itemError, setItemError] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [recapOpen, setRecapOpen] = useState(false);
   /** The transcript line a passage number pointed at. It stays lit until another one is tapped. */
   const [highlightId, setHighlightId] = useState<string>();
@@ -204,11 +202,14 @@ export default function NoteDetailScreen() {
   }
 
   /**
-   * Somebody tapped a passage number in an answer. Close the chat, open the Transcript tab,
-   * scroll to that line, and light it up.
+   * Somebody tapped a passage number in an answer. Open the Transcript tab, scroll to that
+   * line, and light it up.
+   *
+   * It used to close the chat panel as well, so the highlighted line was in plain view. The
+   * chat is a tab now, so switching to the Transcript IS leaving the chat -- one move where
+   * there were two.
    */
   const jumpTo = useCallback((source: ChatSource) => {
-    setChatOpen(false);
     setTab('Transcript');
     setHighlightId(source.segment_id);
     // Wait for the Transcript tab to be drawn before scrolling to the line.
@@ -339,7 +340,11 @@ export default function NoteDetailScreen() {
             style={{ minHeight: MinTouchTarget, minWidth: MinTouchTarget, justifyContent: 'center' }}>
             <Body color="link">‹ Home</Body>
           </Pressable>
-          <HelpButton helpId="note" />
+          {/* The help follows the tab. The chat has its own entry -- what you can ask, what
+              the little numbers are, how many questions a day -- and it used to be reached
+              from a button inside the panel. The panel is gone, so the one "?" on the page
+              answers the question you are actually looking at. */}
+          <HelpButton helpId={tab === 'Chat' ? 'noteChat' : 'note'} />
         </View>
 
         {load.state === 'loading' ? (
@@ -408,13 +413,6 @@ export default function NoteDetailScreen() {
                     onPress={() => setPicker('translate')}
                   />
                   <Pill
-                    testID="note-ask"
-                    label="Ask"
-                    accessibilityLabel="Ask about this note"
-                    enabled={canAsk}
-                    onPress={() => setChatOpen(true)}
-                  />
-                  <Pill
                     testID="note-send-recap"
                     label="Send recap"
                     accessibilityLabel="Send a recap of this note by email"
@@ -423,11 +421,6 @@ export default function NoteDetailScreen() {
                   />
                 </View>
               </View>
-              {!canAsk ? (
-                <Body small color="textSecondary">
-                  {isText ? NO_WORDS_MESSAGE : NO_TRANSCRIPT_MESSAGE}
-                </Body>
-              ) : null}
               {translateNote ? (
                 <Body small color="textSecondary" accessibilityRole="alert">
                   {translateNote}
@@ -466,7 +459,12 @@ export default function NoteDetailScreen() {
                 translationLanguage={tabTranslation?.language}
                 translationBar={translationBar}
               />
-            ) : canAsk && id ? (
+            ) : !canAsk || !id ? (
+              <GlassPanel>
+                <Heading level={3}>Nothing to ask about yet</Heading>
+                <Body color="textSecondary">{isText ? NO_WORDS_MESSAGE : NO_TRANSCRIPT_MESSAGE}</Body>
+              </GlassPanel>
+            ) : (
               <View
                 style={{
                   flex: 1,
@@ -481,12 +479,10 @@ export default function NoteDetailScreen() {
                     the Transcript and back all show the same thing. */}
                 <ChatBody testID="note-chat" meetingId={id} active onJump={jumpTo} />
               </View>
-            ) : null}
+            )}
           </>
         )}
       </Screen>
-
-      {id ? <ChatPanel meetingId={id} visible={chatOpen} onClose={() => setChatOpen(false)} onJump={jumpTo} /> : null}
 
       {id ? (
         <RecapDialog
