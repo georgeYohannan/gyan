@@ -20,7 +20,7 @@ import {
 /** Opens a note and opens the chat panel on it. */
 async function openChat(page: import('@playwright/test').Page) {
   await openNote(page);
-  await page.getByRole('button', { name: 'Ask about this note' }).click();
+  await page.getByTestId('note-ask').click();
   await expect(page.getByRole('heading', { name: 'Ask about this note' })).toBeVisible();
 }
 
@@ -112,7 +112,7 @@ test('the conversation is still there after a refresh', async ({ page }) => {
 
   // Reload the whole page, the way a person pressing refresh would.
   await page.reload();
-  await page.getByRole('button', { name: 'Ask about this note' }).click();
+  await page.getByTestId('note-ask').click();
 
   await expect(page.getByLabel('You: What were the decisions?')).toBeVisible();
   await expect(page.getByText(/agreed to ship the sign up screen on Friday/)).toBeVisible();
@@ -169,7 +169,7 @@ test('a note with no words yet cannot be asked about, and says why', async ({ pa
   await openNote(page);
 
   await expect(page.getByText('You can ask questions once this note has its words.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Ask about this note' })).toBeDisabled();
+  await expect(page.getByTestId('note-ask')).toBeDisabled();
 });
 
 test('the chat closes again, and the note is still there behind it', async ({ page }) => {
@@ -204,7 +204,7 @@ test('a pasted-text note shows numbered paragraphs and CAN be asked about', asyn
   await signIn(page);
   await openNote(page, TEXT_NOTE_ID);
 
-  await expect(page.getByRole('button', { name: 'Ask about this note' })).toBeEnabled();
+  await expect(page.getByTestId('note-ask')).toBeEnabled();
   await expect(page.getByText('You can ask questions once this note has its words.')).toBeHidden();
 
   await page.getByRole('tab', { name: 'Transcript' }).click();
@@ -230,7 +230,7 @@ test('a number in an answer jumps to the right paragraph of a pasted-text note',
   await signIn(page);
   await openNote(page, TEXT_NOTE_ID);
 
-  await page.getByRole('button', { name: 'Ask about this note' }).click();
+  await page.getByTestId('note-ask').click();
   await expect(page.getByText(/Forensic accountants, family-law attorneys/)).toBeVisible();
 
   await page.getByRole('link', { name: 'Go to the line at 0:00' }).click();

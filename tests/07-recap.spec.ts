@@ -11,14 +11,14 @@ import { FAKE_USER, installFakes, openNote, signIn, TEAMMATE } from './fixtures/
 
 /** The recap settings now live in Settings, so every test gets there the way a person would. */
 async function openRecapSettings(page: Page) {
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await page.getByRole('link', { name: /^Recaps\./ }).click();
+  await page.getByTestId('nav-settings').click();
+  await page.getByTestId('settings-row-recaps').click();
 }
 
 /** Opens a Ready note and opens the Send recap dialog. */
 async function openRecap(page: Page) {
   await openNote(page);
-  await page.getByRole('button', { name: 'Send a recap of this note by email' }).click();
+  await page.getByTestId('note-send-recap').click();
   await expect(page.getByRole('heading', { name: 'Send recap' })).toBeVisible();
 }
 
@@ -149,7 +149,7 @@ test('a note that is not finished has no Send recap to press', async ({ page }) 
   await installFakes(page, { summary: null });
   await signIn(page);
   await openNote(page);
-  await expect(page.getByRole('button', { name: 'Send a recap of this note by email' })).toBeDisabled();
+  await expect(page.getByTestId('note-send-recap')).toBeDisabled();
 });
 
 test('the recap settings open from Settings, and the row says what is set', async ({ page }) => {
@@ -157,7 +157,7 @@ test('the recap settings open from Settings, and the row says what is set', asyn
   await signIn(page);
 
   // The Settings row says what is set, so you can often check it without opening the page.
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByTestId('nav-settings').click();
   await expect(page.getByText('The account owner only')).toBeVisible();
 
   await page.getByRole('link', { name: /^Recaps\./ }).click();

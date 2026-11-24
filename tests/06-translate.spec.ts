@@ -20,7 +20,7 @@ import {
 async function openTranslate(page: Page, tab: 'summary' | 'transcript' = 'summary') {
   await openNote(page);
   if (tab === 'transcript') await page.getByRole('tab', { name: 'Transcript' }).click();
-  await page.getByRole('button', { name: `Translate this ${tab}` }).click();
+  await page.getByTestId('note-translate').click();
   await expect(page.getByRole('heading', { name: `Translate this ${tab}` })).toBeVisible();
 }
 
@@ -30,7 +30,7 @@ test('Settings is where you set your language, and it is remembered after a refr
 
   // Settings > Profile is where a person looks for their own settings (it moved here in
   // prompt 10; the note page keeps the picker as a shortcut).
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByTestId('nav-settings').click();
   await page.getByRole('link', { name: /^Profile\./ }).click();
   await expect(page.getByRole('heading', { name: 'Language' })).toBeVisible();
   await expect(page.getByText('English', { exact: true }).first()).toBeVisible();
@@ -79,7 +79,7 @@ test('picking your language saves it, and it is still there after a refresh', as
   await signIn(page);
   await openNote(page);
 
-  await page.getByRole('button', { name: 'Your language: English' }).click();
+  await page.getByTestId('note-language').click();
   await expect(page.getByText('Gyan writes your summaries, your to-dos and its chat answers in this language.')).toBeVisible();
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
 
@@ -100,7 +100,7 @@ test('the language list shows every language in its own letters', async ({ page 
   await signIn(page);
   await openNote(page);
 
-  await page.getByRole('button', { name: 'Your language: English' }).click();
+  await page.getByTestId('note-language').click();
   for (const name of ['Español', 'हिन्दी', 'العربية', '日本語', 'Français']) {
     await expect(page.getByText(name, { exact: true })).toBeVisible();
   }
@@ -241,7 +241,7 @@ test('a pasted-text note translates paragraph by paragraph', async ({ page }) =>
   await signIn(page);
   await openNote(page, TEXT_NOTE_ID);
   await page.getByRole('tab', { name: 'Transcript' }).click();
-  await page.getByRole('button', { name: 'Translate this transcript' }).click();
+  await page.getByTestId('note-translate').click();
   await page.getByRole('radio', { name: 'Spanish, Español' }).click();
 
   await expect(page.getByText('Translated by AI')).toBeVisible();

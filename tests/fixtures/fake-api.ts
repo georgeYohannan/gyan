@@ -1062,8 +1062,13 @@ export async function signIn(page: Page): Promise<void> {
 
   // The first time anyone uses this browser, Gyan shows a short note about consent. Wait for
   // whichever comes first, that note or Home, so this works either way.
+  //
+  // Home is found by name, not by a heading that says "Home". Every script in tests/ goes
+  // through this function, so when the redesign removed that heading -- a page titled "Home"
+  // tells nobody anything -- all of them would have failed at once, for one reason, and a real
+  // regression would have been invisible in the noise.
   const understand = page.getByRole('button', { name: 'I understand' });
-  const home = page.getByRole('heading', { name: 'Home' });
+  const home = page.getByTestId('home-screen');
   await understand.or(home).first().waitFor({ timeout: 60_000 });
   if (await understand.isVisible()) await understand.click();
   await home.waitFor({ timeout: 60_000 });

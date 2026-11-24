@@ -83,7 +83,7 @@ async function shootChat(
   await signIn(page);
   await openNote(page);
 
-  await page.getByRole('button', { name: 'Ask about this note' }).click();
+  await page.getByTestId('note-ask').click();
   await expect(page.getByRole('heading', { name: 'Ask about this note' })).toBeVisible();
 
   if (options.cite) {
@@ -140,7 +140,7 @@ async function shootTranslate(
 
   if (options.tab === 'Transcript') await page.getByRole('tab', { name: 'Transcript' }).click();
   const tab = (options.tab ?? 'Summary').toLowerCase();
-  await page.getByRole('button', { name: `Translate this ${tab}` }).click();
+  await page.getByTestId('note-translate').click();
   await expect(page.getByRole('heading', { name: `Translate this ${tab}` })).toBeVisible();
 
   if (options.stop !== 'picker') {
@@ -212,7 +212,7 @@ async function shootRecap(
   await installFakes(page, data);
   await signIn(page);
   await openNote(page);
-  await page.getByRole('button', { name: 'Send a recap of this note by email' }).click();
+  await page.getByTestId('note-send-recap').click();
   await expect(page.getByRole('heading', { name: 'Send recap' })).toBeVisible();
   await page.waitForTimeout(700); // let the panel finish sliding in
   await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
@@ -230,8 +230,8 @@ async function shootRecapSettings(
   await installFakes(page, data);
   await signIn(page);
   // The recap settings live in Settings now, so this walks the way a person would.
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await page.getByRole('link', { name: /^Recaps\./ }).click();
+  await page.getByTestId('nav-settings').click();
+  await page.getByTestId('settings-row-recaps').click();
   await expect(page.getByRole('heading', { name: 'Recap emails', level: 1 })).toBeVisible();
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
@@ -261,15 +261,17 @@ async function shootSettings(
   { page, context }: { page: import('@playwright/test').Page; context: import('@playwright/test').BrowserContext },
   file: string,
   size: { width: number; height: number },
+  /** The stable name of the Settings row to open, or null to photograph the list itself. */
   row: string | null,
+  /** The heading to wait for once it is open. Still the words, because that is the assertion. */
   waitFor: string,
   data: Partial<FakeData> = {},
 ) {
   await page.setViewportSize(size);
   await installFakes(page, data);
   await signIn(page);
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  if (row) await page.getByRole('link', { name: new RegExp(`^${row}\\.`) }).click();
+  await page.getByTestId('nav-settings').click();
+  if (row) await page.getByTestId(`settings-row-${row}`).click();
   await expect(page.getByRole('heading', { name: waitFor, level: 1 })).toBeVisible();
   await page.waitForTimeout(600); // let the fonts settle
   await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
@@ -287,7 +289,7 @@ for (const w of WIDTHS) {
       { page, context },
       `settings-profile-${w.name}.png`,
       { width: w.width, height: w.full },
-      'Profile',
+      'profile',
       'Profile',
     );
   });
@@ -297,7 +299,7 @@ for (const w of WIDTHS) {
       { page, context },
       `settings-plan-${w.name}.png`,
       { width: w.width, height: w.full },
-      'Plan and usage',
+      'plan',
       'Plan and usage',
     );
   });
@@ -307,7 +309,7 @@ for (const w of WIDTHS) {
       { page, context },
       `settings-team-${w.name}.png`,
       { width: w.width, height: w.full },
-      'Team',
+      'team',
       'Team',
     );
   });
@@ -317,7 +319,7 @@ for (const w of WIDTHS) {
       { page, context },
       `settings-security-${w.name}.png`,
       { width: w.width, height: w.full },
-      'Security',
+      'security',
       'Security',
     );
   });
@@ -331,7 +333,7 @@ for (const w of WIDTHS) {
       // element, so anything past the viewport is simply not in the picture. The phone needs
       // more again, because everything wraps onto more lines at 390.
       { width: w.width, height: w.full + (w.width < 768 ? 1500 : 1000) },
-      'Data and privacy',
+      'data',
       'Data and privacy',
       // Twelve notes, so the picture shows what somebody with a real pile of them sees: the
       // count, the ten newest, and a Show more button. With one note there was nothing to show.

@@ -7,6 +7,7 @@
 import { expect, test } from '@playwright/test';
 
 import { installFakes, signIn, TEAM } from './fixtures/fake-api';
+import { expectNoSideScroll } from './fixtures/nav';
 
 
 /**
@@ -21,7 +22,7 @@ function shown(locator: import('@playwright/test').Locator) {
 }
 
 async function openTeam(page: import('@playwright/test').Page) {
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByTestId('nav-settings').click();
   await page.getByRole('link', { name: /^Team\./ }).click();
   await expect(page.getByRole('heading', { name: 'Team', level: 1 })).toBeVisible();
 }
@@ -160,7 +161,7 @@ test('A TEAM MEMBER CAN SEE THE TEAM BUT CANNOT CHANGE IT', async ({ page }) => 
 test('A NON-OWNER CANNOT CHANGE THE RECAP SETTINGS EITHER', async ({ page }) => {
   await installFakes(page, { isOwner: false });
   await signIn(page);
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByTestId('nav-settings').click();
   await page.getByRole('link', { name: /^Recaps\./ }).click();
 
   await expect(page.getByRole('heading', { name: 'Recap emails', level: 1 })).toBeVisible();
@@ -205,6 +206,5 @@ test('Team works at phone width', async ({ page }) => {
   await openTeam(page);
 
   await expect(page.getByRole('heading', { name: '3 of 5 seats' })).toBeVisible();
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
+  await expectNoSideScroll(page);
 });

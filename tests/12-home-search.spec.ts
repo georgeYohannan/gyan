@@ -13,8 +13,25 @@ import { ACCOUNT_ID, installFakes, noteRow, signIn } from './fixtures/fake-api';
 /** Expo Router keeps screens mounted off to the side, so only count what people can see. */
 const shown = (locator: Locator) => locator.filter({ visible: true });
 
-/** Every note row on screen. The titles are "Note 01", "Note 02", and so on. */
-const rows = (page: Page) => shown(page.getByText(/^Note \d\d$/));
+/**
+ * Every note row on screen, by name rather than by its title.
+ *
+ * This used to be `getByText(/^Note \d\d$/)`, which counted the TITLES rather than the rows.
+ * That holds only while a row shows its title exactly once -- so the first redesign that
+ * repeated a title anywhere in a row (a preview line, a truncated copy, an aria mirror) would
+ * have silently doubled every count in this file, and the numbers would still have looked
+ * plausible. Counting the rows themselves cannot drift that way.
+ */
+const rows = (page: Page) => shown(page.locator('[data-testid^="home-note-row-"]'));
+
+/**
+ * Home's own search box.
+ *
+ * Named rather than found by its label, because the Search screen has a box with the same
+ * label -- both say "Search your notes" to a screen reader, which is right for a person and
+ * ambiguous for a script the moment both are reachable.
+ */
+const homeSearch = (page: Page) => page.getByTestId('home-search-field');
 
 /** The Filters button, which reads "Filters" or "Filters, 3 on". Plain "Filters" would also
  *  match "Clear filters", so it is matched from the start of the label. */
@@ -84,7 +101,7 @@ test('searching a word shows a snippet, says where it was found, and counts the 
   });
   await signIn(page);
 
-  await page.getByLabel('Search your notes').fill('pricing');
+  await homeSearch(page).fill('pricing');
 
   await expect(rows(page)).toHaveCount(2);
   await expect(shown(page.getByText('2 notes found')).first()).toBeVisible();
@@ -105,7 +122,7 @@ test('it waits for the typing to stop rather than searching every letter', async
   await signIn(page);
 
   const before = recorder.searches.filter((u) => u.name === 'find_notes').length;
-  await page.getByLabel('Search your notes').pressSequentially('pricing', { delay: 20 });
+  await homeSearch(page).pressSequentially('pricing', { delay: 20 });
   await expect(rows(page)).toHaveCount(1);
 
   const searches = recorder.searches
@@ -123,7 +140,7 @@ test('clearing the box brings the whole list back', async ({ page }) => {
   });
   await signIn(page);
 
-  await page.getByLabel('Search your notes').fill('pricing');
+  await homeSearch(page).fill('pricing');
   await expect(rows(page)).toHaveCount(1);
   await page.getByRole('button', { name: 'Clear the search' }).click();
   await expect(rows(page)).toHaveCount(10);
@@ -133,7 +150,7 @@ test('a word nobody said says so, and offers the whole list back', async ({ page
   await installFakes(page, { notes: manyNotes(12) });
   await signIn(page);
 
-  await page.getByLabel('Search your notes').fill('zebra');
+  await homeSearch(page).fill('zebra');
   await expect(shown(page.getByText('No notes match')).first()).toBeVisible();
   // Not "No notes yet": this person has twelve.
   await expect(page.getByText('No notes yet')).toBeHidden();
@@ -233,7 +250,7 @@ test('status, source and open to-dos work together with a search word', async ({
   });
   await signIn(page);
 
-  await page.getByLabel('Search your notes').fill('budget went up');
+  await homeSearch(page).fill('budget went up');
   await expect(rows(page)).toHaveCount(3);
 
   await filtersButton(page).click();
@@ -257,7 +274,7 @@ test('Clear filters puts everything back in one press', async ({ page }) => {
   await installFakes(page, { notes: manyNotes(12), searchText: { 'note-02': { transcript: 'pricing' } } });
   await signIn(page);
 
-  await page.getByLabel('Search your notes').fill('pricing');
+  await homeSearch(page).fill('pricing');
   await filtersButton(page).click();
   await shown(page.getByRole('checkbox', { name: 'Ready', exact: true })).first().click();
   await shown(page.getByRole('button', { name: 'Show these notes' })).first().click();
@@ -265,7 +282,7 @@ test('Clear filters puts everything back in one press', async ({ page }) => {
 
   await shown(page.getByRole('button', { name: 'Clear filters' })).first().click();
   await expect(rows(page)).toHaveCount(10);
-  await expect(page.getByLabel('Search your notes')).toHaveValue('');
+  await expect(homeSearch(page)).toHaveValue('');
   // And the address goes back to a plain Home, with no leftovers in it.
   await page.waitForURL((url) => url.search === '');
 });
@@ -275,7 +292,7 @@ test('the search and the filters survive a refresh, and the back button', async 
   await installFakes(page, data);
   await signIn(page);
 
-  await page.getByLabel('Search your notes').fill('pricing');
+  await homeSearch(page).fill('pricing');
   await filtersButton(page).click();
   await shown(page.getByRole('checkbox', { name: 'Ready', exact: true })).first().click();
   await shown(page.getByRole('button', { name: 'Show these notes' })).first().click();
@@ -289,7 +306,7 @@ test('the search and the filters survive a refresh, and the back button', async 
   // A refresh brings back the same view, not a blank Home.
   await installFakes(page, data);
   await page.reload();
-  await expect(page.getByLabel('Search your notes')).toHaveValue('pricing');
+  await expect(homeSearch(page)).toHaveValue('pricing');
   await expect(shown(page.getByText('Filters (1)')).first()).toBeVisible();
   await expect(rows(page)).toHaveCount(1);
 
@@ -297,7 +314,7 @@ test('the search and the filters survive a refresh, and the back button', async 
   await page.getByText('Note 03').click();
   await expect(page.getByRole('heading', { name: 'Note' }).first()).toBeVisible();
   await page.goBack();
-  await expect(page.getByLabel('Search your notes')).toHaveValue('pricing');
+  await expect(homeSearch(page)).toHaveValue('pricing');
   await expect(rows(page)).toHaveCount(1);
 });
 
@@ -382,7 +399,7 @@ test('the Search screen finds the line somebody said, and opens the note at that
   await installFakes(page, { notes: manyNotes(3) });
   await signIn(page);
 
-  await page.getByLabel('Search your notes').fill('sign up');
+  await homeSearch(page).fill('sign up');
   await page.getByRole('link', { name: 'See every matching line' }).click();
 
   await expect(page.getByRole('heading', { name: 'Search' })).toBeVisible();
