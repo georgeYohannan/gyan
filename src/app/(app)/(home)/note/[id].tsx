@@ -529,7 +529,7 @@ function Pill({
         backgroundColor: quiet ? 'transparent' : Colors.glass,
         opacity: enabled ? 1 : 0.5,
       }}>
-      <Body color={quiet ? 'textSecondary' : 'link'} style={quiet ? undefined : { fontWeight: '600' }}>
+      <Body color={quiet ? 'textSecondary' : 'link'} weight={quiet ? 'regular' : 'semibold'}>
         {label}
       </Body>
     </Pressable>
@@ -658,7 +658,7 @@ function TranscriptTab({
             onLayout={(e) => onLineLayout?.(p.id, e.nativeEvent.layout.y)}
             style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
             accessibilityLabel={`Paragraph ${i + 1}. ${wordsFor(i, p.text)}${lit ? '. Highlighted' : ''}`}>
-            <Body color="link" style={{ fontWeight: '600' }}>
+            <Body color="link" weight="semibold">
               Paragraph {i + 1}
             </Body>
             <ScriptText language={language}>{wordsFor(i, p.text)}</ScriptText>
@@ -674,7 +674,7 @@ function TranscriptTab({
             style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
             accessibilityLabel={`${l.speaker_label ?? 'Speaker'}, ${formatTime(l.start_ms)}. ${wordsFor(i, l.text)}${lit ? '. Highlighted' : ''}`}>
             <View style={{ flexDirection: 'row', gap: Spacing.three, alignItems: 'baseline' }}>
-              <Body color="link" style={{ fontWeight: '600' }}>
+              <Body color="link" weight="semibold">
                 {l.speaker_label ?? 'Speaker'}
               </Body>
               <Body small color="textSecondary">

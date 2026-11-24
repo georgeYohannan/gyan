@@ -22,7 +22,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { AnimatedSplashOverlay } from '@/components/splash-overlay';
 import { Colors, FontFamily } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { peekInviteToken, rememberInviteToken, tokenFromUrl } from '@/lib/invite-link';

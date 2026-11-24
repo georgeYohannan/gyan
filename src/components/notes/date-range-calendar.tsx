@@ -54,7 +54,7 @@ export function DateRangeCalendar({ value, onChange, now = new Date() }: DateRan
     <View style={{ gap: Spacing.two }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Arrow label="Show the month before" glyph="‹" onPress={() => step(-1)} />
-        <Body style={{ fontWeight: '600' }}>{monthName}</Body>
+        <Body weight="semibold">{monthName}</Body>
         <Arrow label="Show the month after" glyph="›" onPress={() => step(1)} />
       </View>
 

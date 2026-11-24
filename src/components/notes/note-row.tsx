@@ -101,7 +101,7 @@ export function NoteRow({ note, ...extras }: { note: Note } & NoteRowExtras) {
           ) : null}
 
           <View style={{ flex: 1, gap: Spacing.one }}>
-            <Body style={{ fontWeight: '600' }} numberOfLines={2}>
+            <Body weight="semibold" numberOfLines={2}>
               {noteTitle(note)}
             </Body>
             <Body small color="textSecondary">

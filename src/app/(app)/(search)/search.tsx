@@ -150,7 +150,7 @@ export default function SearchScreen() {
               onPress={() => open(passage)}>
               <GlassPanel style={{ gap: Spacing.two }}>
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.three }}>
-                  <Body style={{ flex: 1, fontWeight: '600' }} numberOfLines={2}>
+                  <Body weight="semibold" style={{ flex: 1 }} numberOfLines={2}>
                     {passage.noteTitle?.trim() || 'Untitled note'}
                   </Body>
                   <Body small color="textSecondary">

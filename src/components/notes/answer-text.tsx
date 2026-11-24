@@ -82,7 +82,7 @@ export function AnswerText({ text, sources, onJump }: AnswerTextProps) {
               borderColor: Colors.glassBorder,
               backgroundColor: Colors.glass,
             }}>
-            <Body small color="link" style={{ fontWeight: '600' }}>
+            <Body small color="link" weight="semibold">
               {piece.source.n}
             </Body>
           </Pressable>

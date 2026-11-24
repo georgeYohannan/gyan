@@ -39,7 +39,7 @@ export function TabBar<T extends string>({ tabs, selected, onSelect, testIDPrefi
               borderColor: Colors.glassBorder,
               backgroundColor: isSelected ? Colors.backgroundSelected : 'transparent',
             }}>
-            <Body color={isSelected ? 'text' : 'textSecondary'} style={isSelected ? { fontWeight: '600' } : undefined}>
+            <Body color={isSelected ? 'text' : 'textSecondary'} weight={isSelected ? 'semibold' : 'regular'}>
               {tab}
             </Body>
           </Pressable>

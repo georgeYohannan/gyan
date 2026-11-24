@@ -101,8 +101,36 @@ export const Spacing = {
 /** Pill buttons are fully rounded. */
 export const Radius = {
   pill: 999,
-  /** Glass panels and text fields. */
-  panel: 20,
+  /**
+   * Glass panels and text fields.
+   *
+   * 16, not 20: `docs/design/sleek/brief.txt` says "panels around 16px radius" and the code
+   * had quietly shipped 20 since the first week. Nothing pinned it, so the brief wins.
+   */
+  panel: 16,
+} as const;
+
+/**
+ * The type scale.
+ *
+ * These were literals inside `Heading` and `Body`, which meant a screen that wanted a size
+ * between them invented one. Naming them is what makes a scale a scale.
+ *
+ * `display` is new and exists for one job: the single largest thing on a screen, used at most
+ * once. Headings keep their 1.2 line height and body text 1.5, because a line of a heading is
+ * read as a shape and a line of prose is read as a line.
+ */
+export const Type = {
+  display: 40,
+  heading1: 26,
+  heading2: 20,
+  heading3: 17,
+  body: 16,
+  small: 14,
+  /** The smallest text Gyan uses. Labels in the bottom bar, and nothing load-bearing. */
+  tiny: 12,
+  headingLineHeight: 1.2,
+  bodyLineHeight: 1.5,
 } as const;
 
 /** Animation timing. UI changes take 0.2 seconds. Reveals take 0.32 seconds. */

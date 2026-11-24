@@ -32,7 +32,7 @@ export function StatusBadge({ status, testID }: { status: Status; testID?: strin
         paddingVertical: Spacing.one,
         paddingHorizontal: Spacing.three,
       }}>
-      <Body small color={v.text} style={{ fontWeight: '600' }}>
+      <Body small color={v.text} weight="semibold">
         {status}
       </Body>
     </View>

@@ -202,7 +202,7 @@ export function FilterSheet({ visible, view, onApply, onClose, onClear, now = ne
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={{ gap: Spacing.two }}>
-      <Body style={{ fontWeight: '600' }}>{title}</Body>
+      <Body weight="semibold">{title}</Body>
       {children}
     </View>
   );
