@@ -24,10 +24,10 @@ jest.mock('@/lib/auth', () => ({
   useAuth: () => ({ session: { user: { id: 'u1', email: 'sam@example.test' } }, signOut: mockSignOut }),
 }));
 
-const mockListNotes = jest.fn();
-jest.mock('@/lib/notes', () => ({
-  ...jest.requireActual('@/lib/notes'),
-  listNotes: (...a: unknown[]) => mockListNotes(...a),
+const mockFindNotes = jest.fn();
+jest.mock('@/lib/notes-search', () => ({
+  ...jest.requireActual('@/lib/notes-search'),
+  findNotes: (...a: unknown[]) => mockFindNotes(...a),
 }));
 
 const mockCanDelete = jest.fn();
@@ -47,8 +47,18 @@ const note = (over: Record<string, unknown> = {}) => ({
   status: 'Ready',
   error_message: null,
   created_at: '2026-11-18T10:00:00.000Z',
+  hasOpenActions: false,
+  canDelete: true,
+  matchedIn: [],
   ...over,
 });
+
+/** One page of notes, as the paged read hands it back. */
+const page = (notes: ReturnType<typeof note>[], total = notes.length) => ({ notes, total });
+
+/** Notes n1, n2, n3 ... so a page of ten can be built without writing ten of them out. */
+const many = (count: number, from = 1) =>
+  Array.from({ length: count }, (_, i) => note({ id: `n${from + i}`, title: `Note ${from + i}` }));
 
 const canDelete = (over: Record<string, unknown> = {}) => ({
   isOwner: true,
@@ -64,7 +74,7 @@ beforeEach(() => {
   mockPush.mockReset();
   mockReplace.mockReset();
   mockSignOut.mockReset().mockResolvedValue({});
-  mockListNotes.mockReset().mockResolvedValue([note()]);
+  mockFindNotes.mockReset().mockResolvedValue(page([note()]));
   mockCanDelete.mockReset().mockResolvedValue(canDelete());
   mockDeleteNote.mockReset().mockResolvedValue(undefined);
   mockDeleteAccount.mockReset().mockResolvedValue({ ok: true });
@@ -88,11 +98,27 @@ describe('deleting one note', () => {
       render(<DataPrivacyScreen />);
     });
     await act(async () => fireEvent.press(await screen.findByRole('button', { name: 'Delete' })));
-    mockListNotes.mockResolvedValue([]);
     await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Delete this note' })));
 
     expect(mockDeleteNote).toHaveBeenCalledWith('n1');
     expect(await screen.findByText('Monday planning call is deleted.')).toBeTruthy();
+  });
+
+  test('the deleted note leaves the list without re-reading the whole thing', async () => {
+    await act(async () => {
+      render(<DataPrivacyScreen />);
+    });
+    expect(await screen.findByText('Monday planning call')).toBeTruthy();
+    const readsBefore = mockFindNotes.mock.calls.length;
+
+    await act(async () => fireEvent.press(await screen.findByRole('button', { name: 'Delete' })));
+    await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Delete this note' })));
+
+    expect(screen.queryByText('Monday planning call')).toBeNull();
+    expect(screen.getByText('You have no notes yet.')).toBeTruthy();
+    // The row goes locally. Asking the server for the list again would throw away every page
+    // the person had pressed Show more for.
+    expect(mockFindNotes.mock.calls.length).toBe(readsBefore);
   });
 
   test('cancelling deletes nothing', async () => {
@@ -117,11 +143,122 @@ describe('deleting one note', () => {
   });
 
   test('a pasted note with no title is still named something', async () => {
-    mockListNotes.mockResolvedValue([note({ title: null, source: 'text' })]);
+    mockFindNotes.mockResolvedValue(page([note({ title: null, source: 'text' })]));
     await act(async () => {
       render(<DataPrivacyScreen />);
     });
     expect(await screen.findByText('Pasted text')).toBeTruthy();
+  });
+
+  test('a note a teammate made is not offered a Delete button at all', async () => {
+    mockFindNotes.mockResolvedValue(
+      page([note({ id: 'mine', title: 'Mine' }), note({ id: 'theirs', title: 'Theirs', canDelete: false })]),
+    );
+    await act(async () => {
+      render(<DataPrivacyScreen />);
+    });
+
+    expect(await screen.findByText('Theirs')).toBeTruthy();
+    expect(screen.getByText('Somebody else made this note, so you cannot delete it.')).toBeTruthy();
+    // One button for the one note that can go, not two.
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1);
+  });
+});
+
+/**
+ * This panel used to draw EVERY note with a Delete button beside it. At four hundred notes that
+ * is four hundred rows and one enormous request, which is what these tests are here to stop
+ * coming back.
+ */
+describe('the list is paged', () => {
+  test('it asks for ten, and says how many there are in all', async () => {
+    mockFindNotes.mockResolvedValue(page(many(10), 433));
+    await act(async () => {
+      render(<DataPrivacyScreen />);
+    });
+
+    expect(await screen.findByText('433 notes, showing the 10 newest')).toBeTruthy();
+    expect(mockFindNotes).toHaveBeenCalledWith(expect.anything(), { limit: 10 });
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(10);
+  });
+
+  test('Show more adds twenty, counted from the last note already drawn', async () => {
+    mockFindNotes.mockResolvedValueOnce(page(many(10), 433));
+    await act(async () => {
+      render(<DataPrivacyScreen />);
+    });
+    expect(await screen.findByText('Note 10')).toBeTruthy();
+
+    mockFindNotes.mockResolvedValueOnce(page(many(20, 11), 433));
+    await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Show more' })));
+
+    expect(await screen.findByText('Note 30')).toBeTruthy();
+    expect(screen.getByText('433 notes, showing the 30 newest')).toBeTruthy();
+    // Counted from the tenth note, not by position, so an arriving note cannot shift the page.
+    expect(mockFindNotes).toHaveBeenLastCalledWith(expect.anything(), {
+      limit: 20,
+      after: expect.objectContaining({ id: 'n10' }),
+    });
+  });
+
+  test('no request ever asks for more than thirty', async () => {
+    mockFindNotes.mockResolvedValue(page(many(10), 433));
+    await act(async () => {
+      render(<DataPrivacyScreen />);
+    });
+    await act(async () => fireEvent.press(await screen.findByRole('button', { name: 'Show more' })));
+
+    for (const [, asked] of mockFindNotes.mock.calls) {
+      expect((asked as { limit: number }).limit).toBeLessThanOrEqual(30);
+    }
+  });
+
+  test('Show more goes away once everything is drawn', async () => {
+    mockFindNotes.mockResolvedValue(page(many(3), 3));
+    await act(async () => {
+      render(<DataPrivacyScreen />);
+    });
+
+    expect(await screen.findByText('3 notes')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+  });
+
+  test('deleting every note on screen leaves a Show more that still works', async () => {
+    // Two notes drawn out of three, both deleted one at a time: there is now no note to count
+    // the next page from, and Show more used to do nothing at all.
+    mockFindNotes.mockResolvedValue(page(many(2), 3));
+    await act(async () => {
+      render(<DataPrivacyScreen />);
+    });
+    expect(await screen.findByText('Note 1')).toBeTruthy();
+
+    for (const title of ['Note 1', 'Note 2']) {
+      await act(async () => fireEvent.press(screen.getAllByRole('button', { name: 'Delete' })[0]));
+      await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Delete this note' })));
+      expect(screen.queryByText(title)).toBeNull();
+    }
+
+    mockFindNotes.mockResolvedValue(page(many(1, 3), 1));
+    await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Show more' })));
+
+    expect(await screen.findByText('Note 3')).toBeTruthy();
+    expect(mockFindNotes).toHaveBeenLastCalledWith(expect.anything(), { limit: 10 });
+  });
+
+  test('a Show more that fails says so and keeps what is already drawn', async () => {
+    mockFindNotes.mockResolvedValueOnce(page(many(10), 433));
+    await act(async () => {
+      render(<DataPrivacyScreen />);
+    });
+    expect(await screen.findByText('Note 1')).toBeTruthy();
+
+    mockFindNotes.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Show more' })));
+
+    expect(
+      await screen.findByText('We could not load your notes. Check your internet and try again.'),
+    ).toBeTruthy();
+    expect(screen.getByText('Note 1')).toBeTruthy();
   });
 });
 

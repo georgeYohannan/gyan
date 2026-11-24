@@ -25,7 +25,9 @@ import {
   type ExportResult,
 } from '@/lib/account';
 import { useAuth } from '@/lib/auth';
-import { listNotes, noteTitle, type NoteRow } from '@/lib/notes';
+import { formatNoteDate } from '@/lib/dates';
+import { noteTitle, type NoteRow } from '@/lib/notes';
+import { FIRST_PAGE, NEXT_PAGE, NO_FILTERS, findNotes, type NoteHit } from '@/lib/notes-search';
 import { getSecuritySettings, saveSecuritySettings, type SecuritySettings } from '@/lib/security';
 
 type Load = { state: 'loading' } | { state: 'error' } | { state: 'ready' };
@@ -112,7 +114,11 @@ export default function DataPrivacyScreen() {
   const router = useRouter();
   const { signOut } = useAuth();
   const [load, setLoad] = useState<Load>({ state: 'loading' });
-  const [notes, setNotes] = useState<NoteRow[]>([]);
+  const [notes, setNotes] = useState<NoteHit[]>([]);
+  /** How many notes exist in all, which is almost always more than are drawn. */
+  const [total, setTotal] = useState(0);
+  const [moreBusy, setMoreBusy] = useState(false);
+  const [moreError, setMoreError] = useState<string>();
   const [check, setCheck] = useState<DeleteCheck>();
   const [privacy, setPrivacy] = useState<SecuritySettings>();
   const [privacyBusy, setPrivacyBusy] = useState(false);
@@ -129,16 +135,21 @@ export default function DataPrivacyScreen() {
 
   const refresh = useCallback(async () => {
     setLoad({ state: 'loading' });
+    setMoreError(undefined);
     try {
-      const [theNotes, theCheck, thePrivacy] = await Promise.all([
-        listNotes(),
+      const [thePage, theCheck, thePrivacy] = await Promise.all([
+        // Only the 10 newest. This panel used to ask for EVERY note, which was fine at a
+        // handful and slow at four hundred. It is the same paged read Home uses, so the
+        // "never more than 30 in one request" rule holds here too.
+        findNotes(NO_FILTERS, { limit: FIRST_PAGE }),
         canDeleteAccount(),
         // A problem reading the privacy settings must not stop somebody deleting a note,
         // so this one is allowed to come back empty and the panels say nothing rather than
         // the whole screen failing.
         getSecuritySettings().catch(() => undefined),
       ]);
-      setNotes(theNotes);
+      setNotes(thePage.notes);
+      setTotal(thePage.total);
       setCheck(theCheck);
       setPrivacy(thePrivacy);
       setLoad({ state: 'ready' });
@@ -146,6 +157,34 @@ export default function DataPrivacyScreen() {
       setLoad({ state: 'error' });
     }
   }, []);
+
+  /**
+   * Twenty more, counted from the last note already drawn rather than by position, so a note
+   * arriving while you read cannot make a row appear twice or skip one.
+   */
+  const showMore = useCallback(async () => {
+    const last = notes[notes.length - 1];
+    setMoreBusy(true);
+    setMoreError(undefined);
+    try {
+      // With nothing drawn there is no note to count from, which happens after deleting every
+      // note on screen while more are still below. Start again from the newest instead of
+      // leaving a button that does nothing.
+      const next = last
+        ? await findNotes(NO_FILTERS, { limit: NEXT_PAGE, after: last })
+        : await findNotes(NO_FILTERS, { limit: FIRST_PAGE });
+      setNotes((shown) => {
+        const already = new Set(shown.map((n) => n.id));
+        return [...shown, ...next.notes.filter((n) => !already.has(n.id))];
+      });
+      setTotal(next.total);
+    } catch {
+      // The same sentence Home uses when a list will not load, so the app says one thing.
+      setMoreError('We could not load your notes. Check your internet and try again.');
+    } finally {
+      setMoreBusy(false);
+    }
+  }, [notes]);
 
   /** Changes how long notes are kept. Owner only; the database says so out loud. */
   const chooseKeeping = useCallback(
@@ -227,7 +266,15 @@ export default function DataPrivacyScreen() {
       await deleteNote(askingNote.id);
       setDone(`${noteTitle(askingNote)} is deleted.`);
       setAskingNote(undefined);
-      await refresh();
+      // A delete removes exactly one note, so take that row out and count down by one. The
+      // whole list used to be re-read here, which with paging would have thrown away every
+      // page the person had asked for.
+      setNotes((shown) => shown.filter((n) => n.id !== askingNote.id));
+      setTotal((count) => Math.max(0, count - 1));
+      // The account panel names how many notes would go with it, so that one number is
+      // worth re-reading. If it will not come back, the panel keeps what it had.
+      const theCheck = await canDeleteAccount().catch(() => undefined);
+      if (theCheck) setCheck(theCheck);
     } catch (e) {
       setError(e instanceof Error ? e.message : MESSAGES.noteProblem);
     } finally {
@@ -371,30 +418,68 @@ export default function DataPrivacyScreen() {
               the chat about it. It does not give you the meeting back this month.
             </Body>
 
-            {notes.length === 0 ? (
+            {total === 0 ? (
               <Body color="textSecondary">You have no notes yet.</Body>
             ) : (
-              notes.map((note) => (
-                <View
-                  key={note.id}
-                  style={{
-                    flexDirection: 'row',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    gap: Spacing.two,
-                    paddingVertical: Spacing.one,
-                    borderTopWidth: 1,
-                    borderTopColor: Colors.glassBorder,
-                  }}>
-                  <View style={{ flex: 1, minWidth: 180, gap: Spacing.half }}>
-                    <Body>{noteTitle(note)}</Body>
-                    <Body small color="textSecondary">
-                      {new Date(note.created_at).toLocaleDateString()}
-                    </Body>
+              <>
+                <Body small color="textSecondary">
+                  {total === 1 ? '1 note' : `${total} notes`}
+                  {notes.length < total ? `, showing the ${notes.length} newest` : ''}
+                </Body>
+
+                {notes.map((note) => (
+                  <View
+                    key={note.id}
+                    style={{
+                      flexDirection: 'row',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      gap: Spacing.two,
+                      paddingVertical: Spacing.one,
+                      borderTopWidth: 1,
+                      borderTopColor: Colors.glassBorder,
+                    }}>
+                    <View style={{ flex: 1, minWidth: 180, gap: Spacing.half }}>
+                      <Body>{noteTitle(note)}</Body>
+                      <Body small color="textSecondary">
+                        {formatNoteDate(note.created_at)}
+                      </Body>
+                      {note.canDelete ? null : (
+                        <Body small color="textSecondary">
+                          Somebody else made this note, so you cannot delete it.
+                        </Body>
+                      )}
+                    </View>
+                    {/*
+                      A note a teammate made cannot be deleted by you, and the database refuses
+                      it. The button used to be offered anyway, so the only way to find out was
+                      to press it and read the refusal. Now it is simply not there.
+                    */}
+                    {note.canDelete ? (
+                      <Button
+                        label="Delete"
+                        variant="secondary"
+                        onPress={() => setAskingNote(note)}
+                      />
+                    ) : null}
                   </View>
-                  <Button label="Delete" variant="secondary" onPress={() => setAskingNote(note)} />
-                </View>
-              ))
+                ))}
+
+                {notes.length < total ? (
+                  <Button
+                    label={moreBusy ? 'Loading' : 'Show more'}
+                    variant="secondary"
+                    loading={moreBusy}
+                    onPress={() => void showMore()}
+                  />
+                ) : null}
+
+                {moreError ? (
+                  <Body small color="danger" accessibilityRole="alert">
+                    {moreError}
+                  </Body>
+                ) : null}
+              </>
             )}
 
             {done ? (

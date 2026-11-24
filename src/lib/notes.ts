@@ -115,16 +115,6 @@ export async function getUsage(): Promise<Usage> {
   return { accountId: row.account_id, planName: plan.name, used, limit: plan.meetings_per_month };
 }
 
-/** All notes the person can see, newest first. */
-export async function listNotes(): Promise<NoteRow[]> {
-  const { data, error } = await getSupabase()
-    .from('meetings')
-    .select('id, title, source, status, error_message, created_at')
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map((m) => ({ ...m, status: STATUS_FROM_DB[m.status as string] ?? 'Queued' })) as NoteRow[];
-}
-
 /**
  * Just the status of the notes named, nothing else.
  *
