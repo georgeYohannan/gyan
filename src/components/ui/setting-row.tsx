@@ -11,6 +11,8 @@ type SettingRowProps = {
   /** The button that changes it, if there is one. */
   action?: React.ReactNode;
   error?: string;
+  /** A stable name for tests, so a visual change does not break them. */
+  testID?: string;
 };
 
 /**
@@ -20,9 +22,9 @@ type SettingRowProps = {
  * Stacking a label, a value and a note would make three lines where two will do, and the thing
  * a person came to read would be the second one. (Settled in the prompt 8 design pass.)
  */
-export function SettingRow({ value, note, action, error }: SettingRowProps) {
+export function SettingRow({ value, note, action, error, testID }: SettingRowProps) {
   return (
-    <View style={{ gap: Spacing.two }}>
+    <View testID={testID} style={{ gap: Spacing.two }}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two }}>
         <View style={{ flex: 1, minWidth: 180, gap: Spacing.half }}>
           <Body>{value}</Body>

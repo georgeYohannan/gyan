@@ -8,21 +8,22 @@
 import { expect, test } from '@playwright/test';
 
 import { installFakes, signIn } from './fixtures/fake-api';
+import { expectNoSideScroll } from './fixtures/nav';
 
 /** Expo Router keeps off-screen screens mounted, so only look at the visible one. */
 const shown = (locator: import('@playwright/test').Locator) => locator.filter({ visible: true });
 
 async function openSecurity(page: import('@playwright/test').Page) {
-  await page.getByRole('link', { name: /^Settings/ }).first().click();
+  await page.getByTestId('nav-settings').click();
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
-  await page.getByRole('link', { name: /^Security\./ }).click();
+  await page.getByTestId('settings-row-security').click();
   await expect(page.getByRole('heading', { name: 'Security', level: 1 })).toBeVisible();
 }
 
 test('the Settings list says whether two-factor is on, and how long before a sign out', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
-  await page.getByRole('link', { name: /^Settings/ }).first().click();
+  await page.getByTestId('nav-settings').click();
   await expect(
     page.getByText('Two-factor sign in is off. Signs you out after 30 minutes of doing nothing.'),
   ).toBeVisible();
@@ -151,8 +152,7 @@ test('the Security page works at phone width without sliding sideways', async ({
   await signIn(page);
   await openSecurity(page);
 
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
+  await expectNoSideScroll(page);
 });
 
 test('THE PAGE SENDS THE SECURITY HEADERS a browser needs', async ({ page }) => {
@@ -183,7 +183,7 @@ test('THE PAGE SENDS THE SECURITY HEADERS a browser needs', async ({ page }) => 
 // ---------------------------------------------------------------------------
 
 async function openData(page: import('@playwright/test').Page) {
-  await page.getByRole('link', { name: /^Settings/ }).first().click();
+  await page.getByTestId('nav-settings').click();
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
   await page.getByRole('link', { name: /^Data and privacy\./ }).click();
   await expect(page.getByRole('heading', { name: 'Data and privacy', level: 1 })).toBeVisible();

@@ -15,6 +15,9 @@ export function HelpButton({ helpId }: { helpId: string }) {
   return (
     <>
       <Pressable
+        // Derived rather than passed in, so every help button in the app has a stable
+        // name without a single caller having to remember to give it one.
+        testID={`help-button-${helpId}`}
         accessibilityRole="button"
         accessibilityLabel="Help"
         onPress={() => setOpen(true)}

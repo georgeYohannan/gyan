@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
-import DesignScreen from '@/app/(app)/design';
+import DesignScreen from '@/app/(app)/(home)/design';
 import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
 import { GlassPanel } from '@/components/ui/glass-panel';

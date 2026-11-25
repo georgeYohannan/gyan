@@ -3,15 +3,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { SearchField } from '@/components/notes/search-field';
-import { BackLink } from '@/components/ui/back-link';
 import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
 import { GlassPanel } from '@/components/ui/glass-panel';
 import { Heading } from '@/components/ui/heading';
 import { HighlightedText } from '@/components/ui/highlighted-text';
+import { PageHeader } from '@/components/ui/page-header';
 import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Colors, FontFamily, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
+import { Colors, FontFamily, Radius, Spacing } from '@/constants/theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { formatMoment, shortDate } from '@/lib/dates';
 import { findPassages, FIRST_PAGE, NEXT_PAGE, type Passage } from '@/lib/notes-search';
@@ -28,8 +28,13 @@ type Load =
  * Home finds NOTES. This finds LINES, which is what docs/product-spec.md asks the Search screen
  * for -- so a half-remembered sentence takes you to the second of the recording it was said in.
  *
- * It lives inside the Home tab rather than being a tab of its own: the bottom bar is Home and
- * Settings, and docs/decisions.md records that adding a third is a separate decision.
+ * It is a destination of its own in the navigation now, so there is no link back to Home: a tab
+ * has no back. It used to live inside the Home tab with a "Home" link above the title, which is
+ * why that link has gone.
+ *
+ * The results read like a script, which is what they are. Each one is a flat row with a
+ * hairline under it, not a card, and the speaker's name is set small and spaced above the
+ * line they said -- the one place in Gyan that uses letter spacing on purpose.
  */
 export default function SearchScreen() {
   const router = useRouter();
@@ -88,13 +93,10 @@ export default function SearchScreen() {
   const more = load.state === 'ready' && load.passages.length < load.total;
 
   return (
-    <Screen>
-      <BackLink label="Home" href="/" helpId="search" />
-
-      <View style={{ gap: Spacing.two }}>
-        <Heading level={1}>Search</Heading>
-        <Body color="textSecondary">Every line of every note, with the moment it was said.</Body>
-      </View>
+    <Screen testID="search-screen">
+      {/* The invitation below the box says what this screen is for, at more length and in
+          plainer words, so there is no line under the title as well. */}
+      <PageHeader title="Search" helpId="search" />
 
       <SearchField value={typed} onChange={setTyped} autoFocus placeholder="A word somebody said" />
 
@@ -106,21 +108,28 @@ export default function SearchScreen() {
       ) : null}
 
       {load.state === 'idle' ? (
-        <GlassPanel>
+        <View style={{ gap: Spacing.two }}>
           <Heading level={3}>Search across every note</Heading>
           <Body color="textSecondary">
             Type a word somebody said. Gyan looks through every transcript you can see and shows
             the lines that match, with the moment each one was said.
           </Body>
-        </GlassPanel>
+        </View>
       ) : load.state === 'loading' ? (
-        <View style={{ gap: Spacing.three }} accessibilityLabel="Looking through your notes">
+        <View accessibilityLabel="Looking through your notes">
           {[0, 1, 2].map((i) => (
-            <GlassPanel key={i}>
+            <View
+              key={i}
+              style={{
+                gap: Spacing.two,
+                paddingVertical: Spacing.three,
+                borderBottomWidth: i === 2 ? 0 : 1,
+                borderBottomColor: Colors.glassBorder,
+              }}>
               <Skeleton width="55%" height={18} />
               <Skeleton width="90%" />
               <Skeleton width="30%" />
-            </GlassPanel>
+            </View>
           ))}
         </View>
       ) : load.state === 'error' ? (
@@ -138,8 +147,8 @@ export default function SearchScreen() {
           </Body>
         </GlassPanel>
       ) : (
-        <View style={{ gap: Spacing.three }}>
-          {load.passages.map((passage) => (
+        <View>
+          {load.passages.map((passage, i) => (
             <Pressable
               key={passage.segmentId}
               accessibilityRole="link"
@@ -148,9 +157,15 @@ export default function SearchScreen() {
                 `${passage.speaker ?? 'Speaker'} at ${formatMoment(passage.startMs)}`
               }
               onPress={() => open(passage)}>
-              <GlassPanel style={{ gap: Spacing.two }}>
+              <View
+                style={{
+                  gap: Spacing.two,
+                  paddingVertical: Spacing.three,
+                  borderBottomWidth: i === load.passages.length - 1 ? 0 : 1,
+                  borderBottomColor: Colors.glassBorder,
+                }}>
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.three }}>
-                  <Body style={{ flex: 1, fontWeight: '600' }} numberOfLines={2}>
+                  <Body weight="semibold" style={{ flex: 1 }} numberOfLines={2}>
                     {passage.noteTitle?.trim() || 'Untitled note'}
                   </Body>
                   <Body small color="textSecondary">
@@ -158,9 +173,14 @@ export default function SearchScreen() {
                   </Body>
                 </View>
 
-                {/* Speaker names are set small and spaced so a transcript reads like a script,
-                    which is the one place this project uses letter spacing on purpose. */}
-                <Body small color="textSecondary" style={{ letterSpacing: 1, fontFamily: FontFamily.bodyMedium }}>
+                {/* Speaker names are set small, spaced and in capitals so a transcript reads
+                    like a script. This is the one place this project uses letter spacing on
+                    purpose, and the capitals are `textTransform`, NEVER a changed string: the
+                    screen reader label and `getByText('Speaker 1')` both read the real words. */}
+                <Body
+                  small
+                  color="textSecondary"
+                  style={{ letterSpacing: 1, textTransform: 'uppercase', fontFamily: FontFamily.bodyMedium }}>
                   {passage.speaker ?? 'Speaker'}
                 </Body>
 
@@ -187,17 +207,19 @@ export default function SearchScreen() {
                     </Body>
                   </View>
                 </View>
-              </GlassPanel>
+              </View>
             </Pressable>
           ))}
 
           {more ? (
-            <Button
-              label={loadingMore ? 'Loading' : 'Show more'}
-              variant="secondary"
-              loading={loadingMore}
-              onPress={showMore}
-            />
+            <View style={{ paddingTop: Spacing.four }}>
+              <Button
+                label={loadingMore ? 'Loading' : 'Show more'}
+                variant="secondary"
+                loading={loadingMore}
+                onPress={showMore}
+              />
+            </View>
           ) : null}
         </View>
       )}

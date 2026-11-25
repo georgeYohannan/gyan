@@ -12,12 +12,23 @@ type ChoiceCardProps = {
   disabled?: boolean;
   disabledLabel?: string;
   selected?: boolean;
+  /** A stable name for tests, so a visual change does not break them. */
+  testID?: string;
 };
 
 /** One of the 4 ways to add a note. */
-export function ChoiceCard({ title, description, onPress, disabled, disabledLabel, selected }: ChoiceCardProps) {
+export function ChoiceCard({
+  title,
+  description,
+  onPress,
+  disabled,
+  disabledLabel,
+  selected,
+  testID,
+}: ChoiceCardProps) {
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={disabled && disabledLabel ? `${title}, ${disabledLabel}` : title}
       accessibilityState={{ disabled: !!disabled, selected: !!selected }}

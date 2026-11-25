@@ -50,3 +50,15 @@ export const MAX_HISTORY_MESSAGES = 20;
  * another model in the same call instead of the question failing. Set it to false to turn that off.
  */
 export const USE_REFUSAL_FALLBACK = true;
+
+/**
+ * How many notes at most go into ONE all-notes Ask answer.
+ *
+ * Four is a judgement, not a measurement: it is enough that a question about a running topic
+ * reaches more than the last meeting about it, and few enough that four hour-long transcripts
+ * still fit well inside MAX_INPUT_TOKENS above. The keyword search ranks the notes, so these
+ * are the four it thinks are most about the question, and runAsk drops the weakest first if
+ * even four will not fit. Raise it only together with a look at what it costs: every note in
+ * here is a whole transcript, paid for in full the first time it is sent.
+ */
+export const MAX_ASK_NOTES = 4;

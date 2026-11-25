@@ -7,6 +7,7 @@
 import { expect, test } from '@playwright/test';
 
 import { installFakes, noteRow, PLAN_FREE, signIn } from './fixtures/fake-api';
+import { expectNoSideScroll } from './fixtures/nav';
 
 
 /**
@@ -22,7 +23,7 @@ function shown(locator: import('@playwright/test').Locator) {
 
 /** Settings is a tab, so getting there is one tap from anywhere. */
 async function openSettings(page: import('@playwright/test').Page) {
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByTestId('nav-settings').click();
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
 }
 
@@ -45,14 +46,14 @@ test('each row opens its own page, and each page has a way back', async ({ page 
   await openSettings(page);
 
   for (const [row, heading] of [
-    ['Profile', 'Profile'],
-    ['Plan and usage', 'Plan and usage'],
-    ['Team', 'Team'],
-    ['Recaps', 'Recap emails'],
-    ['Security', 'Security'],
-    ['Data and privacy', 'Data and privacy'],
+    ['profile', 'Profile'],
+    ['plan', 'Plan and usage'],
+    ['team', 'Team'],
+    ['recaps', 'Recap emails'],
+    ['security', 'Security'],
+    ['data', 'Data and privacy'],
   ] as const) {
-    await page.getByRole('link', { name: new RegExp(`^${row}\\.`) }).click();
+    await shown(page.getByTestId(`settings-row-${row}`)).first().click();
     await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
     await page.getByRole('link', { name: 'Back to Settings' }).click();
     await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
@@ -127,7 +128,7 @@ test('Plan and usage: every number on the screen comes from the plan', async ({ 
   });
   await signIn(page);
   await openSettings(page);
-  await page.getByRole('link', { name: /^Plan and usage\./ }).click();
+  await page.getByTestId('settings-row-plan').click();
 
   await expect(page.getByRole('heading', { name: '4 of 9' })).toBeVisible();
   await expect(page.getByText('5 left. They start again on the 1st.')).toBeVisible();
@@ -141,7 +142,7 @@ test('Plan and usage: Upgrade is there, and says it is not built yet', async ({ 
   await installFakes(page);
   await signIn(page);
   await openSettings(page);
-  await page.getByRole('link', { name: /^Plan and usage\./ }).click();
+  await page.getByTestId('settings-row-plan').click();
 
   await expect(page.getByRole('button', { name: /Upgrade/ })).toBeDisabled();
   await expect(page.getByText(/not built yet/)).toBeVisible();
@@ -151,7 +152,7 @@ test('Plan and usage: at the limit it says so, and says pasted text still works'
   await installFakes(page, { planAndUsage: { ...PLAN_FREE, meetings_used: 5 } });
   await signIn(page);
   await openSettings(page);
-  await page.getByRole('link', { name: /^Plan and usage\./ }).click();
+  await page.getByTestId('settings-row-plan').click();
 
   await expect(page.getByText(/used all your meetings for this month/)).toBeVisible();
   await expect(page.getByText(/Pasted text still works/)).toBeVisible();
@@ -175,7 +176,7 @@ test('THE TEST-ONLY PLAN SWITCH IS NEVER MISTAKEN FOR PART OF THE APP', async ({
   await installFakes(page);
   await signIn(page);
   await openSettings(page);
-  await page.getByRole('link', { name: /^Plan and usage\./ }).click();
+  await page.getByTestId('settings-row-plan').click();
   await expect(page.getByRole('heading', { name: '2 of 5' })).toBeVisible();
 
   const switchPanel = page.getByRole('heading', { name: 'Switch plan, for testing' });
@@ -282,19 +283,19 @@ test('every Settings page has a ? button that opens its own help', async ({ page
   await installFakes(page);
   await signIn(page);
 
-  for (const [row, title] of [
-    [null, 'Settings'],
-    ['Profile', 'Your profile'],
-    ['Plan and usage', 'Plan and usage'],
-    ['Team', 'Your team'],
-    ['Security', 'Security'],
-    ['Data and privacy', 'Data and privacy'],
+  for (const [row, heading, title] of [
+    [null, null, 'Settings'],
+    ['profile', 'Profile', 'Your profile'],
+    ['plan', 'Plan and usage', 'Plan and usage'],
+    ['team', 'Team', 'Your team'],
+    ['security', 'Security', 'Security'],
+    ['data', 'Data and privacy', 'Data and privacy'],
   ] as const) {
     // Start from the Settings list each time, so the screen behind is always the same one.
     await openSettings(page);
     if (row) {
-      await shown(page.getByRole('link', { name: new RegExp(`^${row}\\.`) })).click();
-      await expect(page.getByRole('heading', { name: row, level: 1 })).toBeVisible();
+      await shown(page.getByTestId(`settings-row-${row}`)).click();
+      await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
     }
 
     await shown(page.getByRole('button', { name: 'Help' })).click();
@@ -319,11 +320,10 @@ test('Settings works at phone width', async ({ page }) => {
   await openSettings(page);
 
   await expect(page.getByText('Free plan. 2 of 5 meetings used this month.')).toBeVisible();
-  await page.getByRole('link', { name: /^Plan and usage\./ }).click();
+  await page.getByTestId('settings-row-plan').click();
   await expect(page.getByRole('heading', { name: '2 of 5' })).toBeVisible();
   // The page must not scroll sideways on a phone.
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
+  await expectNoSideScroll(page);
 });
 
 /**

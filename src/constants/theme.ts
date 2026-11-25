@@ -101,8 +101,36 @@ export const Spacing = {
 /** Pill buttons are fully rounded. */
 export const Radius = {
   pill: 999,
-  /** Glass panels and text fields. */
-  panel: 20,
+  /**
+   * Glass panels and text fields.
+   *
+   * 16, not 20: `docs/design/sleek/brief.txt` says "panels around 16px radius" and the code
+   * had quietly shipped 20 since the first week. Nothing pinned it, so the brief wins.
+   */
+  panel: 16,
+} as const;
+
+/**
+ * The type scale.
+ *
+ * These were literals inside `Heading` and `Body`, which meant a screen that wanted a size
+ * between them invented one. Naming them is what makes a scale a scale.
+ *
+ * `display` is new and exists for one job: the single largest thing on a screen, used at most
+ * once. Headings keep their 1.2 line height and body text 1.5, because a line of a heading is
+ * read as a shape and a line of prose is read as a line.
+ */
+export const Type = {
+  display: 40,
+  heading1: 26,
+  heading2: 20,
+  heading3: 17,
+  body: 16,
+  small: 14,
+  /** The smallest text Gyan uses. Labels in the bottom bar, and nothing load-bearing. */
+  tiny: 12,
+  headingLineHeight: 1.2,
+  bodyLineHeight: 1.5,
 } as const;
 
 /** Animation timing. UI changes take 0.2 seconds. Reveals take 0.32 seconds. */
@@ -116,8 +144,26 @@ export const Motion = {
 /** Phone touch targets are at least 44 by 44 points. */
 export const MinTouchTarget = 44;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
 
-/** Breakpoint (in points) where the help panel becomes a side panel on wide web screens. */
+/**
+ * The breakpoint, in points, where Gyan stops being a phone and starts being a web page.
+ *
+ * ONE number does three things: the navigation becomes a sidebar instead of a bottom bar, the
+ * help panel comes in from the right instead of up from the bottom, and so does every other
+ * panel. They were always going to need a breakpoint each; sharing one means the sidebar
+ * appears at exactly the width where the panels change too, which is worth more than picking
+ * a nicer number for any one of them.
+ */
 export const WideBreakpoint = 768;
+
+/**
+ * How tall the bottom bar is on a narrow WEB window, and how wide the sidebar is on a wide one.
+ *
+ * Web only. On phones the system draws the bar and applies its own insets: Android wraps a
+ * native-tabs screen in a SafeAreaView with the bottom inset, and iOS adjusts the first scroll
+ * view inside it. There used to be a `BottomTabInset` here for that and it was referenced
+ * nowhere, because it was never needed.
+ */
+export const TabBarHeight = 64;
+export const SidebarWidth = 240;

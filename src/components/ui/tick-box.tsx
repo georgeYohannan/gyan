@@ -9,9 +9,19 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
  * whole row should be the target, not a 24 point square. The to-do list and the Send recap
  * dialog both use this, so a tick looks the same wherever it appears.
  */
-export function TickBox({ checked, nudgeDown = false }: { checked: boolean; nudgeDown?: boolean }) {
+export function TickBox({
+  checked,
+  nudgeDown = false,
+  testID,
+}: {
+  checked: boolean;
+  nudgeDown?: boolean;
+  /** A stable name for tests, so a visual change does not break them. */
+  testID?: string;
+}) {
   return (
     <View
+      testID={testID}
       // The box itself is 24 wide, but it sits in a 44 high row, so the whole row is the target.
       style={{
         width: 24,

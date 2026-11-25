@@ -7,8 +7,9 @@ import { GlassPanel } from '@/components/ui/glass-panel';
 import { Heading } from '@/components/ui/heading';
 import { ActionItemRow } from '@/components/notes/action-item-row';
 import { ScriptText } from '@/components/ui/script-text';
+import { Section } from '@/components/ui/section';
 import { DEFAULT_LANGUAGE } from '@/constants/languages';
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { copyText } from '@/lib/clipboard';
 import { noteTitle } from '@/lib/notes';
 import { summaryToPlainText, type ActionItem, type Summary } from '@/lib/summaries';
@@ -40,7 +41,14 @@ type SummaryTabProps = {
   translationBar?: React.ReactNode;
 };
 
-/** A short list of words under a heading. Nothing is drawn when the list is empty. */
+/**
+ * A short list of words under a heading. Nothing is drawn when the list is empty.
+ *
+ * Key points, Decisions and Open questions used to be three glass cards, identical to each
+ * other and to the overview above them and the to-dos below them -- five boxes with the same
+ * border and the same corners, telling a reader nothing about which was which. They are
+ * sections now: a name, a hairline, and the words.
+ */
 function Points({
   heading,
   items,
@@ -52,8 +60,7 @@ function Points({
 }) {
   if (items.length === 0) return null;
   return (
-    <GlassPanel>
-      <Heading level={3}>{heading}</Heading>
+    <Section title={heading} style={{ gap: Spacing.two }}>
       <View style={{ gap: Spacing.two }}>
         {items.map((item, i) => (
           <View key={`${heading}-${i}`} style={{ flexDirection: 'row', gap: Spacing.two }}>
@@ -64,7 +71,32 @@ function Points({
           </View>
         ))}
       </View>
-    </GlassPanel>
+    </Section>
+  );
+}
+
+/**
+ * How much of a note's to-do list is done.
+ *
+ * The burnt orange from the brief, used as a fill and nowhere near a word. It is the one warm
+ * thing on this screen, and it marks the one thing on the page that is still owed.
+ */
+function DoneMeter({ done, total }: { done: number; total: number }) {
+  if (total === 0) return null;
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{ height: 4, borderRadius: Radius.pill, backgroundColor: Colors.skeleton, overflow: 'hidden' }}>
+      <View
+        style={{
+          height: 4,
+          width: `${Math.round((done / total) * 100)}%`,
+          backgroundColor: Colors.record,
+          borderRadius: Radius.pill,
+        }}
+      />
+    </View>
   );
 }
 
@@ -211,28 +243,32 @@ export function SummaryTab({
   const overview = translation ? translation.overview : summary.overview;
 
   return (
-    <View style={{ gap: Spacing.three }}>
+    <View style={{ gap: Spacing.four }}>
       {translationBar}
 
+      {/* The whole note in one breath, set large. It is the one paragraph anybody reads
+          every time, so it is the first thing and the biggest thing. */}
       {overview ? (
-        <GlassPanel strong accessibilityLabel={`Overview. ${overview}`}>
-          <ScriptText language={language}>{overview}</ScriptText>
-        </GlassPanel>
+        <ScriptText language={language} lead accessibilityLabel={`Overview. ${overview}`}>
+          {overview}
+        </ScriptText>
       ) : null}
 
       <Points heading="Key points" items={shown.key_points} language={language} />
       <Points heading="Decisions" items={shown.decisions} language={language} />
       <Points heading="Open questions" items={shown.open_questions} language={language} />
 
-      <GlassPanel>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: Spacing.three, flexWrap: 'wrap' }}>
-          <Heading level={3}>Action items</Heading>
-          {items.length > 0 ? (
+      <Section
+        title="Action items"
+        style={{ gap: Spacing.two }}
+        right={
+          items.length > 0 ? (
             <Body small color="textSecondary">
               {done} of {items.length} done
             </Body>
-          ) : null}
-        </View>
+          ) : null
+        }>
+        <DoneMeter done={done} total={items.length} />
         {items.length === 0 ? (
           <Body color="textSecondary">Nobody agreed to do anything in this note.</Body>
         ) : (
@@ -260,7 +296,7 @@ export function SummaryTab({
             We could not save that tick. Check your internet and try again.
           </Body>
         ) : null}
-      </GlassPanel>
+      </Section>
 
       <View style={{ flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap', alignItems: 'center' }}>
         <Button label="Copy" variant="secondary" onPress={copy} />

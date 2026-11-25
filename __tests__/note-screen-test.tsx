@@ -50,6 +50,15 @@ jest.mock('@/lib/chat', () => ({
   listChatMessages: (...a: unknown[]) => mockChatList(...a),
   askChat: (...a: unknown[]) => mockAsk(...a),
   retryChat: jest.fn(),
+  // The Chat tab reaches the server through a transport now, not by calling these three
+  // directly -- that is what lets the Ask destination reuse the same chat. Mocking the
+  // three on their own would no longer be seen, because `noteChat` calls them from inside
+  // the real module, so the transport itself is the seam and it is replaced here.
+  noteChat: (id: string) => ({
+    list: () => mockChatList(id),
+    ask: (question: string) => mockAsk(id, question),
+    retry: () => Promise.resolve({ ok: false as const, message: 'not used in these tests' }),
+  }),
 }));
 jest.mock('@/lib/profile', () => ({
   useProfile: () => ({
@@ -442,7 +451,21 @@ describe('help for the note screen', () => {
   });
 });
 
-describe('<NoteDetailScreen /> the side chat', () => {
+/**
+ * Opens the "More" menu, which is where Language, Translate and Send recap live now.
+ *
+ * They used to be three buttons on the line above the note, beside the tabs. The line had
+ * grown to six things and pushed the page sideways on a phone, so everything that is not
+ * reading the note moved behind one button. The actions themselves are unchanged -- same
+ * names, same labels, same behaviour -- so these tests gained one press each and nothing more.
+ */
+async function openMore() {
+  await act(async () => {
+    fireEvent.press(await screen.findByTestId('note-more'));
+  });
+}
+
+describe('<NoteDetailScreen /> the Chat tab', () => {
   const CHAT = [
     { id: 'c1', role: 'user' as const, content: 'What were the decisions?', sources: [], created_at: 'x' },
     {
@@ -455,36 +478,52 @@ describe('<NoteDetailScreen /> the side chat', () => {
     },
   ];
 
-  test('a Ready note with words has an Ask button', async () => {
+  /** The Chat tab, which is how anybody reaches the chat now. */
+  const openChat = async () => {
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('tab', { name: 'Chat' }));
+    });
+  };
+
+  test('a Ready note with words offers a Chat tab', async () => {
     mockGetNote.mockResolvedValue(note());
     mockList.mockResolvedValue(lines);
     await render(<NoteDetailScreen />);
 
-    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
-    expect(ask.props.accessibilityState).toMatchObject({ disabled: false });
+    expect(await screen.findByRole('tab', { name: 'Chat' })).toBeTruthy();
   });
 
-  test('a note with no words yet cannot be asked about, and says why', async () => {
+  test('a note with no words yet says why there is nothing to ask about', async () => {
     mockGetNote.mockResolvedValue(note({ status: 'Transcribing' }));
     mockList.mockResolvedValue([]);
     await render(<NoteDetailScreen />);
+    await openChat();
 
-    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
-    expect(ask.props.accessibilityState).toMatchObject({ disabled: true });
+    // The tab is NOT switched off. A tab you cannot press says nothing about why; a tab that
+    // explains itself does. It also means the chat is never somewhere people cannot look.
     expect(screen.getByText('You can ask questions once this note has its words.')).toBeTruthy();
+    expect(mockChatList).not.toHaveBeenCalled();
   });
 
-  test('Ask opens the chat panel, and the chat is read from the database', async () => {
+  test('opening the Chat tab reads the conversation from the database', async () => {
     mockGetNote.mockResolvedValue(note());
     mockList.mockResolvedValue(lines);
     await render(<NoteDetailScreen />);
+    await openChat();
+
+    expect(mockChatList).toHaveBeenCalledWith('n1');
+  });
+
+  test('the ? at the top follows the tab, so Chat opens the chat help', async () => {
+    mockGetNote.mockResolvedValue(note());
+    mockList.mockResolvedValue(lines);
+    await render(<NoteDetailScreen />);
+    await openChat();
 
     await act(async () => {
-      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+      fireEvent.press(screen.getByTestId('help-button-noteChat'));
     });
-
-    expect(screen.getByRole('header', { name: 'Ask about this note' })).toBeTruthy();
-    expect(mockChatList).toHaveBeenCalledWith('n1');
+    expect(screen.getByRole('header', { name: HELP.noteChat.title })).toBeTruthy();
   });
 
   test('tapping a passage number opens the Transcript tab and lights up that line', async () => {
@@ -493,9 +532,7 @@ describe('<NoteDetailScreen /> the side chat', () => {
     mockChatList.mockResolvedValue(CHAT);
     await render(<NoteDetailScreen />);
 
-    await act(async () => {
-      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
-    });
+    await openChat();
     await act(async () => {
       fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 1:05' }));
     });
@@ -514,9 +551,7 @@ describe('<NoteDetailScreen /> the side chat', () => {
     mockChatList.mockResolvedValue(CHAT);
     await render(<NoteDetailScreen />);
 
-    await act(async () => {
-      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
-    });
+    await openChat();
     await act(async () => {
       fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 1:05' }));
     });
@@ -531,7 +566,7 @@ describe('<NoteDetailScreen /> the side chat', () => {
   });
 });
 
-describe('help for the chat panel', () => {
+describe('help for the chat', () => {
   const entry = HELP.noteChat;
   const words = [...entry.sentences, ...(entry.lists ?? []).flatMap((l) => [l.heading, ...l.items])].join(' ');
 
@@ -591,8 +626,10 @@ describe('<NoteDetailScreen /> a pasted-text note', () => {
     mockPassages.mockResolvedValue(PARAGRAPHS);
     await render(<NoteDetailScreen />);
 
-    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
-    expect(ask.props.accessibilityState).toMatchObject({ disabled: false });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('tab', { name: 'Chat' }));
+    });
+    expect(screen.getByLabelText('Your question')).toBeTruthy();
     expect(screen.queryByText('You can ask questions once this note has its words.')).toBeNull();
   });
 
@@ -612,7 +649,7 @@ describe('<NoteDetailScreen /> a pasted-text note', () => {
     await render(<NoteDetailScreen />);
 
     await act(async () => {
-      fireEvent.press(await screen.findByRole('button', { name: 'Ask about this note' }));
+      fireEvent.press(await screen.findByRole('tab', { name: 'Chat' }));
     });
     await act(async () => {
       fireEvent.press(await screen.findByRole('link', { name: 'Go to the line at 0:00' }));
@@ -627,9 +664,11 @@ describe('<NoteDetailScreen /> a pasted-text note', () => {
     mockPassages.mockResolvedValue([]);
     await render(<NoteDetailScreen />);
 
-    const ask = await screen.findByRole('button', { name: 'Ask about this note' });
-    expect(ask.props.accessibilityState).toMatchObject({ disabled: true });
+    await act(async () => {
+      fireEvent.press(await screen.findByRole('tab', { name: 'Chat' }));
+    });
     expect(screen.getByText('This note has no words in it, so there is nothing to ask about.')).toBeTruthy();
+    expect(screen.queryByLabelText('Your question')).toBeNull();
 
     await openTranscript();
     expect(screen.getByText('No words')).toBeTruthy();
@@ -652,6 +691,7 @@ describe('<NoteDetailScreen /> your language', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Your language: English' }));
     });
@@ -664,6 +704,7 @@ describe('<NoteDetailScreen /> your language', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Your language: English' }));
     });
@@ -673,12 +714,13 @@ describe('<NoteDetailScreen /> your language', () => {
     expect(mockSetLanguage).toHaveBeenCalledWith('hi');
   });
 
-  test('a language that is already saved shows on the pill after a reload', async () => {
+  test('a language that is already saved shows in the menu after a reload', async () => {
     mockMyLanguage = 'ja';
     mockGetNote.mockResolvedValue(note());
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     expect(await screen.findByRole('button', { name: 'Your language: Japanese' })).toBeTruthy();
   });
 });
@@ -704,18 +746,23 @@ describe('<NoteDetailScreen /> translating', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Translate this summary' }));
     });
   }
 
-  test('the Translate button is off until there is something to translate', async () => {
+  test('Translate is off until there is something to translate, and says why', async () => {
     mockGetNote.mockResolvedValue(note({ status: 'Queued' }));
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     const button = await screen.findByRole('button', { name: 'Translate this summary' });
     expect(button.props.accessibilityState).toMatchObject({ disabled: true });
+    // A row that cannot be used says why, which is the one thing a greyed-out button cannot.
+    expect(screen.getByText('There is nothing to translate yet.')).toBeTruthy();
   });
 
   test('a translated summary shows the Spanish words and says it was translated by AI', async () => {
@@ -808,6 +855,7 @@ describe('<NoteDetailScreen /> translating', () => {
       await render(<NoteDetailScreen />);
     });
     await openTranscript();
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Translate this transcript' }));
     });
@@ -846,6 +894,7 @@ describe('<NoteDetailScreen /> translating', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     await act(async () => {
       fireEvent.press(await screen.findByRole('button', { name: 'Translate this summary' }));
     });
@@ -901,6 +950,7 @@ describe('<NoteDetailScreen /> sending a recap', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     const button = await screen.findByLabelText('Send a recap of this note by email');
     expect(button.props.accessibilityState.disabled).toBe(false);
   });
@@ -912,10 +962,14 @@ describe('<NoteDetailScreen /> sending a recap', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     expect(
       (await screen.findByLabelText('Send a recap of this note by email')).props.accessibilityState
         .disabled,
     ).toBe(true);
+    expect(
+      screen.getByText('There is nothing to send until this note is finished and has a summary.'),
+    ).toBeTruthy();
   });
 
   test('a note that is still being made has nothing to send either', async () => {
@@ -924,6 +978,7 @@ describe('<NoteDetailScreen /> sending a recap', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     expect(
       (await screen.findByLabelText('Send a recap of this note by email')).props.accessibilityState
         .disabled,
@@ -937,6 +992,7 @@ describe('<NoteDetailScreen /> sending a recap', () => {
     await act(async () => {
       await render(<NoteDetailScreen />);
     });
+    await openMore();
     await act(async () =>
       fireEvent.press(await screen.findByLabelText('Send a recap of this note by email')),
     );

@@ -11,10 +11,12 @@ type BackLinkProps = {
   href: string;
   /** The help entry for this page, shown as a ? on the right. */
   helpId?: string;
+  /** A stable name for tests, so a visual change does not break them. */
+  testID?: string;
 };
 
 /** The top line of a page: the way back on the left, and help on the right. */
-export function BackLink({ label, href, helpId }: BackLinkProps) {
+export function BackLink({ label, href, helpId, testID }: BackLinkProps) {
   const router = useRouter();
   return (
     <View
@@ -25,6 +27,7 @@ export function BackLink({ label, href, helpId }: BackLinkProps) {
         gap: Spacing.three,
       }}>
       <Pressable
+        testID={testID ?? 'back-link'}
         accessibilityRole="link"
         accessibilityLabel={`Back to ${label}`}
         onPress={() => router.push(href as never)}

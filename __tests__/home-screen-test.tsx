@@ -1,7 +1,18 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render as renderRaw, screen } from '@testing-library/react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import HomeScreen from '@/app/(app)/(home)/index';
 import { HELP } from '@/content/help';
+
+/**
+ * Draws a screen with a gesture root above it, the way the real app does.
+ *
+ * Note rows can be swiped now, and react-native-gesture-handler refuses to draw a gesture
+ * that has no `GestureHandlerRootView` above it -- a good error, because a gesture with no
+ * root silently does nothing. The real one lives at the very top of `src/app/_layout.tsx`;
+ * a test that draws one screen on its own has to supply it.
+ */
+const render = (ui: React.ReactElement) => renderRaw(<GestureHandlerRootView>{ui}</GestureHandlerRootView>);
 
 const mockSignOut = jest.fn();
 const mockPush = jest.fn();
@@ -111,11 +122,27 @@ describe('<HomeScreen />', () => {
     expect(mockFindNotes).toHaveBeenCalledWith(expect.anything(), { limit: 10 });
   });
 
-  test('shows meetings used next to the limit read from the plan', async () => {
+  // Home used to open with a panel saying "Meetings used this month: 1 of 3", above a person's
+  // own notes. It is a warning now, not a dashboard: nothing is said while there is room, one
+  // quiet line when the next meeting is the last, and the full message at the limit. The whole
+  // meter still lives on Settings -> Plan and usage for anybody who wants the number.
+  test('says nothing about meetings while there is still room', async () => {
     mockFindNotes.mockResolvedValue(page([]));
     mockGetUsage.mockResolvedValue({ accountId: 'a', planName: 'Free', used: 1, limit: 3 });
     await render(<HomeScreen />);
-    expect(await screen.findByText('Meetings used this month: 1 of 3')).toBeTruthy();
+    expect(await screen.findByText('No notes yet')).toBeTruthy();
+    expect(screen.queryByText(/Meetings used this month/)).toBeNull();
+    expect(screen.queryByText(/meetings? left this month/)).toBeNull();
+    expect(screen.queryByText(/used all your meetings/)).toBeNull();
+  });
+
+  test('with one meeting left it says so, in one line', async () => {
+    mockFindNotes.mockResolvedValue(page([]));
+    mockGetUsage.mockResolvedValue({ accountId: 'a', planName: 'Free', used: 2, limit: 3 });
+    await render(<HomeScreen />);
+    expect(
+      await screen.findByText('1 meeting left this month on the Free plan. Pasted text is always free.'),
+    ).toBeTruthy();
     expect(screen.queryByText(/used all your meetings/)).toBeNull();
   });
 

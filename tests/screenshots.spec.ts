@@ -6,8 +6,10 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  ASK_MESSAGES,
   CHAT_MESSAGES,
   DELETE_CHECK,
+  gotoApp,
   installFakes,
   noteRow,
   openNote,
@@ -83,8 +85,8 @@ async function shootChat(
   await signIn(page);
   await openNote(page);
 
-  await page.getByRole('button', { name: 'Ask about this note' }).click();
-  await expect(page.getByRole('heading', { name: 'Ask about this note' })).toBeVisible();
+  await page.getByTestId('note-tab-chat').click();
+  await expect(page.getByTestId('note-chat')).toBeVisible();
 
   if (options.cite) {
     await page.getByRole('link', { name: 'Go to the line at 1:05' }).click();
@@ -97,14 +99,17 @@ async function shootChat(
 }
 
 for (const w of WIDTHS) {
+  // Taller than the other pictures on purpose. The chat is a TAB now, so it fills the window
+  // and scrolls itself to the newest message -- in a short window that cut the question off
+  // the top and left a picture of an answer to nothing.
   test(`the chat with a conversation at ${w.name} pixels`, async ({ page, context }) => {
-    await shootChat({ page, context }, `note-chat-${w.name}.png`, { width: w.width, height: w.short }, {
+    await shootChat({ page, context }, `note-chat-${w.name}.png`, { width: w.width, height: w.full }, {
       chatMessages: CHAT_MESSAGES,
     });
   });
 
   test(`the chat with its suggested questions at ${w.name} pixels`, async ({ page, context }) => {
-    await shootChat({ page, context }, `note-chat-empty-${w.name}.png`, { width: w.width, height: w.short }, {});
+    await shootChat({ page, context }, `note-chat-empty-${w.name}.png`, { width: w.width, height: w.full }, {});
   });
 
   test(`a highlighted transcript line at ${w.name} pixels`, async ({ page, context }) => {
@@ -140,7 +145,8 @@ async function shootTranslate(
 
   if (options.tab === 'Transcript') await page.getByRole('tab', { name: 'Transcript' }).click();
   const tab = (options.tab ?? 'Summary').toLowerCase();
-  await page.getByRole('button', { name: `Translate this ${tab}` }).click();
+  await page.getByTestId('note-more').click();
+  await page.getByTestId('note-translate').click();
   await expect(page.getByRole('heading', { name: `Translate this ${tab}` })).toBeVisible();
 
   if (options.stop !== 'picker') {
@@ -212,7 +218,8 @@ async function shootRecap(
   await installFakes(page, data);
   await signIn(page);
   await openNote(page);
-  await page.getByRole('button', { name: 'Send a recap of this note by email' }).click();
+  await page.getByTestId('note-more').click();
+  await page.getByTestId('note-send-recap').click();
   await expect(page.getByRole('heading', { name: 'Send recap' })).toBeVisible();
   await page.waitForTimeout(700); // let the panel finish sliding in
   await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
@@ -230,8 +237,8 @@ async function shootRecapSettings(
   await installFakes(page, data);
   await signIn(page);
   // The recap settings live in Settings now, so this walks the way a person would.
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await page.getByRole('link', { name: /^Recaps\./ }).click();
+  await page.getByTestId('nav-settings').click();
+  await page.getByTestId('settings-row-recaps').click();
   await expect(page.getByRole('heading', { name: 'Recap emails', level: 1 })).toBeVisible();
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
@@ -251,6 +258,95 @@ for (const w of WIDTHS) {
   });
 }
 
+
+/**
+ * The five screens that had no generator at all until prompt 13.
+ *
+ * `design`, `login`, `signup`, `new-note` and `note-transcript` were taken BY HAND, so they
+ * sat unchanged while the app moved underneath them. That is exactly the failure
+ * docs/decisions.md records for Home's pictures in prompt 12, and a redesign is the worst
+ * possible time for it: ten pictures would have quietly gone on showing the old layout while
+ * the words beside them described the new one. Every help picture is made here now.
+ */
+async function shootScreen(
+  { page, context }: { page: import('@playwright/test').Page; context: import('@playwright/test').BrowserContext },
+  file: string,
+  size: { width: number; height: number },
+  go: (page: import('@playwright/test').Page) => Promise<void>,
+  options: { signedIn?: boolean; data?: Partial<FakeData> } = {},
+) {
+  await page.setViewportSize(size);
+  // The fakes go in even for the signed-out screens, so Supabase is still intercepted and no
+  // real address is ever called from a picture.
+  await installFakes(page, options.data ?? {});
+  if (options.signedIn !== false) await signIn(page);
+  await go(page);
+  await page.waitForTimeout(700); // let the fonts settle
+  await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
+  await context.clearCookies();
+}
+
+for (const w of WIDTHS) {
+  const size = { width: w.width, height: w.short };
+
+  test(`the Log in screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `login-${w.name}.png`, size, async (p) => {
+      await gotoApp(p, '/log-in');
+      await expect(p.getByTestId('auth-screen-log-in')).toBeVisible();
+    }, { signedIn: false });
+  });
+
+  test(`the Sign up screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `signup-${w.name}.png`, size, async (p) => {
+      await gotoApp(p, '/sign-up');
+      await expect(p.getByTestId('auth-screen-sign-up')).toBeVisible();
+    }, { signedIn: false });
+  });
+
+  // Short enough that the picture is the conversation and not a field of empty navy. Ask is
+  // a chat that fills the window and scrolls to the newest message, so the window has to be
+  // tall enough to hold the WHOLE conversation -- two messages here -- or the question is
+  // scrolled off the top and the picture shows an answer to nothing.
+  test(`the Ask screen with a conversation at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `ask-${w.name}.png`, { width: w.width, height: w.short }, async (p) => {
+      await p.getByTestId('nav-ask').click();
+      await expect(p.getByTestId('ask-chat')).toBeVisible();
+      await expect(p.getByText(/In Weekly team call you promised/)).toBeVisible();
+    }, { data: { askMessages: ASK_MESSAGES } });
+  });
+
+  // Short, because an empty chat has nothing to scroll: a tall window is all empty navy.
+  test(`the empty Ask screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `ask-empty-${w.name}.png`, { width: w.width, height: w.short }, async (p) => {
+      await p.getByTestId('nav-ask').click();
+      await expect(p.getByTestId('ask-chat')).toBeVisible();
+      await expect(p.getByRole('button', { name: 'What did I promise to do?' })).toBeVisible();
+    });
+  });
+
+  test(`the New note screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `new-note-${w.name}.png`, { width: w.width, height: w.full }, async (p) => {
+      await p.getByTestId('nav-new-note').click();
+      await expect(p.getByTestId('new-note-screen')).toBeVisible();
+    });
+  });
+
+  test(`the Transcript tab at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `note-transcript-${w.name}.png`, { width: w.width, height: w.full }, async (p) => {
+      await openNote(p);
+      await p.getByTestId('note-tab-transcript').click();
+      await expect(p.getByText('Thanks for joining. Let us start with the sign up screen.')).toBeVisible();
+    });
+  });
+
+  test(`the builders-only design page at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `design-${w.name}.png`, { width: w.width, height: w.full }, async (p) => {
+      await gotoApp(p, '/design');
+      await expect(p.getByRole('heading', { name: 'Design', level: 1 })).toBeVisible();
+    });
+  });
+}
+
 /**
  * The five Settings pages (prompt 10).
  *
@@ -261,15 +357,17 @@ async function shootSettings(
   { page, context }: { page: import('@playwright/test').Page; context: import('@playwright/test').BrowserContext },
   file: string,
   size: { width: number; height: number },
+  /** The stable name of the Settings row to open, or null to photograph the list itself. */
   row: string | null,
+  /** The heading to wait for once it is open. Still the words, because that is the assertion. */
   waitFor: string,
   data: Partial<FakeData> = {},
 ) {
   await page.setViewportSize(size);
   await installFakes(page, data);
   await signIn(page);
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  if (row) await page.getByRole('link', { name: new RegExp(`^${row}\\.`) }).click();
+  await page.getByTestId('nav-settings').click();
+  if (row) await page.getByTestId(`settings-row-${row}`).click();
   await expect(page.getByRole('heading', { name: waitFor, level: 1 })).toBeVisible();
   await page.waitForTimeout(600); // let the fonts settle
   await page.screenshot({ path: `${IMAGES}/${file}`, fullPage: true });
@@ -287,7 +385,7 @@ for (const w of WIDTHS) {
       { page, context },
       `settings-profile-${w.name}.png`,
       { width: w.width, height: w.full },
-      'Profile',
+      'profile',
       'Profile',
     );
   });
@@ -297,7 +395,7 @@ for (const w of WIDTHS) {
       { page, context },
       `settings-plan-${w.name}.png`,
       { width: w.width, height: w.full },
-      'Plan and usage',
+      'plan',
       'Plan and usage',
     );
   });
@@ -307,7 +405,7 @@ for (const w of WIDTHS) {
       { page, context },
       `settings-team-${w.name}.png`,
       { width: w.width, height: w.full },
-      'Team',
+      'team',
       'Team',
     );
   });
@@ -317,7 +415,7 @@ for (const w of WIDTHS) {
       { page, context },
       `settings-security-${w.name}.png`,
       { width: w.width, height: w.full },
-      'Security',
+      'security',
       'Security',
     );
   });
@@ -331,7 +429,7 @@ for (const w of WIDTHS) {
       // element, so anything past the viewport is simply not in the picture. The phone needs
       // more again, because everything wraps onto more lines at 390.
       { width: w.width, height: w.full + (w.width < 768 ? 1500 : 1000) },
-      'Data and privacy',
+      'data',
       'Data and privacy',
       // Twelve notes, so the picture shows what somebody with a real pile of them sees: the
       // count, the ten newest, and a Show more button. With one note there was nothing to show.
@@ -428,7 +526,7 @@ async function shootHome(
   await page.setViewportSize(size);
   await installFakes(page, data);
   await signIn(page);
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your notes' })).toBeVisible();
   if (then) await then(page);
   // Tapping a note part-way down scrolls the list. React Native Web scrolls an element inside
   // the page rather than the page itself, so fullPage would otherwise photograph it mid-list.

@@ -1,9 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
-import { ChatPanel } from '@/components/notes/chat-panel';
+import { ChatBody } from '@/components/notes/chat-body';
+
 import { LanguagePicker } from '@/components/notes/language-picker';
 import { RecapDialog } from '@/components/notes/recap-dialog';
 import { SummaryTab } from '@/components/notes/summary-tab';
@@ -12,6 +13,7 @@ import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
 import { GlassPanel } from '@/components/ui/glass-panel';
 import { Heading } from '@/components/ui/heading';
+import { ActionMenu, type ActionItem as MenuItem } from '@/components/ui/action-menu';
 import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -19,7 +21,14 @@ import { ScriptText } from '@/components/ui/script-text';
 import { TabBar } from '@/components/ui/tab-bar';
 import { baseCode, languageName, sameLanguage } from '@/constants/languages';
 import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
-import { NO_TRANSCRIPT_MESSAGE, NO_WORDS_MESSAGE, type ChatSource } from '@/lib/chat';
+import {
+  CHAT_BLURB,
+  noteChat,
+  NO_TRANSCRIPT_MESSAGE,
+  NO_WORDS_MESSAGE,
+  SUGGESTED,
+  type ChatSource,
+} from '@/lib/chat';
 import { listPassages, type Passage } from '@/lib/passages';
 import { noteTitle } from '@/lib/notes';
 import {
@@ -55,11 +64,18 @@ type Ready = {
 
 type Load = { state: 'loading' } | { state: 'error' } | { state: 'missing' } | Ready;
 
-const TABS = ['Summary', 'Transcript'] as const;
+const TABS = ['Summary', 'Transcript', 'Chat'] as const;
 type Tab = (typeof TABS)[number];
 
-/** Each tab translates its own thing. */
-const KIND_FOR_TAB: Record<Tab, TranslateKind> = { Summary: 'summary', Transcript: 'transcript' };
+/**
+ * Each tab translates its own thing -- and Chat translates nothing.
+ *
+ * This map used to be a `Record<Tab, ...>`, so adding Chat was a compile error until the
+ * question "what does translating a conversation mean?" had an answer. It means nothing: a
+ * chat is written in your own language already, because Gyan answers in it. So Chat is left
+ * out of the map and the Translate button is off while that tab is open.
+ */
+const KIND_FOR_TAB: Partial<Record<Tab, TranslateKind>> = { Summary: 'summary', Transcript: 'transcript' };
 
 /** One tab's translation: the language it is in, and the words. */
 type TabTranslation = { language: string; content: TranslationContent };
@@ -95,7 +111,7 @@ const POLL_MS = 3000;
 
 /** Note detail: a Summary tab, a Transcript tab, and the side chat. Mind map comes later. */
 export default function NoteDetailScreen() {
-  const { id, line } = useLocalSearchParams<{ id: string; line?: string }>();
+  const { id, line, recap } = useLocalSearchParams<{ id: string; line?: string; recap?: string }>();
   const router = useRouter();
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [tab, setTab] = useState<Tab>('Summary');
@@ -103,10 +119,18 @@ export default function NoteDetailScreen() {
   const [startError, setStartError] = useState(false);
   const [savingItemId, setSavingItemId] = useState<string>();
   const [itemError, setItemError] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [recapOpen, setRecapOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   /** The transcript line a passage number pointed at. It stays lit until another one is tapped. */
   const [highlightId, setHighlightId] = useState<string>();
+  /**
+   * Where the Chat tab sends its questions: this note's own side chat.
+   *
+   * Made once per note rather than once per render. `ChatBody` reads the conversation the
+   * first time it is shown, and watches this object to know when the chat it is drawing has
+   * changed -- so a fresh object every render would be a fresh chat every render.
+   */
+  const chat = useMemo(() => noteChat(id ?? ''), [id]);
 
   const { languageCode, setLanguage } = useProfile();
   /** Which picker is open, if either. */
@@ -196,11 +220,14 @@ export default function NoteDetailScreen() {
   }
 
   /**
-   * Somebody tapped a passage number in an answer. Close the chat, open the Transcript tab,
-   * scroll to that line, and light it up.
+   * Somebody tapped a passage number in an answer. Open the Transcript tab, scroll to that
+   * line, and light it up.
+   *
+   * It used to close the chat panel as well, so the highlighted line was in plain view. The
+   * chat is a tab now, so switching to the Transcript IS leaving the chat -- one move where
+   * there were two.
    */
   const jumpTo = useCallback((source: ChatSource) => {
-    setChatOpen(false);
     setTab('Transcript');
     setHighlightId(source.segment_id);
     // Wait for the Transcript tab to be drawn before scrolling to the line.
@@ -222,6 +249,15 @@ export default function NoteDetailScreen() {
     jumpTo({ n: 0, segment_id: line, start_ms: 0, speaker_label: null });
   }, [line, load.state, jumpTo]);
 
+  /**
+   * A row on Home asked to share this note, as "?recap=1".
+   *
+   * Share means "send a recap by email", because that is the only sharing Gyan has. It runs
+   * once per visit and only when there is something to send, so arriving at a half-finished
+   * note opens the note rather than an empty dialog.
+   */
+  const openedRecap = useRef(false);
+
   const lines = load.state === 'ready' ? load.lines : [];
   const passages = load.state === 'ready' ? load.passages : [];
   const isText = load.state === 'ready' && load.note.source === 'text';
@@ -229,8 +265,9 @@ export default function NoteDetailScreen() {
   const canAsk = lines.length > 0 || passages.length > 0;
 
   const summary = load.state === 'ready' ? load.summary : undefined;
-  // The Summary tab can be translated once a summary exists. The Transcript tab, once it has words.
-  const canTranslate = tab === 'Summary' ? !!summary : canAsk;
+  // The Summary tab can be translated once a summary exists. The Transcript tab, once it has
+  // words. The Chat tab, never.
+  const canTranslate = tab === 'Summary' ? !!summary : tab === 'Transcript' ? canAsk : false;
   // There is only something worth emailing once the note is finished and has a summary.
   const canSendRecap = load.state === 'ready' && load.note.status === 'Ready' && !!summary;
   /** The language the words on this tab are already in. */
@@ -257,6 +294,7 @@ export default function NoteDetailScreen() {
   async function pickTranslation(code: string) {
     if (!id) return;
     const kind = KIND_FOR_TAB[tab];
+    if (!kind) return;
     const language = baseCode(code);
     setPicker(undefined);
     setTranslateError(undefined);
@@ -295,6 +333,55 @@ export default function NoteDetailScreen() {
     return undefined;
   }
 
+  /** Everything on this page that is not reading the note. */
+  const moreItems: MenuItem[] = [
+    {
+      testID: 'note-language',
+      title: `Your language: ${languageName(languageCode)}`,
+      summary: 'Gyan writes summaries, to-dos and chat answers in this language.',
+      accessibilityLabel: `Your language: ${languageName(languageCode)}`,
+      enabled: true,
+      onPress: () => {
+        setMoreOpen(false);
+        setPicker('mine');
+      },
+    },
+    {
+      testID: 'note-translate',
+      title: `Translate this ${tab.toLowerCase()}`,
+      summary: canTranslate
+        ? 'Read it in another language, with the original a tap away.'
+        : tab === 'Chat'
+          ? 'Gyan already answers in your language, so there is nothing to translate.'
+          : 'There is nothing to translate yet.',
+      accessibilityLabel: `Translate this ${tab.toLowerCase()}`,
+      enabled: canTranslate,
+      onPress: () => {
+        setMoreOpen(false);
+        setPicker('translate');
+      },
+    },
+    {
+      testID: 'note-send-recap',
+      title: 'Send a recap by email',
+      summary: canSendRecap
+        ? 'The summary and the to-dos, to people on this account.'
+        : 'There is nothing to send until this note is finished and has a summary.',
+      accessibilityLabel: 'Send a recap of this note by email',
+      enabled: canSendRecap,
+      onPress: () => {
+        setMoreOpen(false);
+        setRecapOpen(true);
+      },
+    },
+  ];
+
+  useEffect(() => {
+    if (recap !== '1' || openedRecap.current || !canSendRecap) return;
+    openedRecap.current = true;
+    setRecapOpen(true);
+  }, [recap, canSendRecap]);
+
   const translationBar = tabTranslation || translateBusy || translateError ? (
     <TranslationBar
       language={translateBusy ?? tabTranslation?.language ?? languageCode}
@@ -311,16 +398,29 @@ export default function NoteDetailScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <Screen scrollRef={pageRef}>
+      {/* The Chat tab does its own scrolling, so the page must not. Two scrolling things
+          inside each other on a phone walks the question box off the bottom of the screen --
+          and that is the likeliest place for this whole redesign to go wrong, so it is said
+          out loud here rather than left to be discovered. */}
+      <Screen
+        testID="note-screen"
+        scrollRef={pageRef}
+        scroll={tab !== 'Chat'}
+        style={tab === 'Chat' ? { flex: 1 } : undefined}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
           <Pressable
             accessibilityRole="button"
+            testID="note-back"
             accessibilityLabel="Back to Home"
             onPress={() => router.replace('/')}
             style={{ minHeight: MinTouchTarget, minWidth: MinTouchTarget, justifyContent: 'center' }}>
             <Body color="link">‹ Home</Body>
           </Pressable>
-          <HelpButton helpId="note" />
+          {/* The help follows the tab. The chat has its own entry -- what you can ask, what
+              the little numbers are, how many questions a day -- and it used to be reached
+              from a button inside the panel. The panel is gone, so the one "?" on the page
+              answers the question you are actually looking at. */}
+          <HelpButton helpId={tab === 'Chat' ? 'noteChat' : 'note'} />
         </View>
 
         {load.state === 'loading' ? (
@@ -348,14 +448,22 @@ export default function NoteDetailScreen() {
           </GlassPanel>
         ) : (
           <>
-            <View style={{ gap: Spacing.two }}>
-              <Heading level={1}>{noteTitle(load.note)}</Heading>
+            {/* The title is this page's one large thing. A note is a document, and a
+                document opens with its name. */}
+            <View style={{ gap: Spacing.three }}>
+              <Heading level={1} display>
+                {noteTitle(load.note)}
+              </Heading>
               <StatusBadge status={load.note.status} />
             </View>
 
             <View style={{ gap: Spacing.two }}>
+              {/* Two things on this line, not six. The tabs, and everything that is not
+                  reading the note. Four pills and two tabs used to share it, and on a phone
+                  that pushed the whole page sideways. */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two, flexWrap: 'wrap' }}>
                 <TabBar
+                  testIDPrefix="note-tab"
                   tabs={TABS}
                   selected={tab}
                   onSelect={(next) => {
@@ -363,47 +471,14 @@ export default function NoteDetailScreen() {
                     setHighlightId(undefined);
                   }}
                 />
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: Spacing.two,
-                    flexWrap: 'wrap',
-                    // Without this the group keeps its content width and pushes the page
-                    // sideways on a phone. With it, the pills wrap onto a second line.
-                    flexShrink: 1,
-                  }}>
-                  <Pill
-                    label={`Language: ${languageName(languageCode)}`}
-                    accessibilityLabel={`Your language: ${languageName(languageCode)}`}
-                    tone="quiet"
-                    onPress={() => setPicker('mine')}
-                  />
-                  <Pill
-                    label="Translate"
-                    accessibilityLabel={`Translate this ${tab.toLowerCase()}`}
-                    enabled={canTranslate}
-                    onPress={() => setPicker('translate')}
-                  />
-                  <Pill
-                    label="Ask"
-                    accessibilityLabel="Ask about this note"
-                    enabled={canAsk}
-                    onPress={() => setChatOpen(true)}
-                  />
-                  <Pill
-                    label="Send recap"
-                    accessibilityLabel="Send a recap of this note by email"
-                    enabled={canSendRecap}
-                    onPress={() => setRecapOpen(true)}
-                  />
-                </View>
+                <Pill
+                  testID="note-more"
+                  label="More"
+                  accessibilityLabel="More things to do with this note"
+                  tone="quiet"
+                  onPress={() => setMoreOpen(true)}
+                />
               </View>
-              {!canAsk ? (
-                <Body small color="textSecondary">
-                  {isText ? NO_WORDS_MESSAGE : NO_TRANSCRIPT_MESSAGE}
-                </Body>
-              ) : null}
               {translateNote ? (
                 <Body small color="textSecondary" accessibilityRole="alert">
                   {translateNote}
@@ -426,7 +501,7 @@ export default function NoteDetailScreen() {
                 translationLanguage={tabTranslation?.language}
                 translationBar={translationBar}
               />
-            ) : (
+            ) : tab === 'Transcript' ? (
               <TranscriptTab
                 note={load.note}
                 lines={load.lines}
@@ -442,12 +517,38 @@ export default function NoteDetailScreen() {
                 translationLanguage={tabTranslation?.language}
                 translationBar={translationBar}
               />
+            ) : !canAsk || !id ? (
+              <GlassPanel>
+                <Heading level={3}>Nothing to ask about yet</Heading>
+                <Body color="textSecondary">{isText ? NO_WORDS_MESSAGE : NO_TRANSCRIPT_MESSAGE}</Body>
+              </GlassPanel>
+            ) : (
+              <View
+                style={{
+                  flex: 1,
+                  minHeight: 320,
+                  borderWidth: 1,
+                  borderColor: Colors.glassBorder,
+                  borderRadius: Radius.panel,
+                  overflow: 'hidden',
+                }}>
+                {/* Coming back to this tab reads the conversation from the database again,
+                    which is where it lives -- so a refresh, a different device and a trip to
+                    the Transcript and back all show the same thing. */}
+                <ChatBody
+                  testID="note-chat"
+                  transport={chat}
+                  blurb={CHAT_BLURB}
+                  suggestions={SUGGESTED}
+                  placeholder="What were the decisions?"
+                  active
+                  onJump={jumpTo}
+                />
+              </View>
             )}
           </>
         )}
       </Screen>
-
-      {id ? <ChatPanel meetingId={id} visible={chatOpen} onClose={() => setChatOpen(false)} onJump={jumpTo} /> : null}
 
       {id ? (
         <RecapDialog
@@ -458,6 +559,14 @@ export default function NoteDetailScreen() {
           onOpenSettings={() => router.push('/recap-emails')}
         />
       ) : null}
+
+      <ActionMenu
+        visible={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        title="More"
+        testIDPrefix="note-more"
+        items={moreItems}
+      />
 
       <LanguagePicker
         title="Your language"
@@ -495,16 +604,19 @@ function Pill({
   onPress,
   enabled = true,
   tone = 'action',
+  testID,
 }: {
   label: string;
   accessibilityLabel: string;
   onPress: () => void;
   enabled?: boolean;
   tone?: 'action' | 'quiet';
+  testID?: string;
 }) {
   const quiet = tone === 'quiet';
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: !enabled }}
@@ -520,7 +632,7 @@ function Pill({
         backgroundColor: quiet ? 'transparent' : Colors.glass,
         opacity: enabled ? 1 : 0.5,
       }}>
-      <Body color={quiet ? 'textSecondary' : 'link'} style={quiet ? undefined : { fontWeight: '600' }}>
+      <Body color={quiet ? 'textSecondary' : 'link'} weight={quiet ? 'regular' : 'semibold'}>
         {label}
       </Body>
     </Pressable>
@@ -641,41 +753,103 @@ function TranscriptTab({
           Spoken language: {note.spoken_language}
         </Body>
       ) : null}
-      {passages.map((p, i) => {
-        const lit = p.id === highlightId;
-        return (
-          <GlassPanel
+      <View>
+        {passages.map((p, i) => (
+          <TranscriptLine
             key={p.id}
-            onLayout={(e) => onLineLayout?.(p.id, e.nativeEvent.layout.y)}
-            style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
-            accessibilityLabel={`Paragraph ${i + 1}. ${wordsFor(i, p.text)}${lit ? '. Highlighted' : ''}`}>
-            <Body color="link" style={{ fontWeight: '600' }}>
-              Paragraph {i + 1}
-            </Body>
-            <ScriptText language={language}>{wordsFor(i, p.text)}</ScriptText>
-          </GlassPanel>
-        );
-      })}
-      {lines.map((l, i) => {
-        const lit = l.id === highlightId;
-        return (
-          <GlassPanel
+            id={p.id}
+            speaker={`Paragraph ${i + 1}`}
+            lit={p.id === highlightId}
+            last={i === passages.length - 1}
+            onLineLayout={onLineLayout}
+            language={language}
+            words={wordsFor(i, p.text)}
+            spoken={`Paragraph ${i + 1}. ${wordsFor(i, p.text)}`}
+          />
+        ))}
+        {lines.map((l, i) => (
+          <TranscriptLine
             key={l.id}
-            onLayout={(e) => onLineLayout?.(l.id, e.nativeEvent.layout.y)}
-            style={lit ? { borderColor: Colors.brand, backgroundColor: Colors.backgroundSelected } : undefined}
-            accessibilityLabel={`${l.speaker_label ?? 'Speaker'}, ${formatTime(l.start_ms)}. ${wordsFor(i, l.text)}${lit ? '. Highlighted' : ''}`}>
-            <View style={{ flexDirection: 'row', gap: Spacing.three, alignItems: 'baseline' }}>
-              <Body color="link" style={{ fontWeight: '600' }}>
-                {l.speaker_label ?? 'Speaker'}
-              </Body>
-              <Body small color="textSecondary">
-                {formatTime(l.start_ms)}
-              </Body>
-            </View>
-            <ScriptText language={language}>{wordsFor(i, l.text)}</ScriptText>
-          </GlassPanel>
-        );
-      })}
+            id={l.id}
+            speaker={l.speaker_label ?? 'Speaker'}
+            time={formatTime(l.start_ms)}
+            lit={l.id === highlightId}
+            last={i === lines.length - 1}
+            onLineLayout={onLineLayout}
+            language={language}
+            words={wordsFor(i, l.text)}
+            spoken={`${l.speaker_label ?? 'Speaker'}, ${formatTime(l.start_ms)}. ${wordsFor(i, l.text)}`}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * One line of a transcript: who spoke, when, and what they said.
+ *
+ * Every line used to be its own glass card, so a three minute conversation was forty
+ * identical boxes. A transcript is a script, so it is set like one now: a hairline between
+ * lines, and the speaker's name small, spaced and in capitals above the words. That last
+ * detail is in `docs/design/sleek/brief.txt` and had never been built.
+ *
+ * THE CAPITALS ARE `textTransform`, never a changed string. `getByText('Speaker 1')` and the
+ * line a screen reader reads out both get the real words.
+ */
+function TranscriptLine({
+  id,
+  speaker,
+  time,
+  words,
+  spoken,
+  language,
+  lit,
+  last,
+  onLineLayout,
+}: {
+  id: string;
+  speaker: string;
+  time?: string;
+  words: string;
+  /** What a screen reader reads, in the order somebody would say it. */
+  spoken: string;
+  language: string;
+  lit: boolean;
+  last: boolean;
+  onLineLayout?: (lineId: string, y: number) => void;
+}) {
+  return (
+    <View
+      onLayout={(e) => onLineLayout?.(id, e.nativeEvent.layout.y)}
+      accessibilityLabel={`${spoken}${lit ? '. Highlighted' : ''}`}
+      style={{
+        flexDirection: 'row',
+        overflow: 'hidden',
+        borderRadius: lit ? Radius.panel : 0,
+        backgroundColor: lit ? Colors.backgroundSelected : 'transparent',
+        marginVertical: lit ? Spacing.two : 0,
+        ...(lit || last ? {} : { borderBottomWidth: 1, borderBottomColor: Colors.glassBorder }),
+      }}>
+      {/* The blue edge marks the line a passage number pointed at, and nothing else does. */}
+      <View style={{ width: 3, backgroundColor: lit ? Colors.brand : 'transparent' }} />
+      <View style={{ flex: 1, gap: Spacing.one, paddingVertical: Spacing.three, paddingLeft: Spacing.two }}>
+        <View style={{ flexDirection: 'row', gap: Spacing.three, alignItems: 'baseline' }}>
+          <Body
+            small
+            color="textSecondary"
+            weight="medium"
+            style={{ letterSpacing: 1, textTransform: 'uppercase' }}>
+            {speaker}
+          </Body>
+          {time ? (
+            <Body small color="textSecondary">
+              {time}
+            </Body>
+          ) : null}
+        </View>
+        <ScriptText language={language}>{words}</ScriptText>
+      </View>
     </View>
   );
 }

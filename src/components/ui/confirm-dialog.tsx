@@ -26,6 +26,11 @@ type ConfirmDialogProps = {
   error?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /**
+   * Start of a stable name for tests. Gives `<prefix>-confirm`, `<prefix>-cancel`,
+   * `<prefix>-close` and `<prefix>-type`, so a test never presses a dialog by its words.
+   */
+  testIDPrefix?: string;
 };
 
 const SIDE_WIDTH = 420;
@@ -52,6 +57,7 @@ export function ConfirmDialog({
   error,
   onConfirm,
   onCancel,
+  testIDPrefix = 'confirm',
 }: ConfirmDialogProps) {
   const { width, height } = useWindowDimensions();
   const { reveal } = useMotion();
@@ -117,7 +123,12 @@ export function ConfirmDialog({
             { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
             backdropStyle,
           ]}>
-          <Pressable accessibilityLabel={`Close ${title}`} style={{ flex: 1 }} onPress={onCancel} />
+          <Pressable
+            testID={`${testIDPrefix}-close`}
+            accessibilityLabel={`Close ${title}`}
+            style={{ flex: 1 }}
+            onPress={onCancel}
+          />
         </Animated.View>
 
         <Animated.View
@@ -152,6 +163,7 @@ export function ConfirmDialog({
 
             {typeToConfirm ? (
               <TextField
+                testID={`${testIDPrefix}-type`}
                 label={typeHint ?? `Type ${typeToConfirm} to confirm`}
                 value={typed}
                 onChangeText={setTyped}
@@ -170,13 +182,20 @@ export function ConfirmDialog({
 
             <View style={{ gap: Spacing.two }}>
               <Button
+                testID={`${testIDPrefix}-confirm`}
                 label={confirmLabel}
                 variant="secondary"
                 loading={busy}
                 disabled={!ready || busy}
                 onPress={onConfirm}
               />
-              <Button label="Cancel" variant="secondary" disabled={busy} onPress={onCancel} />
+              <Button
+                testID={`${testIDPrefix}-cancel`}
+                label="Cancel"
+                variant="secondary"
+                disabled={busy}
+                onPress={onCancel}
+              />
             </View>
           </ScrollView>
         </Animated.View>

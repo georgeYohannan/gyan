@@ -1,22 +1,23 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, useWindowDimensions, View } from 'react-native';
 
-import { HelpButton } from '@/components/help/help-button';
 import { FilterSheet } from '@/components/notes/filter-sheet';
-import { NoteRow } from '@/components/notes/note-row';
+import { NoteList } from '@/components/notes/note-list';
 import { SearchField } from '@/components/notes/search-field';
-import { UsagePanel } from '@/components/notes/usage-panel';
+import { UsageLine } from '@/components/notes/usage-line';
+import { ActionMenu, type ActionItem } from '@/components/ui/action-menu';
 import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { GlassPanel } from '@/components/ui/glass-panel';
 import { Heading } from '@/components/ui/heading';
+import { PageHeader } from '@/components/ui/page-header';
 import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
+import { Colors, MinTouchTarget, Radius, Spacing, WideBreakpoint } from '@/constants/theme';
 import { MESSAGES } from '@/lib/account';
-import { dayBucket, describeRange, PRESET_LABEL } from '@/lib/dates';
+import { describeRange, PRESET_LABEL } from '@/lib/dates';
 import { getUsage, noteTitle, refreshNoteStatuses, SOURCE_LABEL, type Usage } from '@/lib/notes';
 import {
   deleteNotes,
@@ -34,6 +35,15 @@ import {
   type ViewState,
 } from '@/lib/notes-search';
 
+/**
+ * Still exported from here, although the code moved to `notes/note-list.tsx`.
+ *
+ * `__tests__/home-screen-test.tsx` reaches for it on this path with `jest.requireActual`, and
+ * a test that proves which day a note lands under should not have to care which file does the
+ * sorting.
+ */
+export { groupByDay } from '@/components/notes/note-list';
+
 const BUSY = ['Uploading', 'Queued', 'Transcribing', 'Summarizing'];
 const POLL_MS = 3000;
 /** How long typing has to stop before Gyan searches. */
@@ -50,9 +60,19 @@ type Load =
  * It asks for ten notes, then twenty at a time, and never more than thirty in one go. Everything
  * that narrows the list -- the words searched for, the dates, the statuses -- lives in the web
  * address, so a refresh brings back the same view and a link can be kept.
+ *
+ * THE ORDER ON THIS PAGE CHANGED, and that was the point of the redesign. It used to open with
+ * a heading that said "Home", then a panel saying "Meetings used this month: 0 of 5", and only
+ * then a person's own notes -- the least interesting thing on the screen in the most prominent
+ * place. Now the page is called what it holds, the one blue glowing thing is the one thing to
+ * do, and the meetings count has shrunk to a line that appears only when the month is nearly
+ * spent. The notes themselves carry the weight (see `notes/note-row.tsx`).
  */
 export default function HomeScreen() {
   const router = useRouter();
+  // A full width button is right under a thumb and wrong under a mouse: at 1280 it would be a
+  // 768 pixel glowing bar. Same breakpoint as the navigation and the panels.
+  const wide = useWindowDimensions().width >= WideBreakpoint;
   const params = useLocalSearchParams<Record<string, string | string[]>>();
 
   // The view is held here and written to the address, rather than read back from it on every
@@ -90,6 +110,8 @@ export default function HomeScreen() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string>();
   const [deleteNews, setDeleteNews] = useState<string>();
+  /** The note whose "..." menu is open, if any. One menu for the whole list, not one per row. */
+  const [acting, setActing] = useState<NoteHit>();
 
   const filters = useMemo(() => filtersFor(view), [view]);
   const searching = view.query.trim() !== '';
@@ -216,6 +238,60 @@ export default function HomeScreen() {
 
   const chosen = notes.filter((n) => picked.includes(n.id));
 
+  /**
+   * Delete one note from its row.
+   *
+   * It goes through the SAME box, the same wording and the same delete as Select mode, by
+   * picking exactly one note and opening the dialog Home already has. Nothing here is new
+   * copy, and nothing can drift: the line about not getting the meeting back this month is
+   * written once.
+   */
+  const deleteOne = (note: NoteHit) => {
+    setActing(undefined);
+    setPicked([note.id]);
+    setConfirming(true);
+  };
+
+  /**
+   * Share one note.
+   *
+   * There is no per-note share link in Gyan, and inventing one here would be inventing a
+   * feature. The nearest real thing is the recap email, so Share opens the Send recap dialog
+   * on that note. docs/testing/prompt-13.md says this in plain words, because somebody
+   * reading "Share" expects a link.
+   */
+  const shareOne = (note: NoteHit) => {
+    setActing(undefined);
+    router.push({ pathname: '/note/[id]', params: { id: note.id, recap: '1' } });
+  };
+
+  const actingTitle = acting ? noteTitle(acting) : '';
+  const actionItems: ActionItem[] = acting
+    ? [
+        {
+          testID: 'home-note-action-share',
+          title: 'Send a recap by email',
+          summary:
+            acting.status === 'Ready'
+              ? 'The summary and the to-dos, to people on this account.'
+              : 'There is nothing to send until this note is finished.',
+          accessibilityLabel: `Send a recap of ${actingTitle} by email`,
+          enabled: acting.status === 'Ready',
+          onPress: () => shareOne(acting),
+        },
+        {
+          testID: 'home-note-action-delete',
+          title: 'Delete this note',
+          summary: acting.canDelete
+            ? 'The transcript, summary, to-dos and chat go too.'
+            : 'Somebody else made this note, so you cannot delete it.',
+          accessibilityLabel: `Delete ${actingTitle}`,
+          enabled: !!acting.canDelete,
+          onPress: () => deleteOne(acting),
+        },
+      ]
+    : [];
+
   const doDelete = () => {
     setDeleting(true);
     setDeleteError(undefined);
@@ -250,26 +326,27 @@ export default function HomeScreen() {
   const more = load.state === 'ready' && load.notes.length < load.total;
 
   return (
-    <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
-        <View style={{ flex: 1 }}>
-          <Heading level={1}>Home</Heading>
-        </View>
-        <HelpButton helpId="home" />
+    <Screen testID="home-screen">
+      <PageHeader title="Your notes" helpId="home" />
+
+      {/* The one glowing thing on the screen. New note is also a destination in the bar at the
+          bottom, which is what makes it reachable with one thumb; this is the same action where
+          somebody looking at an empty list will look for it. */}
+      <View style={wide ? { alignSelf: 'flex-start' } : undefined}>
+        <Button testID="home-new-note" label="New note" onPress={() => router.push('/new-note')} />
       </View>
 
-      <UsagePanel usage={usage} loading={load.state === 'loading' && !usage} />
-
-      <Button label="New note" onPress={() => router.push('/new-note')} />
+      <UsageLine usage={usage} />
 
       {/* Hidden only when this person genuinely has no notes at all. Searching nothing, and
           filtering a list that does not exist, would just crowd the one thing worth doing. */}
       {load.state === 'ready' && load.total === 0 && !narrowed ? null : (
       <View style={{ gap: Spacing.two }}>
-        <SearchField value={typed} onChange={typeInto} />
+        <SearchField value={typed} onChange={typeInto} testIDPrefix="home-search" />
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two }}>
           <Pressable
+            testID="home-filters"
             accessibilityRole="button"
             accessibilityLabel={onFilters === 0 ? 'Filters' : `Filters, ${onFilters} on`}
             onPress={() => setFiltersOpen(true)}
@@ -312,6 +389,7 @@ export default function HomeScreen() {
 
           {narrowed ? (
             <Pressable
+              testID="home-clear-filters"
               accessibilityRole="button"
               accessibilityLabel="Clear filters"
               onPress={clearAll}
@@ -346,6 +424,7 @@ export default function HomeScreen() {
                 that is exactly when looking line by line is the useful next thing to try. */}
             {searching ? (
               <Pressable
+                testID="home-see-lines"
                 accessibilityRole="link"
                 accessibilityLabel="See every matching line"
                 onPress={() => router.push({ pathname: '/search', params: { q: view.query } })}
@@ -362,6 +441,7 @@ export default function HomeScreen() {
               selecting ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.three }}>
                   <Pressable
+                    testID="home-select-cancel"
                     accessibilityRole="button"
                     accessibilityLabel="Cancel selecting"
                     onPress={stopSelecting}
@@ -371,6 +451,7 @@ export default function HomeScreen() {
                     </Body>
                   </Pressable>
                   <Pressable
+                    testID="home-select-delete"
                     accessibilityRole="button"
                     accessibilityLabel="Delete selected notes"
                     accessibilityState={{ disabled: picked.length === 0 }}
@@ -384,6 +465,7 @@ export default function HomeScreen() {
                 </View>
               ) : (
                 <Pressable
+                  testID="home-select"
                   accessibilityRole="button"
                   accessibilityLabel="Select notes"
                   onPress={() => setSelecting(true)}
@@ -415,12 +497,21 @@ export default function HomeScreen() {
       ) : null}
 
       {load.state === 'loading' ? (
-        <View style={{ gap: Spacing.three }} accessibilityLabel="Loading your notes">
+        /* Shaped like the list it is standing in for: flat rows with a hairline between, not
+           glass cards, or the page jumps about the moment the notes arrive. */
+        <View accessibilityLabel="Loading your notes">
           {[0, 1, 2].map((i) => (
-            <GlassPanel key={i}>
+            <View
+              key={i}
+              style={{
+                gap: Spacing.two,
+                paddingVertical: Spacing.three,
+                borderBottomWidth: i === 2 ? 0 : 1,
+                borderBottomColor: Colors.glassBorder,
+              }}>
               <Skeleton width="70%" height={18} />
               <Skeleton width="40%" />
-            </GlassPanel>
+            </View>
           ))}
         </View>
       ) : load.state === 'error' ? (
@@ -444,45 +535,32 @@ export default function HomeScreen() {
           <Body color="textSecondary">Add your first conversation. Upload a file or paste some text.</Body>
         </GlassPanel>
       ) : (
-        <View style={{ gap: Spacing.three }}>
-          {groupByDay(load.notes, searching).map((entry) =>
-            entry.kind === 'heading' ? (
-              <Body key={`h-${entry.label}`} small color="textSecondary" style={{ marginTop: Spacing.two }}>
-                {entry.label}
-              </Body>
-            ) : (
-              <NoteRow
-                key={entry.note.id}
-                note={entry.note}
-                selectable={selecting}
-                selected={picked.includes(entry.note.id)}
-                cannotSelect={!entry.note.canDelete}
-                onToggle={() =>
-                  setPicked((current) =>
-                    current.includes(entry.note.id)
-                      ? current.filter((id) => id !== entry.note.id)
-                      : [...current, entry.note.id],
-                  )
-                }
-                snippet={entry.note.snippet}
-                matchedIn={entry.note.matchedIn}
-                hasOpenActions={entry.note.hasOpenActions}
-                snippetStartMs={entry.note.snippetStartMs}
-                snippetSegmentId={entry.note.snippetSegmentId}
-              />
-            ),
-          )}
-
-          {more ? (
-            <Button
-              label={loadingMore ? 'Loading' : 'Show more'}
-              variant="secondary"
-              loading={loadingMore}
-              onPress={showMore}
-            />
-          ) : null}
-        </View>
+        <NoteList
+          notes={load.notes}
+          searching={searching}
+          selecting={selecting}
+          picked={picked}
+          onToggle={(id) =>
+            setPicked((current) =>
+              current.includes(id) ? current.filter((other) => other !== id) : [...current, id],
+            )
+          }
+          more={more}
+          loadingMore={loadingMore}
+          onShowMore={showMore}
+          onMore={setActing}
+          onShare={shareOne}
+          onDelete={deleteOne}
+        />
       )}
+
+      <ActionMenu
+        visible={!!acting}
+        onClose={() => setActing(undefined)}
+        title={actingTitle}
+        testIDPrefix="home-note-actions"
+        items={actionItems}
+      />
 
       <FilterSheet
         visible={filtersOpen}
@@ -493,6 +571,7 @@ export default function HomeScreen() {
       />
 
       <ConfirmDialog
+        testIDPrefix="home-delete"
         visible={confirming}
         title={chosen.length === 1 ? 'Delete this note?' : `Delete ${chosen.length} notes?`}
         // Which notes go in the message, and what that means in the list below it. Putting the
@@ -535,6 +614,7 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   return (
     <Pressable
       accessibilityRole="button"
+      testID={`home-filter-chip-${label}`}
       accessibilityLabel={`Remove the ${label} filter`}
       onPress={onRemove}
       style={({ pressed }) => ({
@@ -554,30 +634,4 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
       </Body>
     </Pressable>
   );
-}
-
-type Entry = { kind: 'heading'; label: string } | { kind: 'note'; note: NoteHit };
-
-/**
- * Puts day headings in among the notes.
- *
- * The headings are worked out over EVERY note loaded so far, not page by page, so a day that
- * runs across two pages still gets one heading. When somebody has searched there are no
- * headings at all: the list is in best-match order, and a date heading over a list that is not
- * in date order would be a lie.
- */
-export function groupByDay(notes: NoteHit[], searching: boolean, now = new Date()): Entry[] {
-  if (searching) return notes.map((note) => ({ kind: 'note', note }));
-
-  const out: Entry[] = [];
-  let last = '';
-  for (const note of notes) {
-    const bucket = dayBucket(note.created_at, now);
-    if (bucket !== last) {
-      out.push({ kind: 'heading', label: bucket });
-      last = bucket;
-    }
-    out.push({ kind: 'note', note });
-  }
-  return out;
 }

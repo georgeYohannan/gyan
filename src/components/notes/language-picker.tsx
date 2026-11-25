@@ -90,7 +90,12 @@ export function LanguagePicker({
     <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: side ? 'flex-start' : 'flex-end', alignItems: side ? 'flex-end' : 'stretch' }}>
         <Animated.View style={[{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.55)' }, backdropStyle]}>
-          <Pressable accessibilityLabel="Close the language list" style={{ flex: 1 }} onPress={onClose} />
+          <Pressable
+            testID="language-backdrop"
+            accessibilityLabel="Close the language list"
+            style={{ flex: 1 }}
+            onPress={onClose}
+          />
         </Animated.View>
 
         <Animated.View

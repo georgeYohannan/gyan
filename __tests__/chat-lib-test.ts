@@ -7,6 +7,7 @@ import {
   ChatLimitError,
   LIMIT_MESSAGE,
   listChatMessages,
+  noteChat,
   retryChat,
   SEND_PROBLEM_MESSAGE,
   SUGGESTED,
@@ -159,5 +160,30 @@ describe('the suggested questions', () => {
     expect(SUGGESTED).toContain('What were the decisions?');
     expect(SUGGESTED).toContain('What did I promise to do?');
     for (const s of SUGGESTED) expect(s.split(' ').length).toBeLessThanOrEqual(7);
+  });
+});
+
+
+/**
+ * The chat is drawn by one component with two transports now: this note's chat, and the Ask
+ * destination across every note. These tests prove the NOTE one really points at one note --
+ * nothing else does, because the component is tested against a stand-in transport.
+ */
+describe('the note transport', () => {
+  test('reading the conversation asks for that note thread', async () => {
+    await noteChat('n7').list();
+    expect(mockEq).toHaveBeenCalledWith('chat_threads', 'meeting_id', 'n7');
+  });
+
+  test('asking a question sends that note id to the server', async () => {
+    mockInvoke.mockResolvedValue({ data: { ok: true, answer: 'Yes [1].', sources: [], remaining: 5, message_id: 'q1' }, error: null });
+    await noteChat('n7').ask('  Who is going?  ');
+    expect(mockInvoke).toHaveBeenCalledWith('chat', { body: { meeting_id: 'n7', question: 'Who is going?' } });
+  });
+
+  test('a retry sends the saved question, with no note id and no new question', async () => {
+    mockInvoke.mockResolvedValue({ data: { ok: true, answer: 'Yes [1].', sources: [], remaining: 5, message_id: 'q1' }, error: null });
+    await noteChat('n7').retry('q9');
+    expect(mockInvoke).toHaveBeenCalledWith('chat', { body: { retry_message_id: 'q9' } });
   });
 });

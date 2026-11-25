@@ -11,3 +11,26 @@
   --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
 }
+
+/*
+ * A visible ring on whatever the keyboard is on.
+ *
+ * React Native Web turns inline styles into classes, and there is no way to say "only when
+ * reached by keyboard" from there -- so this is the one piece of styling in Gyan written as
+ * CSS. Six lines here covers every button, link, tab and input on every screen.
+ *
+ * :focus-visible, not :focus, so clicking something with a mouse does not leave a ring behind.
+ * The colour is brand blue, which is allowed: it is a border, never text.
+ */
+:focus-visible {
+  outline: 2px solid #0066ff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Gyan draws its own focus border on text fields (the brand-blue edge), so a second ring
+   around the same box would be two rings saying one thing. */
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}

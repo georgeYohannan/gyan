@@ -2,11 +2,10 @@ import { Link } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { HelpButton } from '@/components/help/help-button';
 import { Body } from '@/components/ui/body';
 import { Button } from '@/components/ui/button';
 import { GlassPanel } from '@/components/ui/glass-panel';
-import { Heading } from '@/components/ui/heading';
+import { PageHeader } from '@/components/ui/page-header';
 import { Screen } from '@/components/ui/screen';
 import { TextField } from '@/components/ui/text-field';
 import { Spacing } from '@/constants/theme';
@@ -87,17 +86,14 @@ export function AuthForm({
   }
 
   return (
-    <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three }}>
-        <View style={{ flex: 1 }}>
-          <Heading level={1}>{w.title}</Heading>
-        </View>
-        <HelpButton helpId={w.helpId} />
-      </View>
-      <Body color="textSecondary">{w.intro}</Body>
+    <Screen testID={`auth-screen-${mode}`}>
+      {/* The title IS this screen's focal point. There is one thing to do here, and three
+          words set large say what it is faster than any panel around them could. */}
+      <PageHeader display title={w.title} lead={w.intro} helpId={w.helpId} />
 
       <GlassPanel style={{ gap: Spacing.three }}>
         <TextField
+          testID="auth-email"
           label="Email"
           value={email}
           onChangeText={setEmail}
@@ -110,6 +106,7 @@ export function AuthForm({
           placeholder="name@example.com"
         />
         <TextField
+          testID="auth-password"
           label="Password"
           value={password}
           onChangeText={setPassword}
@@ -135,12 +132,12 @@ export function AuthForm({
             {notice}
           </Body>
         ) : null}
-        <Button label={w.button} loading={busy} onPress={submit} />
+        <Button testID="auth-submit" label={w.button} loading={busy} onPress={submit} />
       </GlassPanel>
 
       <View style={{ flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' }}>
         <Body color="textSecondary">{w.switchText}</Body>
-        <Link href={w.switchHref} accessibilityRole="link">
+        <Link testID="auth-switch-mode" href={w.switchHref} accessibilityRole="link">
           <Body color="link">{w.switchLabel}</Body>
         </Link>
       </View>

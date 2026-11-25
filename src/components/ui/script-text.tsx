@@ -1,7 +1,7 @@
 import { Platform, Text, type TextProps, type TextStyle } from 'react-native';
 
 import { languageFor, type Language } from '@/constants/languages';
-import { Colors, FontFamily, type ThemeColor } from '@/constants/theme';
+import { Colors, FontFamily, Type, type ThemeColor } from '@/constants/theme';
 
 type ScriptTextProps = TextProps & {
   /** The language code the words are in, for example 'ar'. */
@@ -10,6 +10,11 @@ type ScriptTextProps = TextProps & {
   small?: boolean;
   /** Slightly heavier, for a short label or a key point. */
   strong?: boolean;
+  /**
+   * The one paragraph that opens a note, set larger so it is read first and read as prose
+   * rather than as another line of detail. One per screen.
+   */
+  lead?: boolean;
 };
 
 /**
@@ -47,14 +52,14 @@ export function styleForLanguage(language: Language, strong = false): TextStyle 
  * Body text in any language. Picks the right font for the script and reads right to left when the
  * language does. Use it for every translated text.
  */
-export function ScriptText({ language, color = 'text', small, strong, style, ...rest }: ScriptTextProps) {
+export function ScriptText({ language, color = 'text', small, strong, lead, style, ...rest }: ScriptTextProps) {
   const lang = languageFor(language);
-  const size = small ? 14 : 16;
+  const size = lead ? Type.heading2 : small ? Type.small : Type.body;
   // On web the direction has to be said out loud; on phones the style above does it.
   const webDir = Platform.OS === 'web' ? ({ dir: lang.rtl ? 'rtl' : 'ltr' } as object) : null;
   return (
     <Text
-      style={[{ color: Colors[color], fontSize: size, lineHeight: size * 1.5 }, styleForLanguage(lang, strong), style]}
+      style={[{ color: Colors[color], fontSize: size, lineHeight: size * Type.bodyLineHeight }, styleForLanguage(lang, strong), style]}
       {...webDir}
       {...rest}
     />
