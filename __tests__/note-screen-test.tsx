@@ -50,6 +50,15 @@ jest.mock('@/lib/chat', () => ({
   listChatMessages: (...a: unknown[]) => mockChatList(...a),
   askChat: (...a: unknown[]) => mockAsk(...a),
   retryChat: jest.fn(),
+  // The Chat tab reaches the server through a transport now, not by calling these three
+  // directly -- that is what lets the Ask destination reuse the same chat. Mocking the
+  // three on their own would no longer be seen, because `noteChat` calls them from inside
+  // the real module, so the transport itself is the seam and it is replaced here.
+  noteChat: (id: string) => ({
+    list: () => mockChatList(id),
+    ask: (question: string) => mockAsk(id, question),
+    retry: () => Promise.resolve({ ok: false as const, message: 'not used in these tests' }),
+  }),
 }));
 jest.mock('@/lib/profile', () => ({
   useProfile: () => ({

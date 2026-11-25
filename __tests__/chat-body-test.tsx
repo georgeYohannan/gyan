@@ -11,7 +11,15 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 
 import { AnswerText, splitAnswer } from '@/components/notes/answer-text';
 import { ChatBody } from '@/components/notes/chat-body';
-import { ChatLimitError, LIMIT_MESSAGE, SEND_PROBLEM_MESSAGE, SUGGESTED, type ChatMessage } from '@/lib/chat';
+import {
+  CHAT_BLURB,
+  ChatLimitError,
+  LIMIT_MESSAGE,
+  SEND_PROBLEM_MESSAGE,
+  SUGGESTED,
+  type ChatMessage,
+  type ChatTransport,
+} from '@/lib/chat';
 
 const mockList = jest.fn();
 const mockAsk = jest.fn();
@@ -26,6 +34,24 @@ jest.mock('@/lib/chat', () => ({
 
 const SOURCE = { n: 3, segment_id: 's3', start_ms: 65000, speaker_label: 'Speaker 1' };
 
+/**
+ * Where this chat's questions go.
+ *
+ * `ChatBody` takes a transport now instead of a note id, because the same component also
+ * draws the Ask destination across every note. This is the note chat's transport, standing
+ * in for `noteChat('n1')` -- it passes the note id through to the same three mocks, so every
+ * assertion below still reads exactly as it did when the component took the id itself.
+ * That the REAL `noteChat` calls those three functions is checked in chat-lib-test.ts.
+ */
+const transport: ChatTransport = {
+  list: () => mockList('n1'),
+  ask: (question: string) => mockAsk('n1', question),
+  retry: (messageId: string) => mockRetry(messageId),
+};
+
+/** The three props that carry the words of an empty chat. The note chat's own. */
+const words = { blurb: CHAT_BLURB, suggestions: SUGGESTED, placeholder: 'What were the decisions?' } as const;
+
 const conversation: ChatMessage[] = [
   { id: 'm1', role: 'user', content: 'What were the decisions?', sources: [], created_at: '2026-11-18T10:00:00Z' },
   { id: 'm2', role: 'assistant', content: 'Ship the sign up screen on Friday [3].', sources: [SOURCE], created_at: '2026-11-18T10:00:05Z' },
@@ -39,7 +65,7 @@ beforeEach(() => {
 
 /** Draws the panel already open, and waits for it to finish reading the chat. */
 async function open(onJump = jest.fn()) {
-  const view = await render(<ChatBody meetingId="n1" active onJump={onJump} />);
+  const view = await render(<ChatBody transport={transport} {...words} active onJump={onJump} />);
   await waitFor(() => expect(mockList).toHaveBeenCalledWith('n1'));
   return { view, onJump };
 }
@@ -203,7 +229,7 @@ describe('when something goes wrong', () => {
 
 describe('when it is not the open tab', () => {
   test('a chat nobody is looking at asks the server for nothing', async () => {
-    await render(<ChatBody meetingId="n1" active={false} onJump={jest.fn()} />);
+    await render(<ChatBody transport={transport} {...words} active={false} onJump={jest.fn()} />);
     expect(mockList).not.toHaveBeenCalled();
   });
 });
@@ -235,16 +261,25 @@ describe('passage numbers inside an answer', () => {
 describe('a passage number next to a full stop', () => {
   const SRC = [{ n: 3, segment_id: 's3', start_ms: 65000, speaker_label: 'Speaker 1' }];
 
-  test('the full stop stays right beside the number, not on its own', () => {
+  test('the full stop is carried WITH the number, not left to start the next line', () => {
     const pieces = splitAnswer('We ship on Friday [3].', SRC);
     const chip = pieces.find((p) => p.kind === 'chip')!;
-    expect(chip.kind === 'chip' && chip.tight).toBe(true);
+    expect(chip.kind === 'chip' && chip.after).toBe('.');
+    // And it is gone from the words, so it is never drawn twice.
+    expect(pieces.map((p) => (p.kind === 'words' ? p.text : '')).join('')).toBe('We ship on Friday ');
   });
 
   test('a number in the middle of a sentence keeps its normal spacing', () => {
     const pieces = splitAnswer('We ship on Friday [3] and Priya agrees.', SRC);
     const chip = pieces.find((p) => p.kind === 'chip')!;
-    expect(chip.kind === 'chip' && chip.tight).toBe(false);
+    expect(chip.kind === 'chip' && chip.after).toBe('');
+  });
+
+  test('a number followed by a comma and a space keeps only the comma', () => {
+    const pieces = splitAnswer('Friday [3], as agreed.', SRC);
+    const chip = pieces.find((p) => p.kind === 'chip')!;
+    expect(chip.kind === 'chip' && chip.after).toBe(',');
+    expect(pieces[pieces.length - 1]).toEqual({ kind: 'words', text: ' as agreed.' });
   });
 });
 
@@ -258,3 +293,4 @@ describe('tapping a passage number on a phone', () => {
     expect(style.minHeight + slop * 2).toBeGreaterThanOrEqual(44);
   });
 });
+

@@ -1119,3 +1119,109 @@ describe('the search and paging migration (prompt 12)', () => {
     expect(t).toContain(`grant execute on function public.${fn} to authenticated`);
   });
 });
+
+describe('ask across all notes migration', () => {
+  const file = fs.readdirSync(dir).find((f) => f.includes('ask_all_notes'))!;
+  const t = fs.readFileSync(path.join(dir, file), 'utf8');
+  /**
+   * The same file with its comments taken out.
+   *
+   * This migration's comments SAY the words "chunks", "embedding" and "chat_messages_per_day",
+   * because saying what a file deliberately does not do is the point of them. So the tests
+   * about what the file does not DO read the code, not the prose.
+   */
+  const code = t
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n');
+
+  test('it deletes nothing and loosens nothing', () => {
+    expect(t).not.toMatch(/drop (table|column|schema|function|policy)/i);
+    expect(t).not.toMatch(/truncate/i);
+    expect(t).not.toMatch(/delete from/i);
+    expect(t).not.toMatch(/alter table[\s\S]{0,80}disable row level security/i);
+  });
+
+  test('it adds NO new table: an all-notes chat is a thread with no note on it', () => {
+    expect(t).not.toMatch(/create table/i);
+    expect(t).toContain('values (acct, p_user_id, null)');
+  });
+
+  test('there is no chunks table and no embedding, which stay open decisions', () => {
+    // \bvector\b on purpose: tsvector is the plain text search this round really uses.
+    expect(code).not.toMatch(/chunks|embedding|pgvector|\bvector\b/i);
+  });
+
+  test('one all-notes thread per person, which the side chat index could not enforce', () => {
+    // Two NULLs are not equal in Postgres, so (user_id, meeting_id) lets a person have any
+    // number of threads with no note. This partial index covers exactly those rows.
+    expect(t).toContain('create unique index if not exists chat_threads_one_ask_per_person_idx');
+    expect(t).toContain('on public.chat_threads (user_id, account_id)');
+    expect(t).toContain('where meeting_id is null');
+  });
+
+  test('THE DAILY LIMIT IS NOT DUPLICATED: it comes from the one function that decides it', () => {
+    expect(t).toContain('private.chat_questions_left');
+    // No second limit: the plans table is not touched, and no number is written down.
+    expect(code).not.toMatch(/chat_messages_per_day|ask_messages_per_day/);
+    expect(code).not.toContain('alter table public.plans');
+    const claim = t.slice(t.indexOf('create function public.claim_ask_message'), t.indexOf('create function public.claim_ask_retry'));
+    expect(claim).not.toMatch(/\b(10|20|50|100)\b/);
+  });
+
+  test('asking and checking the limit happen in ONE step', () => {
+    const claim = t.slice(t.indexOf('create function public.claim_ask_message'), t.indexOf('create function public.claim_ask_retry'));
+    expect(claim).toContain("raise exception 'limit_reached'");
+    expect(claim).toContain('insert into public.chat_messages');
+    expect(claim.indexOf('chat_questions_left')).toBeLessThan(claim.indexOf('insert into public.chat_messages'));
+  });
+
+  test('a retry never saves a second question, and refuses somebody else thread', () => {
+    const retry = t.slice(t.indexOf('create function public.claim_ask_retry'), t.indexOf('create function public.finish_ask_message'));
+    expect(retry).not.toMatch(/insert into/i);
+    expect(retry).toContain('thread.user_id <> p_user_id');
+    // And it is the ask door only: a note chat's message cannot be retried through it.
+    expect(retry).toContain('thread.meeting_id is not null');
+  });
+
+  test('picking the notes runs as the PERSON, so the same read rule guards it', () => {
+    const find = t.slice(t.indexOf('create function public.find_ask_notes'), t.indexOf('create function public.claim_ask_message'));
+    expect(find).toContain('security invoker');
+    expect(find).toContain('private.is_account_member(m.account_id)');
+    expect(find).toContain("raise exception 'not_signed_in'");
+  });
+
+  test('a question becomes an OR of its words, not an AND of all of them', () => {
+    const q = t.slice(t.indexOf('create function private.ask_query'), t.indexOf('create function public.find_ask_notes'));
+    expect(q).toContain("' | '");
+    expect(q).not.toMatch(/websearch_to_tsquery|plainto_tsquery/);
+    // Every word goes in quoted, so a stray & or ! cannot become tsquery syntax.
+    expect(q).toContain('quote_literal(lexeme)');
+  });
+
+  test('an all-notes answer is logged as its own kind of spend, with no one meeting', () => {
+    const finish = t.slice(t.indexOf('create function public.finish_ask_message'));
+    expect(finish).toContain('insert into public.ai_usage');
+    expect(finish).toContain("null, 'ask', 'anthropic'");
+  });
+
+  test.each([
+    'claim_ask_message(uuid, text)',
+    'claim_ask_retry(uuid, uuid)',
+    'finish_ask_message(uuid, uuid, text, jsonb, text, numeric, numeric)',
+  ])('only the server can run %s', (fn) => {
+    expect(t).toContain(`revoke execute on function public.${fn} from public, anon, authenticated`);
+    expect(t).toContain(`grant execute on function public.${fn} to service_role`);
+    expect(t).not.toMatch(new RegExp(`grant execute on function public\\.${fn.replace(/[()]/g, '\\$&')} to (anon|authenticated)`));
+  });
+
+  test('the app can run find_ask_notes, and a signed out visitor cannot', () => {
+    expect(t).toContain('revoke execute on function public.find_ask_notes(text, int) from public, anon');
+    expect(t).toContain('grant execute on function public.find_ask_notes(text, int) to authenticated');
+  });
+
+  test('every new function pins the search path', () => {
+    expect(t.match(/set search_path = ''/g)).toHaveLength(5);
+    expect(t.match(/create function/g)).toHaveLength(5);
+  });
+});

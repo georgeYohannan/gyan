@@ -4,12 +4,20 @@
  */
 import { getSupabase } from '@/lib/supabase';
 
-/** One passage number an answer pointed at, and the transcript line it means. */
+/**
+ * One passage number an answer pointed at, and the transcript line it means.
+ *
+ * `meeting_id` and `note_title` are only there on an answer from the Ask destination, which
+ * reads several notes at once and therefore has to say WHICH note a number came from. A note
+ * chat leaves them off, because there is only ever one note to mean.
+ */
 export type ChatSource = {
   n: number;
   segment_id: string;
   start_ms: number;
   speaker_label: string | null;
+  meeting_id?: string;
+  note_title?: string;
 };
 
 export type ChatMessage = {
@@ -34,6 +42,10 @@ export const SUGGESTED = [
   'What did I promise to do?',
   'What is still open?',
 ] as const;
+
+/** What an empty note chat says before anybody has asked anything. */
+export const CHAT_BLURB =
+  'Ask anything about this note. Gyan answers only from what was said in it, and shows you where each answer came from.';
 
 export const LIMIT_MESSAGE = 'You have used all your questions for today. You get a new set tomorrow.';
 
@@ -60,6 +72,8 @@ function asSources(value: unknown): ChatSource[] {
       segment_id: s.segment_id,
       start_ms: typeof s.start_ms === 'number' ? s.start_ms : 0,
       speaker_label: typeof s.speaker_label === 'string' ? s.speaker_label : null,
+      ...(typeof s.meeting_id === 'string' ? { meeting_id: s.meeting_id } : {}),
+      ...(typeof s.note_title === 'string' ? { note_title: s.note_title } : {}),
     });
   }
   return out;
@@ -99,8 +113,14 @@ export async function listChatMessages(meetingId: string): Promise<ChatMessage[]
     }));
 }
 
-/** Sends one request to the chat server function and reads its answer. */
-async function callChat(body: Record<string, unknown>): Promise<AskResult> {
+/**
+ * Sends one request to the chat server function and reads its answer.
+ *
+ * Exported because the Ask destination talks to the SAME server function, with `scope: 'all'`
+ * in the body. One place reads the answer, one place decides what a 402 means, one place
+ * decides what a problem looks like -- so the two chats cannot drift apart in how they fail.
+ */
+export async function invokeChat(body: Record<string, unknown>): Promise<AskResult> {
   const { data, error, response } = (await getSupabase().functions.invoke('chat', { body })) as {
     data: Record<string, unknown> | null;
     error: { message?: string } | null;
@@ -133,7 +153,7 @@ async function callChat(body: Record<string, unknown>): Promise<AskResult> {
 
 /** Asks a new question about one note. Throws ChatLimitError when the day's questions are gone. */
 export async function askChat(meetingId: string, question: string): Promise<AskResult> {
-  return callChat({ meeting_id: meetingId, question: question.trim() });
+  return invokeChat({ meeting_id: meetingId, question: question.trim() });
 }
 
 /**
@@ -141,5 +161,32 @@ export async function askChat(meetingId: string, question: string): Promise<AskR
  * never costs somebody a second question out of their day.
  */
 export async function retryChat(messageId: string): Promise<AskResult> {
-  return callChat({ retry_message_id: messageId });
+  return invokeChat({ retry_message_id: messageId });
+}
+
+
+/**
+ * Everything a chat needs from the outside world: read the conversation, ask, try again.
+ *
+ * `ChatBody` draws a chat and knows nothing about which chat it is. There are two:
+ * the side chat on one note, and the Ask destination across every note. They have the same
+ * states, the same failures and the same markup, so they are one component with two
+ * transports rather than two copies of three hundred lines.
+ */
+export type ChatTransport = {
+  /** The conversation so far, oldest first. */
+  list: () => Promise<ChatMessage[]>;
+  /** Asks a new question. Throws ChatLimitError when the day's questions are gone. */
+  ask: (question: string) => Promise<AskResult>;
+  /** Tries a saved question again. It never costs a second question out of the day. */
+  retry: (messageId: string) => Promise<AskResult>;
+};
+
+/** The side chat about one note. */
+export function noteChat(meetingId: string): ChatTransport {
+  return {
+    list: () => listChatMessages(meetingId),
+    ask: (question) => askChat(meetingId, question),
+    retry: (messageId) => retryChat(messageId),
+  };
 }

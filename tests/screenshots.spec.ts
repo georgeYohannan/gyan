@@ -6,6 +6,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  ASK_MESSAGES,
   CHAT_MESSAGES,
   DELETE_CHECK,
   gotoApp,
@@ -300,6 +301,27 @@ for (const w of WIDTHS) {
       await gotoApp(p, '/sign-up');
       await expect(p.getByTestId('auth-screen-sign-up')).toBeVisible();
     }, { signedIn: false });
+  });
+
+  // Short enough that the picture is the conversation and not a field of empty navy. Ask is
+  // a chat that fills the window and scrolls to the newest message, so the window has to be
+  // tall enough to hold the WHOLE conversation -- two messages here -- or the question is
+  // scrolled off the top and the picture shows an answer to nothing.
+  test(`the Ask screen with a conversation at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `ask-${w.name}.png`, { width: w.width, height: w.short }, async (p) => {
+      await p.getByTestId('nav-ask').click();
+      await expect(p.getByTestId('ask-chat')).toBeVisible();
+      await expect(p.getByText(/In Weekly team call you promised/)).toBeVisible();
+    }, { data: { askMessages: ASK_MESSAGES } });
+  });
+
+  // Short, because an empty chat has nothing to scroll: a tall window is all empty navy.
+  test(`the empty Ask screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen({ page, context }, `ask-empty-${w.name}.png`, { width: w.width, height: w.short }, async (p) => {
+      await p.getByTestId('nav-ask').click();
+      await expect(p.getByTestId('ask-chat')).toBeVisible();
+      await expect(p.getByRole('button', { name: 'What did I promise to do?' })).toBeVisible();
+    });
   });
 
   test(`the New note screen at ${w.name} pixels`, async ({ page, context }) => {

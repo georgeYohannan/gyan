@@ -14,8 +14,16 @@ type AnswerTextProps = {
 
 type Piece =
   | { kind: 'words'; text: string }
-  /** `tight` means a full stop or comma comes straight after, so leave no gap before it. */
-  | { kind: 'chip'; source: ChatSource; tight: boolean };
+  /**
+   * `after` is the punctuation that came straight after the number, taken out of the words
+   * that follow and carried WITH the number instead.
+   *
+   * It is carried rather than just measured because the answer is laid out as a wrapping row
+   * of pieces: a full stop left at the head of the next piece can be pushed onto a line of
+   * its own, and a line beginning with "." reads as a mistake. A screenshot of a two-note
+   * answer is what showed this; no test could have.
+   */
+  | { kind: 'chip'; source: ChatSource; after: string };
 
 /**
  * Splits an answer into words and tappable passage numbers.
@@ -34,7 +42,9 @@ export function splitAnswer(text: string, sources: ChatSource[]): Piece[] {
     if (start > last) pieces.push({ kind: 'words', text: text.slice(last, start) });
     last = start + match[0].length;
     // "…on Friday [3]." should read as "…on Friday (3)." with the stop right after the number.
-    pieces.push({ kind: 'chip', source, tight: /^[.,;:!?)]/.test(text.slice(last)) });
+    const after = /^[.,;:!?)]+/.exec(text.slice(last))?.[0] ?? '';
+    last += after.length;
+    pieces.push({ kind: 'chip', source, after });
   }
   if (last < text.length) pieces.push({ kind: 'words', text: text.slice(last) });
   return pieces;
@@ -49,6 +59,30 @@ function timeLabel(ms: number): string {
 }
 
 /**
+ * What a screen reader says about one passage number, and what happens if you follow it.
+ *
+ * A note chat only ever points inside the note you are already reading, so the time is
+ * enough. An Ask answer reads several notes, so the number has to say which one -- "Go to the
+ * line at 1:05" would be a link to somewhere unnamed. A pasted note has no times, so it is
+ * named by its passage number instead of a made-up 0:00.
+ */
+export function chipLabel(source: ChatSource): { label: string; hint: string } {
+  if (!source.note_title) {
+    return {
+      label: `Go to the line at ${timeLabel(source.start_ms)}`,
+      hint: 'Opens the Transcript tab at this line',
+    };
+  }
+  return {
+    label:
+      source.start_ms > 0
+        ? `Go to ${source.note_title} at ${timeLabel(source.start_ms)}`
+        : `Go to ${source.note_title}, passage ${source.n}`,
+    hint: 'Opens that note at this line',
+  };
+}
+
+/**
  * One answer, with each passage number drawn as a small chip you can tap to jump to that
  * transcript line.
  */
@@ -59,33 +93,41 @@ export function AnswerText({ text, sources, onJump }: AnswerTextProps) {
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
       {pieces.map((piece, i) =>
         piece.kind === 'words' ? (
-          <Body key={`w${i}`}>{piece.text}</Body>
+          // flexShrink lets a long run of words share a line with the number before it and
+          // wrap inside itself, instead of being pushed whole onto the next line.
+          <Body key={`w${i}`} style={{ flexShrink: 1 }}>
+            {piece.text}
+          </Body>
         ) : (
-          <Pressable
-            key={`c${i}`}
-            accessibilityRole="link"
-            accessibilityLabel={`Go to the line at ${timeLabel(piece.source.start_ms)}`}
-            accessibilityHint="Opens the Transcript tab at this line"
-            onPress={() => onJump(piece.source)}
-            // The chip itself is small so it reads as part of the sentence. hitSlop grows the
-            // part you can tap to the 44 by 44 points a finger needs.
-            hitSlop={Spacing.three}
-            style={{
-              minHeight: MinTouchTarget / 2,
-              justifyContent: 'center',
-              marginLeft: Spacing.half,
-              marginRight: piece.tight ? 0 : Spacing.half,
-              paddingHorizontal: Spacing.two,
-              paddingVertical: Spacing.half,
-              borderRadius: Radius.pill,
-              borderWidth: 1,
-              borderColor: Colors.glassBorder,
-              backgroundColor: Colors.glass,
-            }}>
-            <Body small color="link" weight="semibold">
-              {piece.source.n}
-            </Body>
-          </Pressable>
+          // The number and the punctuation after it are ONE item in the wrapping row, so a
+          // line can never start with a stray full stop.
+          <View key={`c${i}`} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={chipLabel(piece.source).label}
+              accessibilityHint={chipLabel(piece.source).hint}
+              onPress={() => onJump(piece.source)}
+              // The chip itself is small so it reads as part of the sentence. hitSlop grows
+              // the part you can tap to the 44 by 44 points a finger needs.
+              hitSlop={Spacing.three}
+              style={{
+                minHeight: MinTouchTarget / 2,
+                justifyContent: 'center',
+                marginLeft: Spacing.half,
+                marginRight: piece.after ? 0 : Spacing.half,
+                paddingHorizontal: Spacing.two,
+                paddingVertical: Spacing.half,
+                borderRadius: Radius.pill,
+                borderWidth: 1,
+                borderColor: Colors.glassBorder,
+                backgroundColor: Colors.glass,
+              }}>
+              <Body small color="link" weight="semibold">
+                {piece.source.n}
+              </Body>
+            </Pressable>
+            {piece.after ? <Body>{piece.after}</Body> : null}
+          </View>
         ),
       )}
     </View>

@@ -1,24 +1,36 @@
 # Prompt 13: checking the redesign
 
 Gyan works, and has done for twelve rounds. This round changes **how it looks and how you move
-around it**, and changes nothing about what any feature does. One exception: the chat, which
-used to slide in over a note, is now a tab on it.
+around it**, and changes almost nothing about what any feature does. Two exceptions, both of
+which you chose: the chat that used to slide in over a note is now a tab on it, and **Ask**
+— asking one question of **all** your notes at once — is built. Ask is not a new idea: it is
+the other half of feature 5 in `docs/product-spec.md`, half-built since prompt 7.
 
-Nothing on your database changed. Nothing needs pushing or deploying. There is no setup step
-at all this time — **Part 1 is the shortest it has ever been**.
+Ask is the only part that needs anything from you: two commands in Part 1, step 1.
 
 Part 2 is about ten minutes of checking on your own machine. Part 3 is clicking around.
 Part 4 is what is deliberately not built, and the things I could not check myself.
 
 ---
 
-## Part 1: what has already been done for you
+## Part 1: what you need to do once
 
-### 1. Nothing. There is genuinely no setup this round.
+### 1. Two commands, because Ask is a real feature
 
-No migration, no server function, no key, no setting. Everything in this round is app code.
+Everything else this round is app code and needs nothing. **Ask** is not: it adds database
+functions and changes the `chat` server function.
 
-If you already have the project running, `git pull` and restart the app.
+```
+supabase db push
+supabase functions deploy chat
+```
+
+**You should see** one new migration applied (`20261124120000_ask_all_notes.sql`) and the `chat`
+function deployed. No new key, no new setting, no new table, and nothing is deleted.
+
+If you skip this, everything else works and Ask says it could not answer.
+
+Then `git pull` and restart the app.
 
 ---
 
@@ -30,7 +42,7 @@ If you already have the project running, `git pull` and restart the app.
 npm run check
 ```
 
-**You should see:** `Tests: 1377 passed, 1377 total` and no type errors. (It was 1312 before
+**You should see:** `Tests: 1446 passed, 1446 total` and no type errors. (It was 1312 before
 this round.) A line about "a worker process has failed to exit gracefully" is normal and was
 there before.
 
@@ -40,7 +52,7 @@ there before.
 npm run e2e
 ```
 
-**You should see:** `245 passed` in about 25 minutes. (It was 215 before this round.)
+**You should see:** `261 passed` in about 25 minutes. (It was 215 before this round.)
 
 If it says the port is in use, your dev server has it. Use a different one:
 
@@ -65,6 +77,22 @@ GYAN_E2E_PORT=8099 npm run e2e
 These scripts never touch your real Supabase project and never call a paid service. They start
 their own copy of the web app with a made-up address and answer every request with fake data,
 so they cost nothing and are safe to run as often as you like.
+
+### 3b. Run the database checks (optional, needs Docker)
+
+```
+npm run check:db
+```
+
+**You should see:** `All 58 checks passed.` (It was 44 before this round.) This one is different
+from everything else here: it starts a throwaway Postgres on your own machine, applies every
+migration in order, and then **tries to break the rules** — it signs in as a second person and
+attempts to reach your notes by asking a question, read your Ask conversation, and retry your
+question. All three are refused. It throws the database away when it finishes, and it never
+touches your real project.
+
+If Docker is not running it says so and stops. Skipping it is fine; `npm run check` does not
+need it.
 
 ### 4. Run the lint
 
@@ -185,6 +213,30 @@ Press **More**. **You should see** your language, Translate, and Send a recap by
 Chat tab, Translate is off and says *"Gyan already answers in your language, so there is nothing
 to translate."*
 
+### 11b. Ask: one question, every note
+
+Press **Ask** in the navigation. **You should see** the heading **Ask**, the line *One question,
+answered from your notes*, and three questions offered as buttons above a question box pinned to
+the bottom.
+
+Press **What did I promise to do?** **You should see** your question appear, then an answer that
+**names the notes it used** -- "In Weekly team call you..." -- with a small round number after
+each fact.
+
+Tap one of those numbers. **You should see** that **note** open, on the **Transcript** tab, with
+the line outlined in blue. Inside a note the same number only switches tab; here it leaves the
+screen, because the answer came from somewhere else.
+
+Go to **Home** and back to **Ask**. **You should see** your conversation still there: it is kept
+in the database, not in the screen. It is also **separate** from every note's own chat, and from
+everybody else's -- a teammate cannot read it.
+
+> **A number can sit on a line of its own at phone width.** When the words before it fill the
+> line, the small round number wraps onto the next one. The full stop always stays with it, so
+> no line ever starts with a stray ".". Putting the number properly inside the sentence would
+> shrink the part you can tap from 44 points to about 20, which is a rule I am not going to
+> break quietly. Say the word and I will.
+
 ### 12. Settings is two groups, not six doors
 
 **You should see** **Your account** (Profile, Plan and usage, Team) and **How Gyan works**
@@ -243,9 +295,10 @@ all 179 browser scripts. It is fixed, but it was found by reading the code, not 
    text around them.
 3. The **Chat tab with the keyboard up**: the question box should stay above the keyboard and
    the conversation should scroll behind it. This is the single most likely place for a layout
-   bug in the whole round.
+   bug in the whole round. **The Ask screen is the same code**, so check it there too.
 4. **Swiping** a note left (see number 19).
 5. The largest system text size, in the phone's accessibility settings.
+6. **A long Ask answer** at phone width, to see how its numbers wrap (see number 11b).
 
 ### 18. The help pictures show words where your phone shows icons
 
@@ -281,11 +334,21 @@ the web follow the browser's text setting is real work and is not in this round.
 If you forget your password there is no way back in from the app. The help text admits this.
 It is a feature, not a redesign, and it is still not built.
 
-### 22. The Ask destination is a placeholder
+### 22. Ask finds notes by their words, not by their meaning
 
-The fourth item in the bar, **Ask**, opens a page that says it is not ready yet and points you
-at the chat inside a single note. Asking about **all** your notes at once is in
-`docs/product-spec.md` and is the one piece of real feature work left in this round.
+Ask is built (see number 15b), and this is its one real limit, which it shares with the Search
+screen and which the help text says out loud:
+
+> It finds notes where somebody **said** a word. It does not find a note about the same thing
+> worded differently.
+
+So asking about **"cost"** will not reach a meeting that only ever said **"pricing"**. Fixing that
+needs a different kind of search -- embeddings -- which has been an open decision since
+2026-11-16 and is still open. Nothing in this round pretends otherwise.
+
+Two more numbers worth knowing: at most **4 notes** go into one answer, chosen by how well they
+match, and asking here spends the **same daily questions** as the chat inside a note. There is
+one allowance, not two, and Settings → Plan and usage counts both.
 
 ### 23. Five panels still have their own copy of the same code
 
@@ -297,8 +360,10 @@ quietly.
 
 ### 24. What has not changed at all
 
-The colours, the two typefaces, every feature's behaviour, your data, your database, and the
-addresses of every page. A link you saved before this round still works.
+The colours, the two typefaces, your data, the notes you already have, and the addresses of
+every page. A link you saved before this round still works. Every existing feature does exactly
+what it did; the only thing that can now do something it could not before is **Ask**, and it
+adds nothing to your database but one more kind of saved conversation.
 
 ---
 

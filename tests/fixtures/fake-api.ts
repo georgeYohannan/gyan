@@ -56,6 +56,15 @@ export type FakeData = {
   chatAnswers: ChatAnswer[];
   /** true makes the chat function say the day's questions are used up. */
   chatLimitReached?: boolean;
+  /**
+   * The ALL-NOTES conversation that is already saved (the Ask destination).
+   *
+   * It is a separate list from chatMessages because it is a separate thread in the database:
+   * the one with no note on it. Empty means nobody has asked anything across their notes.
+   */
+  askMessages: Row[];
+  /** What the chat function answers a `scope: 'all'` question. The last one repeats. */
+  askAnswers: ChatAnswer[];
   /** The words inside a pasted-text note, as the private bucket would hand them back. */
   textWords: string;
   /** The person's preferred language, as the profiles table would hand it back. */
@@ -310,10 +319,28 @@ export const CHAT_ANSWER = 'You agreed to ship the sign up screen on Friday, and
 export const CHAT_NOT_FOUND =
   'I could not find that in your notes. Try asking what was decided about the sign up screen.';
 
+/**
+ * An ASK answer: one that read more than one note, so each passage number says WHICH note.
+ * [2] is the third line of the note being viewed; [5] is a line of a second, older note.
+ */
+export const ASK_SOURCES: Row[] = [
+  { n: 2, segment_id: 's3', start_ms: 65000, speaker_label: 'Speaker 1', meeting_id: NOTE_ID, note_title: 'Weekly team call' },
+  { n: 5, segment_id: 's1', start_ms: 500, speaker_label: 'Speaker 1', meeting_id: 'note-older', note_title: 'Pricing chat' },
+];
+
+export const ASK_ANSWER =
+  'In Weekly team call you promised to ship the sign up screen on Friday [2]. In Pricing chat you agreed to send the new numbers [5].';
+
 /** A chat that is already saved, used to check it is still there after a refresh. */
 export const CHAT_MESSAGES: Row[] = [
   { id: 'cm1', role: 'user', content: 'What were the decisions?', sources: [], created_at: '2026-11-18T10:00:00Z' },
   { id: 'cm2', role: 'assistant', content: CHAT_ANSWER, sources: CHAT_SOURCES, created_at: '2026-11-18T10:00:06Z' },
+];
+
+/** An all-notes conversation that is already saved. */
+export const ASK_MESSAGES: Row[] = [
+  { id: 'am1', role: 'user', content: 'What did I promise to do?', sources: [], created_at: '2026-11-20T09:00:00Z' },
+  { id: 'am2', role: 'assistant', content: ASK_ANSWER, sources: ASK_SOURCES, created_at: '2026-11-20T09:00:07Z' },
 ];
 
 /** Everybody on the fake account. The owner is the person who logs in. */
@@ -419,6 +446,8 @@ export const DEFAULTS: FakeData = {
   usage: { used: 2, limit: 5 },
   chatMessages: [],
   chatAnswers: [{ ok: true, answer: CHAT_ANSWER, sources: CHAT_SOURCES, remaining: 19 }],
+  askMessages: [],
+  askAnswers: [{ ok: true, answer: ASK_ANSWER, sources: ASK_SOURCES, remaining: 18 }],
   textWords: TEXT_NOTE_WORDS,
   preferredLanguage: 'en',
   savedTranslations: {},
@@ -647,11 +676,13 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
       });
     }
 
-    // The chat function answers with a made up answer, so the panel has something to show.
+    // The chat function answers with a made up answer, so the chat has something to show.
+    // One function, two jobs: `scope: 'all'` is the Ask destination reading every note.
     if (name === 'chat') {
       if (status !== 202) return json(route, { error: 'problem' }, status);
       if (data.chatLimitReached) return json(route, { error: 'limit_reached' }, 402);
-      const answers = data.chatAnswers;
+      const allNotes = (body as { scope?: string } | undefined)?.scope === 'all';
+      const answers = allNotes ? data.askAnswers : data.chatAnswers;
       const picked = answers[Math.min(questionsAsked, answers.length - 1)] ?? answers[0];
       questionsAsked += 1;
       if (picked.ok) {
@@ -993,11 +1024,19 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
           return data.summary ? [data.summary] : [];
         case 'action_items':
           return data.actionItems;
-        case 'chat_threads':
-          // No saved chat means no thread yet, which is how the app knows the chat is empty.
-          return data.chatMessages.length > 0 ? [{ id: 'thread-1' }] : [];
+        case 'chat_threads': {
+          // Two kinds of thread live in this table. The ALL-NOTES one is asked for with
+          // "meeting_id=is.null", which is exactly how the real database tells them apart,
+          // so getting this wrong here would hide a real mistake in the app.
+          const wantsAsk = (url.searchParams.get('meeting_id') ?? '') === 'is.null';
+          const saved = wantsAsk ? data.askMessages : data.chatMessages;
+          // No saved chat means no thread yet, which is how the app knows it is empty.
+          return saved.length > 0 ? [{ id: wantsAsk ? 'ask-thread-1' : 'thread-1' }] : [];
+        }
         case 'chat_messages':
-          return data.chatMessages;
+          return (url.searchParams.get('thread_id') ?? '').includes('ask-thread-1')
+            ? data.askMessages
+            : data.chatMessages;
         case 'account_members':
           return [
             {

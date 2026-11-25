@@ -5,10 +5,12 @@ import Anthropic from 'npm:@anthropic-ai/sdk@1.10.0';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 import { RATE_LIMIT_MESSAGE, RateLimited, UUID, corsFor, pickKey, underRateLimit } from '../_shared/guard.ts';
+import { runAsk, type AskCandidate } from './ask-pipeline.ts';
 import { ChatError, MESSAGES, messageForStatus } from './chat.ts';
 import { runChat, type Ask, type Reply } from './pipeline.ts';
 import {
   CLAUDE_EFFORT,
+  MAX_ASK_NOTES,
   CLAUDE_MAX_TOKENS,
   CLAUDE_MODEL,
   MAX_HISTORY_MESSAGES,
@@ -127,18 +129,24 @@ Deno.serve(async (req) => {
   if (!url || !publicKey || !secretKey) return reply({ error: 'server_not_set_up' }, 500);
   if (!authHeader) return reply({ error: 'not_signed_in' }, 401);
 
-  let body: { meeting_id?: string; question?: string; retry_message_id?: string } = {};
+  let body: { meeting_id?: string; question?: string; retry_message_id?: string; scope?: string } = {};
   try {
     body = (await req.json()) ?? {};
   } catch {
     /* handled below */
   }
 
+  // Two jobs through one door. 'all' is the Ask destination: one question answered from
+  // several notes at once. Anything else is the side chat on one note, exactly as before.
+  // It is an explicit word rather than "no meeting_id was sent", because a missing id is
+  // far more likely to be a mistake than a request to read somebody's whole account.
+  const allNotes = body.scope === 'all';
+
   const isRetry = typeof body.retry_message_id === 'string';
   if (isRetry) {
     if (!UUID.test(body.retry_message_id!)) return reply({ error: 'bad_request' }, 400);
   } else {
-    if (!body.meeting_id || !UUID.test(body.meeting_id)) return reply({ error: 'bad_request' }, 400);
+    if (!allNotes && (!body.meeting_id || !UUID.test(body.meeting_id))) return reply({ error: 'bad_request' }, 400);
     if (typeof body.question !== 'string' || body.question.trim() === '') return reply({ error: 'bad_request' }, 400);
     if (body.question.length > MAX_QUESTION_LENGTH) return reply({ error: 'question_too_long' }, 400);
   }
@@ -149,6 +157,108 @@ Deno.serve(async (req) => {
   if (authError || !auth.user) return reply({ error: 'not_signed_in' }, 401);
 
   const admin = createClient(url, secretKey, { auth: { persistSession: false } });
+
+  // ---------------------------------------------------------------------------
+  // THE ASK DESTINATION: one question, answered from several notes at once.
+  // ---------------------------------------------------------------------------
+  // It is its own path from here down rather than more branches inside the per-note path,
+  // because almost nothing is shared: a different claim, a different thread, a different way
+  // of finding the words, and a different prompt. What IS shared is everything that matters --
+  // the model settings, the fence around words somebody said, the citation reader and the cost
+  // sum all come from the same files the side chat uses.
+  if (allNotes) {
+    let claimed: Claimed;
+    let accountId: string | null = null;
+
+    if (isRetry) {
+      const { data, error } = await admin
+        .rpc('claim_ask_retry', { p_message_id: body.retry_message_id, p_user_id: auth.user.id })
+        .single<Claimed>();
+      // claim_ask_retry refuses a thread that is not the caller's own, and refuses a thread
+      // that belongs to ONE note -- so a note chat's message cannot be retried through here.
+      if (error || !data) return reply({ error: 'not_allowed' }, 403);
+      claimed = data;
+      accountId = claimed.account_id;
+
+      try {
+        await underRateLimit(admin, 'chat', auth.user.id, accountId);
+      } catch (e) {
+        if (e instanceof RateLimited) return reply({ ok: false, message: RATE_LIMIT_MESSAGE }, 429);
+        throw e;
+      }
+    } else {
+      // There is no note to take the account from, so find it under the person's OWN login:
+      // the account they own if they own one, else the first they are on. The same choice
+      // getUsage() makes in the app, and claim_ask_message makes again in SQL.
+      const { data: mine } = await asUser
+        .from('account_members')
+        .select('account_id, role')
+        .eq('user_id', auth.user.id)
+        .order('role', { ascending: false })
+        .limit(1);
+      accountId = ((mine ?? [])[0] as { account_id?: string } | undefined)?.account_id ?? null;
+      if (!accountId) return reply({ error: 'not_allowed' }, 403);
+
+      // The hourly limit is checked BEFORE the question is saved, so being turned away here
+      // does not spend one of the day's questions.
+      try {
+        await underRateLimit(admin, 'chat', auth.user.id, accountId);
+      } catch (e) {
+        if (e instanceof RateLimited) return reply({ ok: false, message: RATE_LIMIT_MESSAGE }, 429);
+        throw e;
+      }
+
+      const { data, error } = await admin
+        .rpc('claim_ask_message', { p_user_id: auth.user.id, p_question: body.question })
+        .single<Claimed>();
+      if (error || !data) {
+        const m = error?.message ?? '';
+        if (m.includes('limit_reached')) return reply({ error: 'limit_reached', message: MESSAGES.limit }, 402);
+        if (m.includes('empty_question')) return reply({ error: 'bad_request' }, 400);
+        return reply({ error: 'not_allowed' }, 403);
+      }
+      claimed = data;
+    }
+
+    const question = isRetry ? claimed.question! : body.question!;
+
+    if (!anthropicKey) {
+      return reply({ ok: false, message: MESSAGES.notSetUp, message_id: claimed.message_id, remaining: claimed.remaining });
+    }
+
+    const client = new Anthropic({ apiKey: anthropicKey });
+    try {
+      const { answer, sources } = await runAsk({
+        admin,
+        threadId: claimed.thread_id,
+        accountId: claimed.account_id,
+        bucket: BUCKET,
+        question,
+        language: claimed.language,
+        maxNotes: MAX_ASK_NOTES,
+        maxInputTokens: MAX_INPUT_TOKENS,
+        maxHistoryMessages: MAX_HISTORY_MESSAGES,
+        usdPerMtokIn: USD_PER_MTOK_IN,
+        usdPerMtokOut: USD_PER_MTOK_OUT,
+        usdPerMtokCacheRead: USD_PER_MTOK_CACHE_READ,
+        // WHICH NOTES: asked as the PERSON, never with the server key, so the same Row Level
+        // Security rule that guards the notes list guards what a question can reach.
+        findNotes: async (asked, limit) => {
+          const { data, error } = await asUser.rpc('find_ask_notes', { p_question: asked, p_limit: limit });
+          if (error) throw new ChatError(MESSAGES.unknown);
+          return (data ?? []) as AskCandidate[];
+        },
+        call: makeCaller(client),
+        countTokens: makeCounter(client),
+      });
+      return reply({ ok: true, answer, sources, remaining: claimed.remaining, message_id: claimed.message_id });
+    } catch (e) {
+      // The KIND of problem only. Never the key, the question, or the words of a meeting.
+      console.error('ask failed', e instanceof Error ? e.name : 'error');
+      const message = e instanceof ChatError ? e.message : MESSAGES.unknown;
+      return reply({ ok: false, message, message_id: claimed.message_id, remaining: claimed.remaining });
+    }
+  }
 
   // 2. Take a question: check the person may use the note, check today's limit, and save the
   // question. All in one database step, so two fast taps cannot slip past the limit.

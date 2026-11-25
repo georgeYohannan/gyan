@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
@@ -21,7 +21,14 @@ import { ScriptText } from '@/components/ui/script-text';
 import { TabBar } from '@/components/ui/tab-bar';
 import { baseCode, languageName, sameLanguage } from '@/constants/languages';
 import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
-import { NO_TRANSCRIPT_MESSAGE, NO_WORDS_MESSAGE, type ChatSource } from '@/lib/chat';
+import {
+  CHAT_BLURB,
+  noteChat,
+  NO_TRANSCRIPT_MESSAGE,
+  NO_WORDS_MESSAGE,
+  SUGGESTED,
+  type ChatSource,
+} from '@/lib/chat';
 import { listPassages, type Passage } from '@/lib/passages';
 import { noteTitle } from '@/lib/notes';
 import {
@@ -116,6 +123,14 @@ export default function NoteDetailScreen() {
   const [moreOpen, setMoreOpen] = useState(false);
   /** The transcript line a passage number pointed at. It stays lit until another one is tapped. */
   const [highlightId, setHighlightId] = useState<string>();
+  /**
+   * Where the Chat tab sends its questions: this note's own side chat.
+   *
+   * Made once per note rather than once per render. `ChatBody` reads the conversation the
+   * first time it is shown, and watches this object to know when the chat it is drawing has
+   * changed -- so a fresh object every render would be a fresh chat every render.
+   */
+  const chat = useMemo(() => noteChat(id ?? ''), [id]);
 
   const { languageCode, setLanguage } = useProfile();
   /** Which picker is open, if either. */
@@ -520,7 +535,15 @@ export default function NoteDetailScreen() {
                 {/* Coming back to this tab reads the conversation from the database again,
                     which is where it lives -- so a refresh, a different device and a trip to
                     the Transcript and back all show the same thing. */}
-                <ChatBody testID="note-chat" meetingId={id} active onJump={jumpTo} />
+                <ChatBody
+                  testID="note-chat"
+                  transport={chat}
+                  blurb={CHAT_BLURB}
+                  suggestions={SUGGESTED}
+                  placeholder="What were the decisions?"
+                  active
+                  onJump={jumpTo}
+                />
               </View>
             )}
           </>

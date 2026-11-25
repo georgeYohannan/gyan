@@ -99,11 +99,13 @@ test('the builders-only design page is still reachable by address, with no butto
   await expect(page.getByTestId('nav-design')).toHaveCount(0);
 });
 
-test('Ask is a real destination, and says plainly that it is not ready', async ({ page }) => {
+test('Ask is a real destination, and it is built', async ({ page }) => {
   await installFakes(page);
   await signIn(page);
   await goTo(page, 'ask');
   await expect(page.getByRole('heading', { name: 'Ask', level: 1 })).toBeVisible();
-  await expect(page.getByText('Not ready yet')).toBeVisible();
-  await expect(page.getByText(/open it and choose Chat/)).toBeVisible();
+  // It was a page saying "Not ready yet" for most of this round. It asks across every note
+  // now; tests/15-ask.spec.ts covers what it does.
+  await expect(page.getByText('Not ready yet')).toHaveCount(0);
+  await expect(page.getByTestId('ask-chat')).toBeVisible();
 });

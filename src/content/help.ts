@@ -181,6 +181,87 @@ export const HELP: Record<string, HelpEntry> = {
       },
     ],
   },
+  ask: {
+    id: 'ask',
+    title: 'Asking across all your notes',
+    sentences: [
+      'Ask one question and Gyan answers it from several of your notes at once.',
+      'It reads only what was said in them. It never makes anything up and never looks anything up elsewhere.',
+      'Every answer names the notes it used, and the small numbers take you to the exact line.',
+      'To ask about one note on its own, open it and choose Chat.',
+    ],
+    lists: [
+      {
+        heading: 'What you can ask',
+        items: [
+          'What did I promise to do?',
+          'What is still open across my notes?',
+          'What has been decided about pricing?',
+          'Anything else in your own words, like "What did Priya say about the launch?".',
+          'The first time you open Ask, 3 questions are offered. Tap one to try it.',
+        ],
+      },
+      {
+        heading: 'How Gyan chooses which notes to read',
+        items: [
+          'It looks for the words of your question in your notes, and reads the few that match best.',
+          'At most 4 notes go into one answer, so a question stays quick and cheap.',
+          'It finds notes where somebody SAID a word. It does not yet find a note about the same thing worded differently.',
+          'Asking about "cost" will not find a meeting that only ever said "pricing".',
+          'That is the same limit the Search screen has, and it needs a different kind of search to fix.',
+        ],
+      },
+      {
+        heading: 'What the little numbers mean',
+        items: [
+          'A small number in an answer is the part of a note that answer came from.',
+          'Tap it. That note opens, on the Transcript tab, with the line outlined in blue.',
+          'The number says which note it goes to, so a screen reader reads "Go to Weekly team call at 1:05".',
+          'On a recording it points at a spoken line. On a pasted note it points at a paragraph.',
+        ],
+      },
+      {
+        heading: 'If it says it could not find something',
+        items: [
+          'Gyan says "I could not find that in your notes" when no note has the answer.',
+          'That is on purpose. It would rather say nothing than make something up.',
+          'Try a word somebody would have said out loud, like a person\'s name or the name of a project.',
+          'A note needs its words before it can be asked about, so a note still being written is not read.',
+        ],
+      },
+      {
+        heading: 'Questions, and where this chat is kept',
+        items: [
+          'Asking here uses the same daily questions as the chat inside a note. There is one allowance, not two.',
+          'When only a few are left, it quietly tells you how many. They come back the next day.',
+          'If an answer goes wrong, Retry does not use up another question.',
+          'This conversation is saved and separate from every note chat, and only you can see it.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/ask-390.png'),
+        alt: 'The Ask screen on a phone, headed Ask with the line One question, answered from your notes. A question from You says "What did I promise to do?" and an answer from Gyan says that in Weekly team call you promised to ship the sign up screen on Friday, with a small round number 2, and that in Pricing chat you agreed to send the new numbers, with a small round number 5. The question box and a Send button are pinned along the bottom, above the navigation bar with Ask underlined in blue.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/ask-empty-390.png'),
+        alt: 'A new Ask screen on a phone. It says Ask one question and Gyan reads your notes to answer it, that it answers only from what was said in them, and that every answer says which note it came from. Three questions are offered as buttons above the question box: What did I promise to do?, What is still open across my notes?, and What has been decided about pricing?',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/ask-1280.png'),
+        alt: 'The same Ask conversation on a wide web window, with the navigation as a sidebar down the left and Ask marked with a blue line. The answer fits on two lines, each ending with its small round number before the full stop.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/ask-empty-1280.png'),
+        alt: 'A new Ask screen on a wide web window, with the same three suggested questions sitting as pills above the question box.',
+      },
+    ],
+  },
   newNote: {
     id: 'newNote',
     title: 'New note',
@@ -370,7 +451,7 @@ export const HELP: Record<string, HelpEntry> = {
       'Open the Chat tab to ask anything about this note.',
       'Gyan only reads this one note. It never makes things up, and it never looks anything up elsewhere.',
       'Every answer shows small numbers. Tap one to jump to the place the answer came from.',
-      'This works on recordings and on notes you pasted or uploaded as text.',
+      'To ask a question of all your notes at once, use Ask in the navigation instead.',
     ],
     lists: [
       {
@@ -416,7 +497,8 @@ export const HELP: Record<string, HelpEntry> = {
         items: [
           'Your questions and answers are saved, so they are still there after you close the app.',
           'Only you can see your chat. Even people on your team cannot read it.',
-          'Each note has its own separate chat.',
+          'Each note has its own separate chat, and Ask has its own again.',
+          'Questions here and questions in Ask come out of the same daily allowance.',
         ],
       },
     ],

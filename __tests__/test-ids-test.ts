@@ -44,6 +44,7 @@ const EXACT = [
   // Getting around.
   'nav-home',
   'nav-settings',
+  'nav-ask',
   // Home.
   'home-new-note',
   'home-filters',
@@ -64,6 +65,8 @@ const EXACT = [
   'new-note-text',
   'new-note-add',
   'search-screen',
+  'ask-screen',
+  'ask-chat',
   'settings-screen',
   'settings-log-out',
   'settings-row-profile',

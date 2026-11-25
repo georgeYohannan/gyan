@@ -436,3 +436,122 @@ from public.find_notes('予算の会議は来週です');
 select 'NOTE: one Japanese word on its own finds ' || count(*) || ' note(s)' as result
 from public.find_notes('予算');
 reset role; reset request.jwt.claim.sub;
+
+\echo '--- 18. Ask: one question across every note (prompt 13) ---'
+-- Ask turns a QUESTION into a search. The per-note chat never did that, so these checks turn
+-- the handle on the three claims the migration makes: a question is an OR of its words, the
+-- all-notes thread is one per person, and a question still cannot reach another account.
+reset role; reset request.jwt.claim.sub;
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-4000-8000-000000000001';
+
+-- The whole reason private.ask_query exists. A real question has words in it that no note
+-- contains, and websearch_to_tsquery joins every word with AND.
+select case when count(*) = 0 then 'PASS: find_notes answers a whole question with nothing'
+            else 'FAIL: find_notes found ' || count(*) end as result
+from public.find_notes('What did we decide about the xyzzyplugh figures?');
+
+select case when count(*) >= 1 then 'PASS: find_ask_notes answers the same question with the right note'
+            else 'FAIL: find_ask_notes found nothing' end as result
+from public.find_ask_notes('What did we decide about the xyzzyplugh figures?', 4)
+where title = 'Quarterly xyzzyplugh review';
+
+-- A question of nothing but little words leaves nothing to look for. No rows is the honest
+-- answer; the server turns it into "I could not find that in your notes".
+select case when count(*) = 0 then 'PASS: a question of only little words finds nothing'
+            else 'FAIL: found ' || count(*) end as result
+from public.find_ask_notes('what about it then', 4);
+
+-- Never more than it was asked for, and never more than the ceiling in the function.
+select case when count(*) <= 1 then 'PASS: the limit asked for is the limit given'
+            else 'FAIL: got ' || count(*) end as result
+from public.find_ask_notes('xyzzyplugh presupuesto quarterly', 1);
+
+reset role; reset request.jwt.claim.sub;
+set role authenticated;
+set request.jwt.claim.sub = 'bbbbbbbb-0000-4000-8000-000000000002';
+select case when count(*) = 0 then 'PASS: B cannot reach A''s notes by asking a question'
+            else 'FAIL: B reached ' || count(*) || ' of A''s notes' end as result
+from public.find_ask_notes('What are the xyzzyplugh figures?', 4);
+
+-- Taking a question: one thread per person, the daily limit, and the two retry doors.
+reset role; reset request.jwt.claim.sub;
+set role service_role;
+do $$
+declare
+  person uuid := 'aaaaaaaa-0000-4000-8000-000000000001';
+  first_claim record; second_claim record; note_thread uuid; a_account uuid; a_note uuid;
+begin
+  select id into a_account from public.accounts where owner_id = person;
+  select id into a_note from public.meetings where title = 'Quarterly xyzzyplugh review';
+
+  select * into first_claim from public.claim_ask_message(person, 'What did I promise to do?');
+  select * into second_claim from public.claim_ask_message(person, 'And what is still open?');
+
+  if first_claim.thread_id = second_claim.thread_id then
+    raise notice 'PASS: both questions went into ONE all-notes thread';
+  else
+    raise notice 'FAIL: a second thread was made';
+  end if;
+
+  if (select meeting_id from public.chat_threads where id = first_claim.thread_id) is null then
+    raise notice 'PASS: the all-notes thread has no note on it';
+  else
+    raise notice 'FAIL: the all-notes thread was tied to a note';
+  end if;
+
+  -- The same allowance as the side chat, going down as questions are asked.
+  if second_claim.remaining = first_claim.remaining - 1 then
+    raise notice 'PASS: an Ask question spends one of the day''s questions';
+  else
+    raise notice 'FAIL: remaining went % -> %', first_claim.remaining, second_claim.remaining;
+  end if;
+
+  -- The partial index is the only thing stopping a second all-notes thread, because two
+  -- NULLs are not equal and the side chat's index therefore does not cover these rows.
+  begin
+    insert into public.chat_threads (account_id, user_id, meeting_id) values (a_account, person, null);
+    raise notice 'FAIL: a second all-notes thread was allowed';
+  exception when unique_violation then raise notice 'PASS: a second all-notes thread is refused';
+  end;
+
+  -- The two retry doors do not open each other's threads.
+  begin
+    perform public.claim_chat_retry(first_claim.message_id, person);
+    raise notice 'FAIL: the note-chat retry opened an all-notes question';
+  exception when sqlstate 'P0001' then raise notice 'PASS: the note-chat retry refuses an all-notes question';
+  end;
+
+  select thread_id into note_thread from public.claim_chat_message(a_note, person, 'What is in this note?');
+  begin
+    perform public.claim_ask_retry(
+      (select id from public.chat_messages where thread_id = note_thread and role = 'user' limit 1), person);
+    raise notice 'FAIL: the Ask retry opened a note question';
+  exception when sqlstate 'P0001' then raise notice 'PASS: the Ask retry refuses a note question';
+  end;
+
+  -- And neither door opens somebody else's question.
+  begin
+    perform public.claim_ask_retry(first_claim.message_id, 'bbbbbbbb-0000-4000-8000-000000000002');
+    raise notice 'FAIL: B retried A''s question';
+  exception when sqlstate 'P0001' then raise notice 'PASS: B cannot retry A''s question';
+  end;
+
+  -- Saving the answer: no meeting to attach it to, and its own kind of spend.
+  perform public.finish_ask_message(first_claim.thread_id, a_account, 'An answer [1].', '[]'::jsonb, 'en', 100, 0.0001);
+  if exists (select 1 from public.ai_usage where kind = 'ask' and meeting_id is null and account_id = a_account) then
+    raise notice 'PASS: an Ask answer is logged as its own kind, with no one meeting';
+  else
+    raise notice 'FAIL: the Ask cost was not logged';
+  end if;
+end $$;
+reset role;
+
+-- A chat is the most personal thing in Gyan, and an all-notes chat is the most personal of
+-- those. The side chat's rule is "your own thread only", and that must cover this too.
+set role authenticated;
+set request.jwt.claim.sub = 'bbbbbbbb-0000-4000-8000-000000000002';
+select case when count(*) = 0 then 'PASS: B cannot read A''s Ask conversation'
+            else 'FAIL: B read ' || count(*) || ' of A''s Ask messages' end as result
+from public.chat_messages;
+reset role; reset request.jwt.claim.sub;

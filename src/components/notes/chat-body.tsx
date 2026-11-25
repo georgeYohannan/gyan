@@ -8,16 +8,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TextField } from '@/components/ui/text-field';
 import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 import {
-  askChat,
   ChatLimitError,
   LIMIT_MESSAGE,
-  listChatMessages,
   MAX_QUESTION_LENGTH,
-  retryChat,
   SEND_PROBLEM_MESSAGE,
-  SUGGESTED,
   type ChatMessage,
   type ChatSource,
+  type ChatTransport,
 } from '@/lib/chat';
 
 /** Below this many questions left, we quietly say how many are left. */
@@ -27,7 +24,18 @@ const LOW_LEFT = 3;
 type Pending = { question: string };
 
 type ChatBodyProps = {
-  meetingId: string;
+  /**
+   * Which chat this is: the side chat on one note, or the Ask destination across every note.
+   * The component reads the conversation, asks and retries through this and nothing else, so
+   * it never needs to know which of the two it is drawing.
+   */
+  transport: ChatTransport;
+  /** What an empty chat says before anybody has asked anything. */
+  blurb: string;
+  /** The questions offered as buttons on an empty chat. */
+  suggestions: readonly string[];
+  /** The grey example inside the question box. */
+  placeholder: string;
   /**
    * The chat is on screen, so it is time to read the conversation.
    *
@@ -36,9 +44,15 @@ type ChatBodyProps = {
    * back to the tab would throw away an answer that has not been saved yet.
    */
   active: boolean;
-  /** Called when somebody taps a passage number. The note screen jumps to that line. */
+  /**
+   * Called when somebody taps a passage number.
+   *
+   * What that means depends on where the chat is. On a note it jumps to that line of the
+   * Transcript tab. On the Ask screen the source also says WHICH note, so it opens that note
+   * at that line.
+   */
   onJump: (source: ChatSource) => void;
-  /** A title bar above the conversation. The panel has one; the tab does not need one. */
+  /** A title bar above the conversation. The panel had one; a tab does not need one. */
   header?: ReactNode;
   testID?: string;
 };
@@ -46,16 +60,20 @@ type ChatBodyProps = {
 /**
  * The chat itself: the conversation, the question box, and everything that can go wrong.
  *
- * It knows nothing about WHERE it is drawn. That is the whole point of it being its own
- * piece: it started life inside a slide-in panel, and the note page now also shows it as a
- * tab beside Summary and Transcript. Both are the same chat, with the same state and the
- * same markup, so an answer looks the same wherever you asked for it.
+ * It knows nothing about WHERE it is drawn, or WHICH chat it is. That is the whole point of
+ * it being its own piece. It started life inside a slide-in panel; the note page now shows it
+ * as a tab beside Summary and Transcript, and the Ask destination shows the same component
+ * reading every note at once. Three homes, one chat -- same states, same failures, same
+ * markup -- so an answer looks and behaves the same wherever you asked for it.
+ *
+ * Everything that differs between the two chats arrives as a prop: where the questions go
+ * (`transport`), and the words on an empty one (`blurb`, `suggestions`, `placeholder`).
  *
  * It owns its own scrolling and its own keyboard avoidance, and expects a parent that gives
  * it a height to fill -- never a page that scrolls, or there would be two scrolling things
  * inside each other and the question box would walk off the bottom of a phone.
  */
-export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBodyProps) {
+export function ChatBody({ transport, blurb, suggestions, placeholder, active, onJump, header, testID }: ChatBodyProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -73,12 +91,12 @@ export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBody
     setLoading(true);
     setLoadFailed(false);
     try {
-      setMessages(await listChatMessages(meetingId));
+      setMessages(await transport.list());
     } catch {
       setLoadFailed(true);
     }
     setLoading(false);
-  }, [meetingId]);
+  }, [transport]);
 
   // Read the conversation the first time the chat is shown. A ref, not state, so showing it
   // does not draw it twice. `loading` already starts true, so nothing is set until the answer
@@ -87,7 +105,7 @@ export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBody
   useEffect(() => {
     if (!active || everShown.current) return;
     everShown.current = true;
-    listChatMessages(meetingId).then(
+    transport.list().then(
       (rows) => {
         setMessages(rows);
         setLoading(false);
@@ -97,10 +115,10 @@ export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBody
         setLoading(false);
       },
     );
-  }, [active, meetingId]);
+  }, [active, transport]);
 
   /** Reads one answer back and puts it on screen, or shows the problem with a Retry. */
-  function apply(result: Awaited<ReturnType<typeof askChat>>, asked: string) {
+  function apply(result: Awaited<ReturnType<ChatTransport['ask']>>, asked: string) {
     if (typeof result.remaining === 'number') setRemaining(result.remaining);
     if (result.ok) {
       setMessages((current) => [
@@ -125,7 +143,7 @@ export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBody
     setProblem(undefined);
     setRetryId(undefined);
     try {
-      apply(await askChat(meetingId, asked), asked);
+      apply(await transport.ask(asked), asked);
     } catch (e) {
       if (e instanceof ChatLimitError) {
         setLimitReached(true);
@@ -142,7 +160,7 @@ export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBody
     const asked = pending.question;
     setProblem(undefined);
     try {
-      apply(retryId ? await retryChat(retryId) : await askChat(meetingId, asked), asked);
+      apply(retryId ? await transport.retry(retryId) : await transport.ask(asked), asked);
     } catch (e) {
       if (e instanceof ChatLimitError) {
         setLimitReached(true);
@@ -188,10 +206,7 @@ export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBody
 
         {empty ? (
           <View style={{ gap: Spacing.two }}>
-            <Body color="textSecondary">
-              Ask anything about this note. Gyan answers only from what was said in it, and shows you where
-              each answer came from.
-            </Body>
+            <Body color="textSecondary">{blurb}</Body>
           </View>
         ) : null}
 
@@ -238,7 +253,7 @@ export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBody
           <>
             {empty ? (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}>
-                {SUGGESTED.map((s) => (
+                {suggestions.map((s) => (
                   <Pressable
                     key={s}
                     accessibilityRole="button"
@@ -263,7 +278,7 @@ export function ChatBody({ meetingId, active, onJump, header, testID }: ChatBody
 
             <TextField
               label="Your question"
-              placeholder="What were the decisions?"
+              placeholder={placeholder}
               value={question}
               onChangeText={setQuestion}
               maxLength={MAX_QUESTION_LENGTH}
