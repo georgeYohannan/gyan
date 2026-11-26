@@ -555,3 +555,331 @@ select case when count(*) = 0 then 'PASS: B cannot read A''s Ask conversation'
             else 'FAIL: B read ' || count(*) || ' of A''s Ask messages' end as result
 from public.chat_messages;
 reset role; reset request.jwt.claim.sub;
+
+-- ===========================================================================
+-- 19. The meeting bot (prompt 14)
+-- ===========================================================================
+-- The whole feature's safety rests on four things being true in the DATABASE, not in the app:
+-- the switch is off until somebody turns it on by hand, the app cannot turn it on, a bot cannot
+-- exist without consent, and the hour caps really refuse. Those are what this section turns the
+-- handle on.
+\echo '--- 19. the meeting bot: the switch, the consent and the caps (prompt 14) ---'
+
+set role service_role;
+do $$
+declare
+  a_account uuid := (select id from public.accounts where owner_id = 'aaaaaaaa-0000-4000-8000-000000000001');
+  b_account uuid := (select id from public.accounts where owner_id = 'bbbbbbbb-0000-4000-8000-000000000002');
+  person uuid := 'aaaaaaaa-0000-4000-8000-000000000001';
+  other uuid := 'bbbbbbbb-0000-4000-8000-000000000002';
+  note_a uuid := 'cccccccc-0000-4000-8000-00000000b001';
+  note_b uuid := 'cccccccc-0000-4000-8000-00000000b002';
+  note_c uuid := 'cccccccc-0000-4000-8000-00000000b003';
+  note_d uuid := 'cccccccc-0000-4000-8000-00000000b004';
+  note_e uuid := 'cccccccc-0000-4000-8000-00000000b005';
+  started record;
+  free_plan uuid := (select id from public.plans where name = 'Free');
+  pro_plan uuid := (select id from public.plans where name = 'Pro');
+begin
+  -- 1. THE SWITCH IS OFF BY DEFAULT. No integrations row exists, so nothing may be sent.
+  begin
+    perform public.start_bot_note(note_a, a_account, person, 'recall', 'meet',
+      'https://meet.google.com/abc-defg-hij', 'v1', 'hash1');
+    raise notice 'FAIL: a bot was sent with the switch off';
+  exception when sqlstate 'P0001' then raise notice 'PASS: the switch is off, so no bot can be sent';
+  end;
+
+  -- 2. Turn it on by hand, the way the founder does in the dashboard.
+  insert into public.integrations (account_id, kind, settings)
+  values (a_account, 'meeting_bot', '{"enabled": true, "bot_name": null}'::jsonb);
+
+  -- Free gets 0 bot hours, so the switch alone is not enough. This is the promise that setting
+  -- bot_hours_per_month to 0 blocks a bot with no code change.
+  begin
+    perform public.start_bot_note(note_a, a_account, person, 'recall', 'meet',
+      'https://meet.google.com/abc-defg-hij', 'v1', 'hash1');
+    raise notice 'FAIL: a bot was sent on a plan with 0 hours';
+  exception when sqlstate 'P0001' then raise notice 'PASS: 0 bot hours on the plan blocks a bot';
+  end;
+
+  -- 3. Move A onto the Pro stand-in plan, which has hours.
+  update public.accounts set plan_id = pro_plan where id = a_account;
+
+  -- A platform we do not support is refused before anything else happens.
+  begin
+    perform public.start_bot_note(note_a, a_account, person, 'recall', 'webex',
+      'https://example.webex.com/j/1', 'v1', 'hash1');
+    raise notice 'FAIL: an unsupported platform was accepted';
+  exception when sqlstate 'P0001' then raise notice 'PASS: an unsupported platform is refused';
+  end;
+
+  -- A bot cannot exist without consent.
+  begin
+    perform public.start_bot_note(note_a, a_account, person, 'recall', 'meet',
+      'https://meet.google.com/abc-defg-hij', '', '');
+    raise notice 'FAIL: a bot was sent with no consent';
+  exception when sqlstate 'P0001' then raise notice 'PASS: no consent, no bot';
+  end;
+
+  -- Somebody who is not on the account cannot send a bot on it.
+  begin
+    perform public.start_bot_note(note_a, a_account, other, 'recall', 'meet',
+      'https://meet.google.com/abc-defg-hij', 'v1', 'hash1');
+    raise notice 'FAIL: a stranger sent a bot on somebody else''s account';
+  exception when sqlstate 'P0001' then raise notice 'PASS: only somebody on the account may send a bot';
+  end;
+
+  -- 4. Now it works, and the bot is named after the owner.
+  select * into started from public.start_bot_note(note_a, a_account, person, 'recall', 'meet',
+    'https://meet.google.com/abc-defg-hij', 'v1', 'hash1');
+  if started.bot_name like 'gyan Notetaker%' then
+    raise notice 'PASS: the bot is named %', started.bot_name;
+  else
+    raise notice 'FAIL: the bot was called %', started.bot_name;
+  end if;
+  if started.max_minutes = 180 then
+    raise notice 'PASS: the longest meeting comes from the plan (% minutes)', started.max_minutes;
+  else
+    raise notice 'FAIL: max_minutes was %', started.max_minutes;
+  end if;
+  if (select status from public.meetings where id = note_a) = 'joining'
+     and (select source from public.meetings where id = note_a) = 'bot' then
+    raise notice 'PASS: the note starts as a bot note that is joining';
+  else
+    raise notice 'FAIL: the note is in the wrong state';
+  end if;
+  -- The consent is stored on the bot's own row, so it is evidence about THIS meeting.
+  if (select consent_version || '/' || consent_text_hash from public.meeting_bots
+      where meeting_id = note_a) = 'v1/hash1' then
+    raise notice 'PASS: the consent given is stored on the bot';
+  else
+    raise notice 'FAIL: the consent was not stored';
+  end if;
+
+  -- 5. The phases move forward and never backwards.
+  perform public.attach_bot(note_a, 'bot-ext-1');
+  perform public.record_bot_phase(note_a, 'waiting');
+  perform public.record_bot_phase(note_a, 'recording');
+  -- A late "joining" event, which really does happen.
+  perform public.record_bot_phase(note_a, 'joining');
+  if (select phase from public.meeting_bots where meeting_id = note_a) = 'recording' then
+    raise notice 'PASS: a status event that arrives late cannot move a bot backwards';
+  else
+    raise notice 'FAIL: the phase went back to %', (select phase from public.meeting_bots where meeting_id = note_a);
+  end if;
+  -- And the meeting link is gone the moment recording starts.
+  if (select meeting_url from public.meeting_bots where meeting_id = note_a) is null then
+    raise notice 'PASS: the meeting link is thrown away once the bot is recording';
+  else
+    raise notice 'FAIL: the meeting link is still stored';
+  end if;
+
+  -- An event for a bot id we have never heard of finds nothing, rather than guessing.
+  if public.bot_note_for_event('recall', 'bot-ext-1') = note_a
+     and public.bot_note_for_event('recall', 'who-is-this') is null then
+    raise notice 'PASS: an event is matched by the bot id, and an unknown id matches nothing';
+  else
+    raise notice 'FAIL: event matching is wrong';
+  end if;
+
+  -- 6. The recording arrives. A path outside the account's own folder is refused.
+  begin
+    perform public.bot_recording_ready(note_a,
+      b_account::text || '/' || note_a::text || '/meeting.mp3', 600, 0.0833, 'recall');
+    raise notice 'FAIL: a file path in somebody else''s folder was accepted';
+  exception when sqlstate 'P0001' then raise notice 'PASS: a bot recording cannot be written outside its own folder';
+  end;
+  begin
+    perform public.bot_recording_ready(note_a,
+      a_account::text || '/' || note_a::text || '/../../x/meeting.mp3', 600, 0.0833, 'recall');
+    raise notice 'FAIL: a path climbing out of the folder was accepted';
+  exception when sqlstate 'P0001' then raise notice 'PASS: a bot recording path cannot climb out of its folder';
+  end;
+
+  perform public.bot_recording_ready(note_a,
+    a_account::text || '/' || note_a::text || '/meeting.mp3', 600, 0.0833, 'recall');
+  if (select status from public.meetings where id = note_a) = 'queued' then
+    raise notice 'PASS: once the audio is ours the note is queued, exactly like an upload';
+  else
+    raise notice 'FAIL: the note is %', (select status from public.meetings where id = note_a);
+  end if;
+  if (select units from public.ai_usage where kind = 'bot' and meeting_id = note_a) = 10 then
+    raise notice 'PASS: the bot cost is logged in minutes, under its own kind';
+  else
+    raise notice 'FAIL: the bot cost row is wrong';
+  end if;
+
+  -- 7. And now the normal pipeline accepts it, which it refused before this round.
+  begin
+    perform public.claim_transcription(note_a, person);
+    raise notice 'PASS: a bot note can be transcribed like any other recording';
+  exception when sqlstate 'P0001' then raise notice 'FAIL: claim_transcription still refuses a bot note';
+  end;
+
+  -- 8. A failed bot keeps its plain reason, and nothing can revive it.
+  select * into started from public.start_bot_note(note_b, a_account, person, 'recall', 'zoom',
+    'https://zoom.us/j/123456', 'v1', 'hash1');
+  perform public.fail_bot(note_b, 'Nobody let Gyan into the meeting.');
+  perform public.record_bot_phase(note_b, 'recording');
+  if (select phase from public.meeting_bots where meeting_id = note_b) = 'failed'
+     and (select status from public.meetings where id = note_b) = 'failed'
+     and (select error_message from public.meetings where id = note_b) = 'Nobody let Gyan into the meeting.' then
+    raise notice 'PASS: a failed bot stays failed, with its reason in plain words';
+  else
+    raise notice 'FAIL: a failed bot was revived';
+  end if;
+  -- And a failed bot never counted as a meeting.
+  if coalesce((select meetings_used from public.usage where account_id = a_account), 0) = 0 then
+    raise notice 'PASS: a bot that failed does not count as a meeting';
+  else
+    raise notice 'FAIL: a failed bot counted';
+  end if;
+
+  -- 9. THE TWO DAILY CAPS, which are what stops a mistake running up a large bill.
+  --    The reservation is the point: a bot that is still in a call has spent nothing yet, so
+  --    without it four bots started in the same minute would all pass a cap none of them had
+  --    touched. note_c below is left sitting in 'joining', reserving the 180 minutes the Pro
+  --    stand-in plan allows it, which is already past the 2 hour per-account cap.
+  perform public.start_bot_note(note_c, a_account, person, 'recall', 'meet',
+    'https://meet.google.com/zzz-zzzz-zzz', 'v1', 'hash1');
+  begin
+    perform public.start_bot_note(note_d, a_account, person, 'recall', 'meet',
+      'https://meet.google.com/yyy-yyyy-yyy', 'v1', 'hash1');
+    raise notice 'FAIL: the per-account daily cap let another bot through';
+  exception when sqlstate 'P0001' then raise notice 'PASS: the per-account daily cap refuses another bot';
+  end;
+
+  -- With the account cap taken away, the whole-service cap (6 hours) is the next thing to bite.
+  update public.security_settings set bot_hours_per_day_account = null where kind = 'meeting_bot';
+  perform public.start_bot_note(note_d, a_account, person, 'recall', 'meet',
+    'https://meet.google.com/yyy-yyyy-yyy', 'v1', 'hash1');
+  begin
+    perform public.start_bot_note(note_e, a_account, person, 'recall', 'teams',
+      'https://teams.microsoft.com/l/meetup-join/xyz', 'v1', 'hash1');
+    raise notice 'FAIL: the whole-service daily cap let another bot through';
+  exception when sqlstate 'P0001' then raise notice 'PASS: the whole-service daily cap refuses another bot';
+  end;
+  update public.security_settings set bot_hours_per_day_account = 2 where kind = 'meeting_bot';
+
+  -- 10. Stop recording: only somebody on the account, and only once the bot really exists.
+  begin
+    perform public.bot_for_stop(note_c, person);
+    raise notice 'FAIL: a bot with no id yet could be stopped';
+  exception when sqlstate 'P0001' then raise notice 'PASS: a bot that has not started yet cannot be stopped';
+  end;
+  perform public.attach_bot(note_c, 'bot-ext-3');
+  perform public.record_bot_phase(note_c, 'recording');
+  begin
+    perform public.bot_for_stop(note_c, other);
+    raise notice 'FAIL: a stranger stopped somebody else''s bot';
+  exception when sqlstate 'P0001' then raise notice 'PASS: only somebody on the account may stop a bot';
+  end;
+  if (select external_id from public.bot_for_stop(note_c, person)) = 'bot-ext-3' then
+    raise notice 'PASS: somebody on the account can stop the bot';
+  else
+    raise notice 'FAIL: bot_for_stop gave the wrong id back';
+  end if;
+
+  update public.accounts set plan_id = free_plan where id = a_account;
+end $$;
+reset role;
+
+-- The app cannot turn the switch on, whatever it sends. This is the single most important rule
+-- in the feature, so it is tried for real as the owner.
+set role authenticated;
+set request.jwt.claim.sub = 'bbbbbbbb-0000-4000-8000-000000000002';
+do $$
+declare saved jsonb;
+begin
+  saved := public.save_meeting_bot_settings('{"enabled": true, "bot_name": "Sneaky Bot"}'::jsonb);
+  if (saved ->> 'enabled')::boolean then
+    raise notice 'FAIL: the app turned the meeting bot on';
+  else
+    raise notice 'PASS: the app cannot turn the meeting bot on, only rename it';
+  end if;
+  if saved ->> 'bot_name' = 'Sneaky Bot' then
+    raise notice 'PASS: the owner can rename the bot';
+  else
+    raise notice 'FAIL: the owner could not rename the bot';
+  end if;
+end $$;
+-- And B cannot see A's bots.
+select case when count(*) = 0 then 'PASS: B cannot read A''s bots'
+            else 'FAIL: B read ' || count(*) || ' of A''s bots' end as result
+from public.meeting_bots;
+reset role; reset request.jwt.claim.sub;
+
+\echo '--- 20. the longest a meeting may be, applied to an upload (prompt 14) ---'
+-- max_meeting_minutes has existed since the first migration and has never refused anything.
+-- Free is 60 minutes now, so a 90 minute recording must fail -- and the transcription it already
+-- paid for must still be written down, because the money really was spent.
+set role service_role;
+do $$
+declare
+  a_account uuid := (select id from public.accounts where owner_id = 'aaaaaaaa-0000-4000-8000-000000000001');
+  person uuid := 'aaaaaaaa-0000-4000-8000-000000000001';
+  long_note uuid := 'cccccccc-0000-4000-8000-00000000c001';
+  short_note uuid := 'cccccccc-0000-4000-8000-00000000c002';
+  again_note uuid := 'cccccccc-0000-4000-8000-00000000c003';
+begin
+  insert into public.meetings (id, account_id, created_by, source, status, file_path)
+  values (long_note, a_account, person, 'upload', 'transcribing',
+          a_account::text || '/' || long_note::text || '/long.mp3'),
+         (short_note, a_account, person, 'upload', 'transcribing',
+          a_account::text || '/' || short_note::text || '/short.mp3');
+
+  -- 90 minutes on a 60 minute plan.
+  perform public.finish_transcription(long_note, 'en', 5400, 0.47,
+    '[{"speaker_label":"Speaker 1","start_ms":0,"end_ms":1000,"text":"Hello"}]'::jsonb);
+  if (select status from public.meetings where id = long_note) = 'failed'
+     and (select error_message from public.meetings where id = long_note) like '%60 minutes%' then
+    raise notice 'PASS: a recording longer than the plan allows fails, and says the limit';
+  else
+    raise notice 'FAIL: a 90 minute recording was accepted on a 60 minute plan';
+  end if;
+  if exists (select 1 from public.ai_usage where meeting_id = long_note and kind = 'transcription') then
+    raise notice 'PASS: the transcription that was already paid for is still written down';
+  else
+    raise notice 'FAIL: a paid transcription went unrecorded';
+  end if;
+  -- And it never counts as a meeting.
+  if (select counted_at from public.meetings where id = long_note) is null then
+    raise notice 'PASS: a note refused for being too long does not count';
+  else
+    raise notice 'FAIL: a refused note counted';
+  end if;
+
+  -- 30 minutes on the same plan is fine.
+  perform public.finish_transcription(short_note, 'en', 1800, 0.16,
+    '[{"speaker_label":"Speaker 1","start_ms":0,"end_ms":1000,"text":"Hello"}]'::jsonb);
+  if (select status from public.meetings where id = short_note) = 'summarizing' then
+    raise notice 'PASS: a recording inside the limit carries on as normal';
+  else
+    raise notice 'FAIL: a 30 minute recording was refused';
+  end if;
+
+  -- The number is read from the plans table, so changing it there changes what is allowed, with
+  -- no code change anywhere. That is the promise; this is the proof. The SAME 90 minute
+  -- recording that was just refused is accepted once the column is emptied.
+  update public.plans set max_meeting_minutes = null where name = 'Free';
+  insert into public.meetings (id, account_id, created_by, source, status, file_path)
+  values (again_note, a_account, person, 'upload', 'transcribing',
+          a_account::text || '/' || again_note::text || '/long.mp3');
+  perform public.finish_transcription(again_note, 'en', 5400, 0.47,
+    '[{"speaker_label":"Speaker 1","start_ms":0,"end_ms":1000,"text":"Hello"}]'::jsonb);
+  if (select status from public.meetings where id = again_note) = 'summarizing' then
+    raise notice 'PASS: emptying the column in the plans table removes the limit, with no code change';
+  else
+    raise notice 'FAIL: the limit survived being emptied from the plans table';
+  end if;
+  update public.plans set max_meeting_minutes = 60 where name = 'Free';
+end $$;
+reset role;
+
+-- And the app can ask what its own limit is, so it can refuse a file before uploading it.
+set role authenticated;
+set request.jwt.claim.sub = 'aaaaaaaa-0000-4000-8000-000000000001';
+select case when public.meeting_minutes_allowed() = 60
+            then 'PASS: the app is told the limit, so it can refuse a long file before uploading'
+            else 'FAIL: got ' || coalesce(public.meeting_minutes_allowed()::text, 'null') end as result;
+reset role; reset request.jwt.claim.sub;

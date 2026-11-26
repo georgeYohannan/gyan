@@ -59,6 +59,9 @@ export type NoteRow = {
 
 const STATUS_FROM_DB: Record<string, Status> = {
   uploading: 'Uploading',
+  joining: 'Joining',
+  waiting: 'In waiting room',
+  recording: 'Recording',
   queued: 'Queued',
   transcribing: 'Transcribing',
   summarizing: 'Summarizing',

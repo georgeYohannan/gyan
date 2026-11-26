@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } 
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { HelpButton } from '@/components/help/help-button';
+import { BotLive } from '@/components/notes/bot-live';
 import { ChatBody } from '@/components/notes/chat-body';
 
 import { LanguagePicker } from '@/components/notes/language-picker';
@@ -16,7 +17,7 @@ import { Heading } from '@/components/ui/heading';
 import { ActionMenu, type ActionItem as MenuItem } from '@/components/ui/action-menu';
 import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
-import { StatusBadge } from '@/components/ui/status-badge';
+import { BOT_LIVE_STATUSES, isWorking, StatusBadge } from '@/components/ui/status-badge';
 import { ScriptText } from '@/components/ui/script-text';
 import { TabBar } from '@/components/ui/tab-bar';
 import { baseCode, languageName, sameLanguage } from '@/constants/languages';
@@ -29,6 +30,7 @@ import {
   SUGGESTED,
   type ChatSource,
 } from '@/lib/chat';
+import { getBotState, MESSAGES as BOT_MESSAGES, stopBot, type BotState } from '@/lib/meeting-bot';
 import { listPassages, type Passage } from '@/lib/passages';
 import { noteTitle } from '@/lib/notes';
 import {
@@ -106,7 +108,7 @@ async function fetchState(id: string): Promise<Load> {
   }
 }
 
-const BUSY = ['Uploading', 'Queued', 'Transcribing', 'Summarizing'];
+// The one list, in src/components/ui/status-badge.tsx, so a new status cannot be missed here.
 const POLL_MS = 3000;
 
 /** Note detail: a Summary tab, a Transcript tab, and the side chat. Mind map comes later. */
@@ -144,6 +146,10 @@ export default function NoteDetailScreen() {
   const [translateError, setTranslateError] = useState<string>();
   /** A quiet note, such as "already in that language". Not a problem, so not red. */
   const [translateNote, setTranslateNote] = useState<string>();
+  /** The meeting bot behind this note, when it came from one. */
+  const [bot, setBot] = useState<BotState>();
+  const [stopping, setStopping] = useState(false);
+  const [stopMessage, setStopMessage] = useState<{ text: string; bad: boolean }>();
 
   const pageRef = useRef<ComponentRef<typeof ScrollView>>(null);
   /** How far down the page each transcript line starts, so we can scroll to it. */
@@ -176,10 +182,43 @@ export default function NoteDetailScreen() {
   // While the note is still being made, check again every few seconds.
   const status = load.state === 'ready' ? load.note.status : undefined;
   useEffect(() => {
-    if (!status || !BUSY.includes(status)) return;
+    if (!status || !isWorking(status)) return;
     const t = setInterval(() => refresh('quiet'), POLL_MS);
     return () => clearInterval(t);
   }, [status, refresh]);
+
+  // The bot behind this note, if there is one. Asked for alongside the note rather than inside
+  // fetchState, because every other note in Gyan has no bot and must not pay for the question.
+  const fromBot = load.state === 'ready' && load.note.source === 'bot';
+  const botLive = !!status && BOT_LIVE_STATUSES.includes(status);
+  useEffect(() => {
+    if (!id || !fromBot) {
+      setBot(undefined);
+      return;
+    }
+    let alive = true;
+    getBotState(id).then((next) => {
+      if (alive) setBot(next);
+    });
+    // Asked again on every status change, so the panel keeps up with the three-second poll
+    // without a second timer of its own.
+    return () => {
+      alive = false;
+    };
+  }, [id, fromBot, status]);
+
+  /** Makes the bot leave the call now. */
+  async function stopTheBot() {
+    if (!id || stopping) return;
+    setStopping(true);
+    setStopMessage(undefined);
+    const result = await stopBot(id);
+    setStopping(false);
+    setStopMessage({ text: result.message, bad: !result.ok });
+    // The service's own "call ended" event is what moves the note on, so there is nothing to
+    // write here -- only one place ever changes a phase. A quiet re-read picks it up.
+    if (result.ok) await refresh('quiet');
+  }
 
   /** Starts a step on the server: the transcript, or the summary. */
   async function start(step: 'transcript' | 'summary') {
@@ -456,6 +495,14 @@ export default function NoteDetailScreen() {
               </Heading>
               <StatusBadge status={load.note.status} />
             </View>
+
+            {/* Only while the bot is still in the call. Once the recording is Gyan's own this
+                would be saying something that had stopped being true. A failed bot needs nothing
+                here: its plain reason is already on the note, in the same place every other
+                failure puts one. */}
+            {bot && botLive ? (
+              <BotLive bot={bot} stopping={stopping} message={stopMessage} onStop={stopTheBot} />
+            ) : null}
 
             <View style={{ gap: Spacing.two }}>
               {/* Two things on this line, not six. The tabs, and everything that is not

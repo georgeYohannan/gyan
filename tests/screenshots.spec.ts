@@ -13,6 +13,7 @@ import {
   installFakes,
   noteRow,
   openNote,
+  PLAN_PRO,
   signIn,
   type FakeData,
 } from './fixtures/fake-api';
@@ -325,10 +326,71 @@ for (const w of WIDTHS) {
   });
 
   test(`the New note screen at ${w.name} pixels`, async ({ page, context }) => {
-    await shootScreen({ page, context }, `new-note-${w.name}.png`, { width: w.width, height: w.full }, async (p) => {
-      await p.getByTestId('nav-new-note').click();
-      await expect(p.getByTestId('new-note-screen')).toBeVisible();
-    });
+    // With the meeting-bot switch ON, because that is what the founder's test account has and
+    // what the help text now describes. Record is the only choice still dimmed.
+    //
+    // The plan is left as Free, so the meter and the words under it agree: a picture saying
+    // "2 of 5" over "Free plan" while the plan was really Pro would be teaching somebody the
+    // wrong thing about their own screen.
+    await shootScreen(
+      { page, context },
+      `new-note-${w.name}.png`,
+      // A window that fits THIS screen rather than one of the two shared heights: the tall one
+      // left about six hundred points of empty navy under a phone picture, and the short one cut
+      // the meter off on a wide window, where the four choices sit higher but are no shorter.
+      { width: w.width, height: w.name === 390 ? 700 : 760 },
+      async (p) => {
+        await p.getByTestId('nav-new-note').click();
+        await expect(p.getByTestId('new-note-screen')).toBeVisible();
+      },
+      { data: { botEnabled: true } },
+    );
+  });
+
+  test(`the Meeting link screen at ${w.name} pixels`, async ({ page, context }) => {
+    await shootScreen(
+      { page, context },
+      `meeting-link-${w.name}.png`,
+      { width: w.width, height: w.full },
+      async (p) => {
+        await gotoApp(p, '/meeting-link');
+        await expect(p.getByTestId('meeting-link-screen')).toBeVisible();
+        // A link already pasted and the consent ticked, so the picture shows the screen doing
+        // its job rather than an empty box.
+        await p.getByTestId('meeting-link-url').fill('https://meet.google.com/abc-defg-hij');
+        await p.getByTestId('meeting-link-consent').click();
+        await expect(p.getByTestId('meeting-link-what-happens')).toBeVisible();
+      },
+      { data: { botEnabled: true, planAndUsage: PLAN_PRO } },
+    );
+  });
+
+  test(`a note with a bot in the waiting room at ${w.name} pixels`, async ({ page, context }) => {
+    // The waiting room, because it is the one state where the person has something to do, and
+    // the commonest reason a bot never records anything.
+    await shootScreen(
+      { page, context },
+      `note-bot-waiting-${w.name}.png`,
+      { width: w.width, height: w.short },
+      async (p) => {
+        await gotoApp(p, '/note/77777777-7777-4777-8777-777777777777');
+        await expect(p.getByTestId('note-bot-live')).toBeVisible();
+      },
+      {
+        data: {
+          botEnabled: true,
+          planAndUsage: PLAN_PRO,
+          notes: [
+            {
+              ...noteRow({ id: '77777777-7777-4777-8777-777777777777', title: null, status: 'waiting' }),
+              source: 'bot',
+            },
+          ],
+          botPhases: [{ phase: 'waiting', status: 'waiting' }],
+          summary: null,
+        },
+      },
+    );
   });
 
   test(`the Transcript tab at ${w.name} pixels`, async ({ page, context }) => {

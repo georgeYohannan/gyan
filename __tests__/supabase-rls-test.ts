@@ -184,13 +184,37 @@ maybe('Supabase test project: privacy between users', () => {
     }
   });
 
-  test('user B cannot read ANY chat message, and cannot read A\'s threads', async () => {
-    // A chat is more private than a note: the rules only ever show a person their OWN threads,
-    // so B sees nothing at all here, not even their own teammates'.
+  test('user B cannot read a single one of A\'s chat messages, and cannot read A\'s threads', async () => {
+    // A chat is more private than a note: the rules only ever show a person their OWN threads.
+    //
+    // THIS TEST USED TO ASSERT THAT B COULD READ NO MESSAGES AT ALL, which was the same mistake
+    // recorded on 2026-11-20: a test running against the LIVE test project may not assume the
+    // project is untouched. The moment the founder asked a question as user B while testing by
+    // hand, B had messages of their own and a correct rule looked like a broken one.
+    //
+    // The promise that actually matters is narrower and stronger: not one of the rows B can see
+    // belongs to A. So A's own ids are read AS A, and then checked against everything B can see.
     const threads = await B.client.from('chat_threads').select('id').eq('account_id', accountA);
     expect(threads.data).toEqual([]);
-    const messages = await B.client.from('chat_messages').select('id');
-    expect({ error: messages.error?.message, rows: messages.data }).toEqual({ error: undefined, rows: [] });
+
+    const mine = await A.client.from('chat_messages').select('id');
+    expect(mine.error).toBeNull();
+    const aIds = new Set((mine.data ?? []).map((row) => (row as { id: string }).id));
+
+    const messages = await B.client.from('chat_messages').select('id, thread_id');
+    expect(messages.error).toBeNull();
+    const leaked = (messages.data ?? [])
+      .map((row) => (row as { id: string }).id)
+      .filter((id) => aIds.has(id));
+    expect(leaked).toEqual([]);
+
+    // And everything B CAN see is in a thread B owns, which is the other half of the same rule.
+    const ownThreads = await B.client.from('chat_threads').select('id');
+    const bThreads = new Set((ownThreads.data ?? []).map((row) => (row as { id: string }).id));
+    const strays = (messages.data ?? [])
+      .map((row) => (row as { thread_id: string }).thread_id)
+      .filter((threadId) => !bThreads.has(threadId));
+    expect(strays).toEqual([]);
   });
 
   test('nobody can write a chat from the app: only the server saves messages', async () => {

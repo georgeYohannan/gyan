@@ -14,7 +14,9 @@ import { Screen } from '@/components/ui/screen';
 import { Section } from '@/components/ui/section';
 import { TextField } from '@/components/ui/text-field';
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { canExtractAudio, extractAudio } from '@/lib/audio-extract';
+import { canExtractAudio, extractAudio, readDuration } from '@/lib/audio-extract';
+import { getBotSettings, getMeetingMinutesAllowed } from '@/lib/meeting-bot';
+import { getPlanAndUsage, type PlanAndUsage } from '@/lib/plans';
 import {
   ACCEPTED_TYPES_TEXT,
   classifyFile,
@@ -50,9 +52,28 @@ export default function NewNoteScreen() {
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [fieldError, setFieldError] = useState<string>();
+  // Whether this account may send a bot at all. Undefined while it is being asked, which keeps
+  // the card dimmed -- not knowing is treated exactly like "off".
+  const [botEnabled, setBotEnabled] = useState(false);
+  /** The plan, for the bot hours line. Only asked for because the bot card needs it. */
+  const [plan, setPlan] = useState<PlanAndUsage>();
+  /**
+   * The longest one note may be, in minutes, from the plans table.
+   *
+   * Undefined means either "no limit on this plan" or "could not ask", and both let an upload
+   * through. The server checks again once the transcript is made, which is the backstop.
+   */
+  const [maxMinutes, setMaxMinutes] = useState<number>();
 
   useEffect(() => {
     getUsage().then(setUsage, () => setUsageFailed(true));
+    // A failure here leaves the card saying "Coming soon", which is the safe way to be wrong.
+    getBotSettings().then(
+      (s) => setBotEnabled(s.enabled),
+      () => setBotEnabled(false),
+    );
+    getPlanAndUsage().then(setPlan, () => undefined);
+    getMeetingMinutesAllowed().then(setMaxMinutes, () => undefined);
   }, []);
 
   const limitReached = !!usage && isLimitReached(usage.used, usage.limit);
@@ -95,6 +116,25 @@ export default function NewNoteScreen() {
     let name = picked.name;
     let contentType = picked.mimeType || (kind === 'text' ? 'text/plain' : kind === 'audio' ? 'audio/mpeg' : 'video/mp4');
     if (kind === 'text') contentType = contentType.startsWith('text/') ? contentType : 'text/plain';
+
+    // TOO LONG FOR THIS PLAN? Asked here, before anything is uploaded or paid for.
+    //
+    // Only the web can answer: a phone cannot read a media file's length without a native
+    // library. When the answer is "I do not know" the upload goes ahead and the server refuses
+    // it after the transcript instead -- which works, but costs one transcription to find out.
+    if (kind !== 'text' && maxMinutes && picked.file) {
+      const seconds = await readDuration(picked.file);
+      // The same half minute of slack the server allows, so the two cannot disagree about a
+      // recording that measures 60:00.4.
+      if (seconds && seconds > maxMinutes * 60 + 30) {
+        setPhase({
+          name: 'failed',
+          message: `That recording is ${Math.round(seconds / 60)} minutes long, and your plan allows ${maxMinutes} minutes in one note. A bigger plan allows longer notes.`,
+        });
+        setAttempt(undefined);
+        return;
+      }
+    }
 
     // Videos: take the sound out first, so big videos shrink.
     if (kind === 'video') {
@@ -177,12 +217,16 @@ export default function NewNoteScreen() {
             setPhase({ name: 'idle' });
           }}
         />
+        {/* The only card that leads somewhere else, because sending a bot needs a link, a
+            confirmation and a look at the hours left -- more than fits under a choice. While the
+            account's switch is off it keeps the dimmed "Coming soon" it has had since prompt 4. */}
         <ChoiceCard
           testID="new-note-meeting-link"
           title="Meeting link"
           description="Send a bot to a Zoom, Meet, or Teams call."
-          disabled
-          disabledLabel="Coming soon"
+          disabled={!botEnabled}
+          disabledLabel={!botEnabled ? 'Coming soon' : undefined}
+          onPress={botEnabled ? () => router.push('/meeting-link') : undefined}
         />
       </Section>
 
@@ -245,7 +289,18 @@ export default function NewNoteScreen() {
       ) : null}
 
       <View style={{ gap: Spacing.two, paddingTop: Spacing.two }}>
-        <UsagePanel usage={usage} loading={!usage && !usageFailed} />
+        {/* Bot hours, but only once the feature is switched on: a line about a thing somebody
+          cannot use is noise on the screen they use most. */}
+      {botEnabled && plan ? (
+        <Body small color="textSecondary" testID="new-note-bot-hours">
+          {plan.botHoursPerMonth <= 0
+            ? 'Meeting bot: not included on this plan.'
+            : `Meeting bot: ${hours(plan.botHoursUsed)} of ${hours(plan.botHoursPerMonth)} hours used this month.`}
+          {maxMinutes ? ` One note can be up to ${maxMinutes} minutes long.` : ''}
+        </Body>
+      ) : null}
+
+      <UsagePanel usage={usage} loading={!usage && !usageFailed} />
         {usageFailed ? (
           <Body small color="danger" accessibilityRole="alert">
             We could not check your meetings used this month. Go back and try again.
@@ -254,4 +309,10 @@ export default function NewNoteScreen() {
       </View>
     </Screen>
   );
+}
+
+/** Hours, to one place, with no trailing ".0" to make a whole number look like a measurement. */
+function hours(value: number): string {
+  const one = Math.round(value * 10) / 10;
+  return Number.isInteger(one) ? String(one) : one.toFixed(1);
 }

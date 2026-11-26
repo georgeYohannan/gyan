@@ -23,7 +23,7 @@ Plan limits live in a database table. The numbers below are proposed rules to co
 | --- | --- | --- |
 | What counts as 1 meeting | Each uploaded recording, phone recording, or bot meeting counts as 1. Pasted text and text files never count, and still work at the limit. A meeting counts only when the note reaches Ready | Set |
 | Free plan limit | 5 meetings per month, resets on the 1st | Set |
-| Max length of 1 meeting | To be decided | Open |
+| Max length of 1 meeting | 60 minutes on the Free plan, from `plans.max_meeting_minutes`. Applies to every source: a bot leaves the call at the limit, and a longer upload is refused. Changing the number in the plans table changes what the app allows, with no new code | Set |
 | Paid plan limits and seat price | To be decided | Open |
 
 ## Screens
@@ -58,7 +58,7 @@ Every screen has 4 states: empty, loading, error, and success. See the Design pr
 | 7b | Deleting several notes | A Select mode ticks notes and deletes them together, after one box that lists what will go. Deleting removes the recordings too, and does not give the month's meetings back. A note somebody else made cannot be ticked unless you own the account | Two notes are deleted in one go, their files are gone from storage, and a teammate's note is refused by name |
 | 8 | Preferred language | Set in Settings and during first sign in. Summaries, action items, chat answers, and recap emails use it | Switching to Hindi shows the same answer in Hindi |
 | 9 | Translate on request | A Translate button on any transcript, summary, or chat answer. Pick any language. The result is saved | A second request for the same language loads at once and costs nothing |
-| 10 | Meeting bot | Paste a Zoom, Meet, or Teams link. The bot joins with a clear name, announces that it is recording, and sends notes when the call ends. Built behind a feature switch that stays OFF until a lawyer has reviewed the consent wording | The bot joins a real call on each of the 3 platforms and the notes arrive, and the switch is off until the wording is signed off |
+| 10 | Meeting bot | Paste a Zoom, Meet, or Teams link. The bot joins with a clear name, announces that it is recording, and sends notes when the call ends. **Built behind the switch (prompt 14)**, which is off for every account until the founder turns it on by hand in the Supabase dashboard, and stays off until a lawyer has reviewed the consent wording in `src/content/bot-consent.ts`. Hours come from `plans.bot_hours_per_month`, which is 0 on Free. **The honest gap: Zoom needs a Zoom Marketplace app submitted and approved by Zoom before it can join anybody else's meeting.** Google Meet and Microsoft Teams work from a link | Google Meet and Teams: the bot joins a real call and the notes arrive. Zoom: after the Zoom app is approved. The switch is off until the wording is signed off |
 | 11 | Share out | Email a recap to attendees. Post to a Slack or Teams channel. The account owner chooses who gets recap emails: the owner only, the team members, or both. The default is the owner only | A test recap arrives by email and in a Slack channel, and only to the people the owner chose |
 | 12 | Free and paid plans | Check the limit before processing. Show an upgrade screen when it is reached. An admin changes limits without new code | Changing the free limit from 5 to 3 in the admin page takes effect right away |
 | 13 | Team seats | The owner invites teammates by email. Members use the owner's plan | A teammate accepts an invite and sees shared notes |
@@ -98,7 +98,7 @@ Calendar auto-join, live notes during a call, CRM and task tool links, phone cal
 
 ## Open questions
 
-- [ ] Max length of 1 meeting on the free plan.
+- [x] Max length of 1 meeting on the free plan. Decided 2026-11-25: 60 minutes, in the plans table, enforced for every source.
 - [ ] Paid plan limits and seat price.
 - [x] Confirm what counts as 1 meeting. Decided 2026-11-18: see the limits table above and docs/decisions.md.
 - [ ] Which languages to test translation with first, for example Spanish and Hindi.

@@ -15,15 +15,17 @@ const tables = [...sql.matchAll(/create table public\.(\w+)/g)].map((m) => m[1])
 const serverOnly = [
   'plans', 'usage', 'ai_usage', 'translations', 'summaries', 'mind_maps', 'transcript_segments',
   'accounts', 'account_members', 'meetings', 'chat_threads', 'chat_messages', 'email_log',
+  'meeting_bots',
 ];
 
 describe('database migration files', () => {
-  test('create the 23 tables from the data model (chunks waits for the embedding model)', () => {
+  test('create the 24 tables from the data model (chunks waits for the embedding model)', () => {
     expect(tables.sort()).toEqual([
       'account_members', 'account_privacy', 'accounts', 'action_items', 'ai_usage', 'audit_log',
       'chat_messages', 'chat_threads', 'consent_records', 'email_log', 'export_log',
-      'integrations', 'invites', 'meetings', 'mind_maps', 'plans', 'profiles', 'rate_limits',
-      'security_settings', 'summaries', 'transcript_segments', 'translations', 'usage',
+      'integrations', 'invites', 'meeting_bots', 'meetings', 'mind_maps', 'plans', 'profiles',
+      'rate_limits', 'security_settings', 'summaries', 'transcript_segments', 'translations',
+      'usage',
     ]);
   });
 
@@ -1223,5 +1225,132 @@ describe('ask across all notes migration', () => {
   test('every new function pins the search path', () => {
     expect(t.match(/set search_path = ''/g)).toHaveLength(5);
     expect(t.match(/create function/g)).toHaveLength(5);
+  });
+});
+
+describe('the meeting bot migration (prompt 14)', () => {
+  const t = fs.readFileSync(path.join(dir, '20261125120000_meeting_bot.sql'), 'utf8');
+
+  test('it says out loud that it changes existing rules, and which ones', () => {
+    // Every other migration in this project opens by saying it only adds things. This one does
+    // not, so it has to name what it changes -- the same promise the settings_and_team migration
+    // and the path-climbing fix both make in their headers.
+    expect(t).toContain('BREAKS THE RULE THAT MIGRATIONS ONLY ADD THINGS');
+    expect(t).toContain('claim_transcription');
+    expect(t).toContain('max_meeting_minutes = 60');
+  });
+
+  test('THE SWITCH IS OFF UNLESS SOMEBODY TURNED IT ON, and a missing row counts as off', () => {
+    // coalesce(..., false) is the whole of it: no row, no bot. There must be no migration that
+    // writes enabled: true for anybody.
+    expect(t).toContain("where i.account_id = p_account and i.kind = 'meeting_bot'");
+    expect(t).toMatch(/coalesce\(\s*\(select \(i\.settings ->> 'enabled'\)::boolean/);
+    expect(t).not.toMatch(/'\{"enabled":\s*true/);
+  });
+
+  test('THE APP CANNOT TURN THE SWITCH ON, whatever it sends', () => {
+    // save_meeting_bot_settings reads `enabled` out of the row that is already there and writes
+    // it back unchanged. If it ever took the value from p_settings, this is the test that fails.
+    const fn = t.slice(t.indexOf('create function public.save_meeting_bot_settings'));
+    const body = fn.slice(0, fn.indexOf('$$;'));
+    expect(body).toContain("'enabled', already");
+    expect(body).not.toMatch(/'enabled',\s*\(?\s*p_settings/);
+    expect(body).toContain("raise exception 'not_owner'");
+  });
+
+  test('a bot cannot be created without consent, and the consent is stored on its own row', () => {
+    const fn = t.slice(t.indexOf('create function public.start_bot_note'));
+    expect(fn.slice(0, fn.indexOf('$$;'))).toContain("raise exception 'no_consent'");
+    expect(t).toContain('consent_version text not null');
+    expect(t).toContain('consent_text_hash text not null');
+  });
+
+  test('the switch is checked before the money, and both before anything is written', () => {
+    const fn = t.slice(t.indexOf('create function private.assert_bot_allowed'));
+    const body = fn.slice(0, fn.indexOf('$$;'));
+    expect(body.indexOf('bot_not_enabled')).toBeLessThan(body.indexOf('bot_no_hours'));
+    const start = t.slice(t.indexOf('create function public.start_bot_note'));
+    const startBody = start.slice(0, start.indexOf('$$;'));
+    expect(startBody.indexOf('assert_bot_allowed')).toBeLessThan(startBody.indexOf('insert into public.meetings'));
+  });
+
+  test('NOT ONE LIMIT IS WRITTEN INTO A FUNCTION: every number comes out of a table', () => {
+    // The hours, the caps and the longest meeting are all read from plans or security_settings.
+    expect(t).toContain('select p.bot_hours_per_month into month_hours');
+    expect(t).toContain('rule.bot_hours_per_day_account');
+    expect(t).toContain('rule.bot_hours_per_day_service');
+    expect(t).toContain('select p.max_meeting_minutes into allowed');
+    // And the seeded numbers are an insert into a table, not a constant inside a function.
+    expect(t).toMatch(/insert into public\.security_settings[\s\S]*?'meeting_bot', 10, 20, 2, 6/);
+  });
+
+  test('a bot cannot be moved backwards by a status event that arrives late', () => {
+    const fn = t.slice(t.indexOf('create function public.record_bot_phase'));
+    const body = fn.slice(0, fn.indexOf('$$;'));
+    expect(body).toContain("if bot.phase in ('ready', 'failed') then");
+    expect(body).toContain("if new_rank <= bot.phase_rank and p_phase <> 'failed' then");
+  });
+
+  test('the meeting link is thrown away once the bot is in the call', () => {
+    const fn = t.slice(t.indexOf('create function public.record_bot_phase'));
+    expect(fn.slice(0, fn.indexOf('$$;'))).toMatch(
+      /meeting_url = case when p_phase in \('recording', 'processing', 'failed'\) then null/,
+    );
+  });
+
+  test('a bot recording cannot be written outside its own account folder', () => {
+    // The same path rule create_note has, and for the same reason: three server functions read
+    // meetings.file_path with the service key, which skips every storage rule.
+    const fn = t.slice(t.indexOf('create function public.bot_recording_ready'));
+    const body = fn.slice(0, fn.indexOf('$$;'));
+    expect(body).toContain("bot.account_id::text || '/' || p_meeting_id::text || '/%'");
+    expect(body).toContain("p_file_path ~ '(^|/)\\.{1,2}(/|$)'");
+    expect(body).toContain("raise exception 'bad_file_path'");
+  });
+
+  test('the bot cost is logged like every other cost: one row, same transaction', () => {
+    const fn = t.slice(t.indexOf('create function public.bot_recording_ready'));
+    expect(fn.slice(0, fn.indexOf('$$;'))).toMatch(
+      /insert into public\.ai_usage \(account_id, meeting_id, kind, provider, units, cost\)[\s\S]*?'bot', p_provider/,
+    );
+  });
+
+  test('every bot door is the server\'s alone, and the app can reach none of them', () => {
+    for (const fn of [
+      'start_bot_note(uuid, uuid, uuid, text, text, text, text, text)',
+      'attach_bot(uuid, text)',
+      'record_bot_phase(uuid, text, text)',
+      'bot_recording_ready(uuid, text, integer, numeric, text)',
+      'mark_bot_media_deleted(uuid)',
+      'bot_for_stop(uuid, uuid)',
+      'fail_bot(uuid, text)',
+      'bot_note_for_event(text, text, uuid)',
+    ]) {
+      const escaped = fn.replace(/[()]/g, '\\$&');
+      expect(t).toMatch(new RegExp(`revoke execute on function public\\.${escaped}\\s*\n?\\s*from public, anon, authenticated`));
+      expect(t).not.toMatch(new RegExp(`grant execute on function public\\.${escaped}\\s*\n?\\s*to (anon|authenticated)`));
+    }
+  });
+
+  test('the three things the app may ask about the bot are open to any member', () => {
+    expect(t).toContain('grant execute on function public.get_meeting_bot_settings() to authenticated');
+    expect(t).toContain('grant execute on function public.save_meeting_bot_settings(jsonb) to authenticated');
+    expect(t).toContain('grant execute on function public.meeting_minutes_allowed() to authenticated');
+  });
+
+  test('the longest a meeting may be is enforced, and refusing it still records the spend', () => {
+    const fn = t.slice(t.indexOf('create or replace function public.finish_transcription'));
+    const body = fn.slice(0, fn.indexOf('$$;'));
+    expect(body).toContain('private.over_meeting_limit');
+    // The transcription was already paid for, so the cost row is written before the note fails.
+    const failAt = body.indexOf("set status = 'failed'");
+    const costAt = body.indexOf("'transcription', 'deepgram'");
+    expect(costAt).toBeGreaterThan(0);
+    expect(costAt).toBeLessThan(failAt);
+  });
+
+  test('every new function pins the search path', () => {
+    expect(t.match(/set search_path = ''/g)).toHaveLength(19);
+    expect(t.match(/security definer/g)).toHaveLength(19);
   });
 });

@@ -4,7 +4,7 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 
 import { Body } from '@/components/ui/body';
 import { HighlightedText } from '@/components/ui/highlighted-text';
-import { StatusBadge } from '@/components/ui/status-badge';
+import { isWorking, StatusBadge } from '@/components/ui/status-badge';
 import { TickBox } from '@/components/ui/tick-box';
 import { Colors, MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 import { formatMoment, formatNoteDate } from '@/lib/dates';
@@ -12,7 +12,7 @@ import { noteTitle, SOURCE_LABEL, type NoteRow as Note } from '@/lib/notes';
 import { foundInSentence, plainSnippet, type MatchedIn } from '@/lib/notes-search';
 
 /** The statuses that mean Gyan is still working on this note. */
-const WORKING = ['Uploading', 'Queued', 'Transcribing', 'Summarizing'];
+// The one list, in src/components/ui/status-badge.tsx, so a new status cannot be missed here.
 
 /** How wide the colored edge down the left of a row is. */
 const EDGE = 3;
@@ -94,7 +94,7 @@ export function NoteRow({ note, ...extras }: { note: Note } & NoteRowExtras) {
 
   const ticked = !!(selectable && selected);
   const failed = note.status === 'Failed';
-  const working = WORKING.includes(note.status);
+  const working = isWorking(note.status);
 
   // One colour down the left edge, and only one, so it always answers the same question:
   // what does this note want from me? Ticked beats failed beats a to-do, because while

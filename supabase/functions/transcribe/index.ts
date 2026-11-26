@@ -4,7 +4,15 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 import { SNIFF_BYTES } from '../_shared/filetype.ts';
-import { RATE_LIMIT_MESSAGE, RateLimited, UUID, corsFor, pickKey, underRateLimit } from '../_shared/guard.ts';
+import {
+  RATE_LIMIT_MESSAGE,
+  RateLimited,
+  UUID,
+  corsFor,
+  isOurOwnServer,
+  pickKey,
+  underRateLimit,
+} from '../_shared/guard.ts';
 import { runTranscription } from './pipeline.ts';
 import { DEEPGRAM_MODEL, DEEPGRAM_USD_PER_MINUTE, SIGNED_LINK_SECONDS } from './settings.ts';
 
@@ -32,41 +40,70 @@ Deno.serve(async (req) => {
   if (!authHeader) return reply({ error: 'not_signed_in' }, 401);
 
   let meetingId: string | undefined;
+  let bodyUserId: string | undefined;
   try {
-    meetingId = (await req.json())?.meeting_id;
+    const body = (await req.json()) ?? {};
+    meetingId = body.meeting_id;
+    bodyUserId = body.user_id;
   } catch {
     /* handled below */
   }
   // The old check here was /^[0-9a-f-]{36}$/i, which accepted thirty-six dashes.
   if (!meetingId || !UUID.test(meetingId)) return reply({ error: 'bad_request' }, 400);
 
-  // 1. Who is calling? Ask with THEIR login, so the database rules decide what they may see.
-  const asUser = createClient(url, publicKey, { global: { headers: { Authorization: authHeader } } });
-  const { data: auth, error: authError } = await asUser.auth.getUser();
-  if (authError || !auth.user) return reply({ error: 'not_signed_in' }, 401);
-  // The account comes back from the same question, so counting the limit per account as
-  // well as per person costs nothing extra.
-  const { data: visible } = await asUser
-    .from('meetings')
-    .select('id, account_id')
-    .eq('id', meetingId)
-    .maybeSingle();
-  if (!visible) return reply({ error: 'not_allowed' }, 403);
-  const accountId = (visible as { account_id?: string }).account_id ?? null;
+  const admin = createClient(url, secretKey, { auth: { persistSession: false } });
+
+  // 1. Who is calling? Either a signed-in person, or one of our own server functions.
+  //
+  // The second case is new in prompt 14, and it is the same trusted-internal door `translate` and
+  // `recap` already have. A meeting-bot note arrives with nobody sitting there waiting for it: the
+  // call ended, the bot-webhook function put the recording in our bucket, and the transcript has
+  // to start with no login to read. Our own server code is the only thing holding the project's
+  // secret key, so a request carrying it is ours.
+  //
+  // THIS WIDENS NOTHING. Such a call still has to name the person it is acting for, and
+  // claim_transcription below still checks in SQL that that person is on the note's account. The
+  // decision stays in the database.
+  let userId: string;
+  let accountId: string | null = null;
+  if (await isOurOwnServer(authHeader, secretKey)) {
+    if (!bodyUserId || !UUID.test(bodyUserId)) return reply({ error: 'bad_request' }, 400);
+    userId = bodyUserId;
+    const { data: note } = await admin
+      .from('meetings')
+      .select('account_id')
+      .eq('id', meetingId)
+      .maybeSingle();
+    accountId = (note as { account_id?: string } | null)?.account_id ?? null;
+  } else {
+    // A person. Ask with THEIR login, so the database rules decide what they may see.
+    const asUser = createClient(url, publicKey, { global: { headers: { Authorization: authHeader } } });
+    const { data: auth, error: authError } = await asUser.auth.getUser();
+    if (authError || !auth.user) return reply({ error: 'not_signed_in' }, 401);
+    userId = auth.user.id;
+    // The account comes back from the same question, so counting the limit per account as
+    // well as per person costs nothing extra.
+    const { data: visible } = await asUser
+      .from('meetings')
+      .select('id, account_id')
+      .eq('id', meetingId)
+      .maybeSingle();
+    if (!visible) return reply({ error: 'not_allowed' }, 403);
+    accountId = (visible as { account_id?: string }).account_id ?? null;
+  }
 
   // 2. Take the note: Queued (or Failed, for a retry) -> Transcribing. Only one run can win.
-  const admin = createClient(url, secretKey, { auth: { persistSession: false } });
 
   // Has this person had their turn for the hour? Counted BEFORE anything is spent. Every
   // number comes from the security_settings table, never from this file.
   try {
-    await underRateLimit(admin, 'transcribe', auth.user.id, accountId);
+    await underRateLimit(admin, 'transcribe', userId, accountId);
   } catch (e) {
     if (e instanceof RateLimited) return reply({ ok: false, message: RATE_LIMIT_MESSAGE }, 429);
     throw e;
   }
   const { data: claimed, error: claimError } = await admin
-    .rpc('claim_transcription', { p_meeting_id: meetingId, p_user_id: auth.user.id })
+    .rpc('claim_transcription', { p_meeting_id: meetingId, p_user_id: userId })
     .single<{ file_path: string }>();
   if (claimError || !claimed) {
     const m = claimError?.message ?? '';
@@ -115,11 +152,15 @@ Deno.serve(async (req) => {
       }
     },
     // When the transcript is done, the summary step carries on by itself, using the same login.
+    //
+    // For a meeting-bot note there is no login: the header being passed along is the project's own
+    // secret key, which is what `summarize` reads as "this is our own server". In that case the
+    // person being acted for has to be named, exactly as it was named to this function.
     startSummary: async () => {
       await fetch(`${url}/functions/v1/summarize`, {
         method: 'POST',
         headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meeting_id: noteId }),
+        body: JSON.stringify({ meeting_id: noteId, user_id: userId }),
       });
     },
   });

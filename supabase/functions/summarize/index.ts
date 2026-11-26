@@ -4,7 +4,15 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@1.10.0';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-import { RATE_LIMIT_MESSAGE, RateLimited, UUID, corsFor, pickKey, underRateLimit } from '../_shared/guard.ts';
+import {
+  RATE_LIMIT_MESSAGE,
+  RateLimited,
+  UUID,
+  corsFor,
+  isOurOwnServer,
+  pickKey,
+  underRateLimit,
+} from '../_shared/guard.ts';
 import { messageForStatus, SUMMARY_SCHEMA, SummaryError, MESSAGES } from './claude.ts';
 import { runSummary, type Ask, type Reply } from './pipeline.ts';
 import {
@@ -109,41 +117,68 @@ Deno.serve(async (req) => {
   if (!authHeader) return reply({ error: 'not_signed_in' }, 401);
 
   let meetingId: string | undefined;
+  let bodyUserId: string | undefined;
   try {
-    meetingId = (await req.json())?.meeting_id;
+    const body = (await req.json()) ?? {};
+    meetingId = body.meeting_id;
+    bodyUserId = body.user_id;
   } catch {
     /* handled below */
   }
   // The old check here was /^[0-9a-f-]{36}$/i, which accepted thirty-six dashes.
   if (!meetingId || !UUID.test(meetingId)) return reply({ error: 'bad_request' }, 400);
 
-  // 1. Who is calling? Ask with THEIR login, so the database rules decide what they may see.
-  const asUser = createClient(url, publicKey, { global: { headers: { Authorization: authHeader } } });
-  const { data: auth, error: authError } = await asUser.auth.getUser();
-  if (authError || !auth.user) return reply({ error: 'not_signed_in' }, 401);
-  // The account comes back from the same question, so counting the limit per account as
-  // well as per person costs nothing extra.
-  const { data: visible } = await asUser
-    .from('meetings')
-    .select('id, account_id')
-    .eq('id', meetingId)
-    .maybeSingle();
-  if (!visible) return reply({ error: 'not_allowed' }, 403);
-  const accountId = (visible as { account_id?: string }).account_id ?? null;
+  const admin = createClient(url, secretKey, { auth: { persistSession: false } });
+
+  // 1. Who is calling? Either a signed-in person, or one of our own server functions.
+  //
+  // The second case is the same trusted-internal door `translate` and `recap` already have, and it
+  // is here for the same reason prompt 14 added it to `transcribe`: a meeting-bot note has nobody
+  // sitting there waiting for it. The call ended, the recording was fetched in the background, and
+  // the summary has to follow the transcript with no login to pass along.
+  //
+  // THIS WIDENS NOTHING. The caller must name the person it is acting for, and claim_summary below
+  // still checks in SQL that that person is on the note's account.
+  let userId: string;
+  let accountId: string | null = null;
+  if (await isOurOwnServer(authHeader, secretKey)) {
+    if (!bodyUserId || !UUID.test(bodyUserId)) return reply({ error: 'bad_request' }, 400);
+    userId = bodyUserId;
+    const { data: note } = await admin
+      .from('meetings')
+      .select('account_id')
+      .eq('id', meetingId)
+      .maybeSingle();
+    accountId = (note as { account_id?: string } | null)?.account_id ?? null;
+  } else {
+    // A person. Ask with THEIR login, so the database rules decide what they may see.
+    const asUser = createClient(url, publicKey, { global: { headers: { Authorization: authHeader } } });
+    const { data: auth, error: authError } = await asUser.auth.getUser();
+    if (authError || !auth.user) return reply({ error: 'not_signed_in' }, 401);
+    userId = auth.user.id;
+    // The account comes back from the same question, so counting the limit per account as
+    // well as per person costs nothing extra.
+    const { data: visible } = await asUser
+      .from('meetings')
+      .select('id, account_id')
+      .eq('id', meetingId)
+      .maybeSingle();
+    if (!visible) return reply({ error: 'not_allowed' }, 403);
+    accountId = (visible as { account_id?: string }).account_id ?? null;
+  }
 
   // 2. Take the note -> Summarizing. Only one run can win, so we never pay for two summaries.
-  const admin = createClient(url, secretKey, { auth: { persistSession: false } });
 
   // Has this person had their turn for the hour? Counted BEFORE anything is spent. Every
   // number comes from the security_settings table, never from this file.
   try {
-    await underRateLimit(admin, 'summarize', auth.user.id, accountId);
+    await underRateLimit(admin, 'summarize', userId, accountId);
   } catch (e) {
     if (e instanceof RateLimited) return reply({ ok: false, message: RATE_LIMIT_MESSAGE }, 429);
     throw e;
   }
   const { data: claimed, error: claimError } = await admin
-    .rpc('claim_summary', { p_meeting_id: meetingId, p_user_id: auth.user.id })
+    .rpc('claim_summary', { p_meeting_id: meetingId, p_user_id: userId })
     .single<{ source: string; file_path: string | null; language: string }>();
   if (claimError || !claimed) {
     const m = claimError?.message ?? '';

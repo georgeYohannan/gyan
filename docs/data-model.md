@@ -9,7 +9,7 @@ A "meeting" is 1 note. An "account" is the paying workspace that owns notes and 
 | Table | Holds | Key columns |
 | --- | --- | --- |
 | profiles | 1 row per person | id (same as login id), display_name, preferred_language, is_admin (default false) |
-| plans | Limits for each plan. Prices live in RevenueCat and the stores | id, name, meetings_per_month, seats_included, max_meeting_minutes (can be empty), is_active |
+| plans | Limits for each plan. Prices live in RevenueCat and the stores | id, name, meetings_per_month, seats_included, max_meeting_minutes (can be empty), bot_hours_per_month, chat_messages_per_day, is_active, is_test, description, features |
 | accounts | A workspace | id, owner_id, plan_id, created_at |
 | account_members | Who belongs to which account | account_id, user_id, role (owner or member) |
 | invites | Pending seat invites | account_id, email, token, status, created_at |
@@ -52,7 +52,25 @@ All steps run in Supabase server functions, so secret keys never reach the app.
 6. Every call to Deepgram, Claude, and the embedding model writes a row in ai_usage, so the admin page can show cost per user.
 7. If the account owner has the automatic send switched on, the recap email goes out at this point, to whoever the settings name, each person in their own language. Every email, sent or failed, writes a row in email_log. A note only ever sends itself once, so writing a new summary does not email everybody again.
 
-If any step fails, set the status to Failed, save a plain error message, and do not count the meeting. For meeting bot notes, Recall.ai sends the recording and transcript, and the steps start from step 3 or step 2. Ask Claude Code to read the current Recall.ai docs for the exact flow.
+If any step fails, set the status to Failed, save a plain error message, and do not count the meeting.
+
+**A meeting bot note (built in prompt 14) joins this list rather than replacing it.** Before step 1
+it has three steps of its own, and from step 2 onward it is indistinguishable from an upload:
+
+- **0a.** The person pastes a meeting link and confirms the consent. One database function checks
+  the switch, the monthly meeting limit, the bot hours and both daily caps, and writes the note
+  (`source = 'bot'`, status `joining`) and its `meeting_bots` row in the same step. Only then is
+  the bot service asked for a bot.
+- **0b.** The service sends signed status events to the `bot-webhook` function, which moves the
+  note through `joining`, `waiting` and `recording`. A signature that does not check out is
+  answered 401 and nothing at all happens. An event that would move the note backwards is ignored.
+- **0c.** When the call ends, the recording is fetched, stored in the private bucket under
+  `<account id>/<note id>/meeting.mp3`, and the service is asked to delete its own copy. The cost
+  of the bot goes into `ai_usage` as `kind = 'bot'`, in minutes, in the same step. The note becomes
+  `queued`, which is where an upload starts, and step 2 below carries on unchanged.
+
+**No transcript is ever bought from the bot service.** Deepgram does that job and is already paid
+for, so the request deliberately asks for audio only.
 
 If a transcript is too long for 1 Claude request, summarize it in parts and then combine the parts. Ask Claude Code to check the current context limits in the Claude API docs, and keep the model name in a settings file, not in the code.
 
@@ -219,3 +237,5 @@ limit is the same `plans.chat_messages_per_day` allowance, counted by the same f
 - [ ] Which embedding model and provider to use, and its vector size.
 - [ ] Which meeting types to offer as templates (sales call, interview, lecture, standup).
 - [ ] Whether summaries are made only in the preferred language, or also in the spoken language.
+- [x] The longest one meeting may be. Decided 2026-11-25: `plans.max_meeting_minutes`, 60 on the
+  Free plan, enforced for every source.

@@ -3,12 +3,13 @@
  * The Deepgram key is never here. It lives only on the server.
  */
 import type { Status } from '@/components/ui/status-badge';
+import type { Source } from '@/lib/notes';
 import { getSupabase } from '@/lib/supabase';
 
 export type NoteDetail = {
   id: string;
   title: string | null;
-  source: 'upload' | 'phone' | 'bot' | 'text';
+  source: Source;
   status: Status;
   error_message: string | null;
   created_at: string;
@@ -28,6 +29,9 @@ export type TranscriptLine = {
 
 const STATUS_FROM_DB: Record<string, Status> = {
   uploading: 'Uploading',
+  joining: 'Joining',
+  waiting: 'In waiting room',
+  recording: 'Recording',
   queued: 'Queued',
   transcribing: 'Transcribing',
   summarizing: 'Summarizing',

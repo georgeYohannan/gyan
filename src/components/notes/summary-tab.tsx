@@ -178,14 +178,24 @@ export function SummaryTab({
   }
 
   if (note.status !== 'Ready') {
+    // One sentence per state, and every one of them has to be TRUE of that state. The three bot
+    // states were added in prompt 14 and would otherwise have fallen through to "Gyan is reading
+    // your note and writing the summary" -- said while a bot is still standing outside a call
+    // that has not started. Found by looking at a screenshot, not by a test.
     const text =
       note.status === 'Uploading'
         ? 'Your file is still on its way.'
-        : note.status === 'Queued'
-          ? 'Your note is waiting for its turn.'
-          : note.status === 'Transcribing'
-            ? 'Gyan is turning the talking into text first.'
-            : 'Gyan is reading your note and writing the summary. This usually takes less than a minute.';
+        : note.status === 'Joining'
+          ? 'Gyan is asking to join the call. There is nothing to summarise yet.'
+          : note.status === 'In waiting room'
+            ? 'Gyan is waiting to be let into the call. Nothing is recorded until somebody admits it.'
+            : note.status === 'Recording'
+              ? 'Gyan is in the call. The summary is written when the call ends.'
+              : note.status === 'Queued'
+                ? 'Your note is waiting for its turn.'
+                : note.status === 'Transcribing'
+                  ? 'Gyan is turning the talking into text first.'
+                  : 'Gyan is reading your note and writing the summary. This usually takes less than a minute.';
     const stuck = note.status === 'Summarizing' && waitedLong;
     return (
       <GlassPanel accessibilityLabel={`Summary is not ready. Status: ${note.status}`}>

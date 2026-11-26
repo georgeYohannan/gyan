@@ -1,0 +1,50 @@
+# Settings for the Supabase command line tool.
+#
+# THIS FILE EXISTS FOR ONE REASON: `bot-webhook`. Every other server function in Gyan is opened
+# with a Supabase token -- either a person's login, or the project's own secret key when one of our
+# functions calls another. The meeting-bot service holds neither, so its status events have to
+# reach a door that does not ask for one. Its signature is its identity instead, checked against
+# MEETING_BOT_WEBHOOK_SECRET, and anything that fails that check is answered 401 and does nothing
+# at all (see supabase/functions/bot-webhook/index.ts).
+#
+# EVERY FUNCTION IS LISTED, including the ones whose setting is the default. That is deliberate: a
+# file that only named the exception would quietly widen a function the day somebody copied the
+# wrong block, and there would be nothing to read that said otherwise. If a function is added and
+# not listed here it still defaults to verify_jwt = true, which is the safe way round.
+
+project_id = "gyan"
+
+[functions.transcribe]
+verify_jwt = true
+
+[functions.summarize]
+verify_jwt = true
+
+[functions.chat]
+verify_jwt = true
+
+[functions.translate]
+verify_jwt = true
+
+[functions.recap]
+verify_jwt = true
+
+[functions.team]
+verify_jwt = true
+
+[functions.account]
+verify_jwt = true
+
+[functions.export]
+verify_jwt = true
+
+[functions.retention]
+verify_jwt = true
+
+[functions.bot]
+verify_jwt = true
+
+# The exception, and the only one. Deploy it with:
+#     supabase functions deploy bot-webhook --no-verify-jwt
+[functions.bot-webhook]
+verify_jwt = false

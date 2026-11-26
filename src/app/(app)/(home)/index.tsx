@@ -15,6 +15,7 @@ import { Heading } from '@/components/ui/heading';
 import { PageHeader } from '@/components/ui/page-header';
 import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
+import { isWorking } from '@/components/ui/status-badge';
 import { Colors, MinTouchTarget, Radius, Spacing, WideBreakpoint } from '@/constants/theme';
 import { MESSAGES } from '@/lib/account';
 import { describeRange, PRESET_LABEL } from '@/lib/dates';
@@ -44,7 +45,7 @@ import {
  */
 export { groupByDay } from '@/components/notes/note-list';
 
-const BUSY = ['Uploading', 'Queued', 'Transcribing', 'Summarizing'];
+// The one list, in src/components/ui/status-badge.tsx, so a new status cannot be missed here.
 const POLL_MS = 3000;
 /** How long typing has to stop before Gyan searches. */
 const SETTLE_MS = 300;
@@ -168,7 +169,7 @@ export default function HomeScreen() {
   );
 
   const notes = load.state === 'ready' ? load.notes : [];
-  const busyIds = notes.filter((n) => BUSY.includes(n.status)).map((n) => n.id);
+  const busyIds = notes.filter((n) => isWorking(n.status)).map((n) => n.id);
   const busyKey = busyIds.join(',');
 
   // While a note is being worked on, ask about THOSE notes every few seconds. It used to ask for

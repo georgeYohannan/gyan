@@ -79,6 +79,9 @@ export const NO_FILTERS: NoteFilters = {
 /** The database writes statuses in lower case; the app shows them in Title Case. */
 const STATUS_TO_DB: Record<Status, string> = {
   Uploading: 'uploading',
+  Joining: 'joining',
+  'In waiting room': 'waiting',
+  Recording: 'recording',
   Queued: 'queued',
   Transcribing: 'transcribing',
   Summarizing: 'summarizing',

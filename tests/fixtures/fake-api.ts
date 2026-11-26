@@ -125,6 +125,35 @@ export type FakeData = {
   /** An error message save_recap_settings answers with, for example 'not_owner'. */
   saveSettingsError?: string;
 
+  // --- the meeting bot (prompt 14) -----------------------------------------------------------
+  /**
+   * Whether the Meeting link switch is on for this account.
+   *
+   * OFF BY DEFAULT, exactly like the real thing, so every script written before this feature
+   * carries on seeing the dimmed "Coming soon" card it has always seen.
+   */
+  botEnabled: boolean;
+  /** What the bot is called, as get_meeting_bot_settings hands it back. */
+  botName: string;
+  /** A plain message the bot server function answers with instead of sending a bot. */
+  botProblem?: string;
+  /** Which HTTP answer that refusal comes back as, so the app's own branches can be driven. */
+  botProblemStatus?: number;
+  /**
+   * THE FAKE BOT SERVICE. The phases a bot walks through, one per time the screen asks.
+   *
+   * No real bot is ever sent and no real service is ever reached -- these scripts run against a
+   * made-up Supabase address with every call intercepted. This is what lets a script watch a note
+   * go Joining -> In waiting room -> Recording -> Ready, or fail, as a person really would.
+   */
+  botPhases: {
+    phase: 'joining' | 'waiting' | 'recording' | 'processing' | 'ready' | 'failed';
+    status: string;
+    reason?: string;
+  }[];
+  /** A plain message stop_bot answers with instead of stopping. */
+  botStopProblem?: string;
+
   /**
    * The words INSIDE a note, keyed by note id, for searching (prompt 12). A note that is not in
    * here is still searchable by its title, which is why every script written before prompt 12
@@ -369,6 +398,9 @@ export const RECAP_PEOPLE: Row[] = [
  * A Free plan the way get_plan_and_usage hands it back. Every number is in the answer, so the
  * scripts prove the screen reads them rather than writing its own.
  */
+/** The note a bot makes, in the scripts that send one. */
+export const BOT_NOTE_ID = '77777777-7777-4777-8777-777777777777';
+
 export const PLAN_FREE: Row = {
   account_id: ACCOUNT_ID,
   is_owner: true,
@@ -391,6 +423,9 @@ export const PLAN_FREE: Row = {
   seats_used: 1,
   members_count: 1,
   invites_pending: 0,
+  // Free gets no bot hours. That is what stops a bot on the free plan, with no code change.
+  bot_hours_per_month: 0,
+  bot_hours_used: 0,
 };
 
 /** The stand-in Pro plan, with the bigger numbers the switch is there to show off. */
@@ -408,7 +443,10 @@ export const PLAN_PRO: Row = {
     '{chat_messages_per_day} chat questions a day',
     'Up to {seats_included} people on the account',
     'Notes up to {max_meeting_minutes} minutes long',
+    '{bot_hours_per_month} hours of meeting bot a month',
   ],
+  bot_hours_per_month: 10,
+  bot_hours_used: 3.2,
 };
 
 /** A team of three, all made up. */
@@ -455,6 +493,16 @@ export const DEFAULTS: FakeData = {
   recapPeople: RECAP_PEOPLE,
   recapSettings: { to_owner: true, to_members: false, auto_send: false },
   twoFactorOn: false,
+  // The meeting bot is OFF, like every real account until somebody turns it on by hand.
+  botEnabled: false,
+  botName: 'gyan Notetaker (Sam Carter)',
+  // One phase per time the screen asks, so a script can watch a bot go through a whole call.
+  botPhases: [
+    { phase: 'joining', status: 'joining' },
+    { phase: 'waiting', status: 'waiting' },
+    { phase: 'recording', status: 'recording' },
+    { phase: 'ready', status: 'ready' },
+  ],
   // Keep notes for ever, summaries allowed in email, and the 30 minutes the founder chose.
   privacy: { retention_days: null, email_summaries: true, inactivity_minutes: 30 },
   // A believable few days of activity, all made up. Newest first, as the database returns it.
@@ -650,6 +698,13 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
 
   // The server functions. Nothing is really run, and the real AI is never called.
   let questionsAsked = 0;
+  /**
+   * The fake bot service's memory: which note a bot was sent for, and how far through its phases
+   * it has got. `botAsked` steps forward each time the screen asks about the bot, which is what
+   * turns the three-second poll into a bot really walking through a call.
+   */
+  let botNoteId = BOT_NOTE_ID;
+  let botAsked = 0;
   await page.route('**/functions/v1/**', async (route) => {
     const name = new URL(route.request().url()).pathname.split('/').pop() ?? '';
     let body: unknown;
@@ -660,6 +715,31 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
     }
     recorder.functionCalls.push({ name, body });
     const status = data.functionStatus?.[name] ?? 202;
+
+    // THE FAKE BOT SERVICE. No real bot is ever sent: the real server function never runs, and
+    // the address these scripts talk to does not exist.
+    if (name === 'bot') {
+      const asked = body as { action?: string; meeting_id?: string } | undefined;
+      if (asked?.action === 'stop') {
+        if (data.botStopProblem) return json(route, { ok: false, message: data.botStopProblem }, 502);
+        // A real stop produces the service's own "call ended" event, so the note moves on.
+        botAsked = Math.max(botAsked, data.botPhases.length - 1);
+        return json(route, { ok: true });
+      }
+      if (data.botProblem) {
+        return json(route, { ok: false, message: data.botProblem }, data.botProblemStatus ?? 402);
+      }
+      if (status !== 202) return json(route, { error: 'problem' }, status);
+      // The note the bot will make. The app chooses its id, so the fake uses the one it sent.
+      botNoteId = asked?.meeting_id ?? BOT_NOTE_ID;
+      botAsked = 0;
+      const first = data.botPhases[0];
+      data.notes = [
+        { ...noteRow({ id: botNoteId, title: null, status: first?.status ?? 'joining' }), source: 'bot' },
+        ...data.notes,
+      ];
+      return json(route, { ok: true, meeting_id: botNoteId, platform: 'meet', bot_name: data.botName }, 202);
+    }
 
     // The export function hands back a link to a made-up file, so the screen has something
     // to show. Nothing is really built and nothing is really downloaded.
@@ -898,6 +978,31 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
         return json(route, null);
       }
 
+      if (fn === 'get_meeting_bot_settings') {
+        const row = {
+          account_id: ACCOUNT_ID,
+          is_owner: data.isOwner,
+          enabled: data.botEnabled,
+          bot_name: null,
+          effective_name: data.botName,
+        };
+        return json(route, wantsOne ? row : [row]);
+      }
+
+      if (fn === 'save_meeting_bot_settings') {
+        recorder.updates.push({ table: fn, body });
+        if (!data.isOwner) return json(route, { message: 'not_owner', code: 'P0001' }, 400);
+        const asked = (body as { p_settings?: { bot_name?: string } } | undefined)?.p_settings;
+        data.botName = asked?.bot_name || 'gyan Notetaker (Sam Carter)';
+        // Whatever was sent, the switch is NOT changed. The real function behaves the same way.
+        return json(route, { enabled: data.botEnabled, bot_name: asked?.bot_name ?? null });
+      }
+
+      if (fn === 'meeting_minutes_allowed') {
+        const minutes = data.planAndUsage.max_meeting_minutes;
+        return json(route, typeof minutes === 'number' ? minutes : null);
+      }
+
       if (fn === 'get_plan_and_usage') {
         return json(route, wantsOne ? data.planAndUsage : [data.planAndUsage]);
       }
@@ -1016,8 +1121,38 @@ export async function installFakes(page: Page, overrides: Partial<FakeData> = {}
     const noteId = wantedIds?.length === 1 ? wantedIds[0] : undefined;
     const rows: Row[] = (() => {
       switch (table) {
-        case 'meetings':
+        case 'meetings': {
+          // Asking about the bot's note moves the bot one phase on, and it stays on the last
+          // one. This is where the stepping lives because it is what the real poll really does:
+          // the service's events change the note, and the screen notices.
+          if (wantedIds?.includes(botNoteId) && data.botPhases.length > 0) {
+            const step = data.botPhases[Math.min(botAsked, data.botPhases.length - 1)];
+            botAsked += 1;
+            data.notes = data.notes.map((n) =>
+              n.id === botNoteId ? { ...n, status: step.status, error_message: step.reason ?? null } : n,
+            );
+          }
           return wantedIds ? data.notes.filter((n) => wantedIds.includes(n.id as string)) : data.notes;
+        }
+        case 'meeting_bots': {
+          // Reports where the bot is. It does NOT move it on: the phase steps forward when the
+          // screen asks about the NOTE, which is what the real three-second poll does. Doing it
+          // the other way round deadlocks, because the app only re-reads the bot when the note's
+          // status has changed -- so nothing would ever change.
+          const step = data.botPhases[Math.min(botAsked, data.botPhases.length - 1)];
+          if (!step) return [];
+          const forNote = (url.searchParams.get('meeting_id') ?? '').replace('eq.', '');
+          if (forNote && forNote !== botNoteId) return [];
+          return [
+            {
+              phase: step.phase,
+              platform: 'meet',
+              bot_name: data.botName,
+              failure_reason: step.reason ?? null,
+              external_id: 'fake-bot-1',
+            },
+          ];
+        }
         case 'transcript_segments':
           return data.segments;
         case 'summaries':

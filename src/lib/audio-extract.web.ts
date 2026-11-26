@@ -56,3 +56,37 @@ export async function extractAudio(file: File | Blob, onProgress?: (fraction: nu
 
   return new Blob(parts as BlobPart[], { type: 'audio/mpeg' });
 }
+
+/**
+ * How long a recording is, in seconds, before it is uploaded.
+ *
+ * This is what lets the browser refuse a too-long file BEFORE spending anything on it. It asks
+ * the browser for the file's own metadata rather than decoding it, so it costs almost nothing
+ * even for a two hour video -- `decodeAudioData` would read the whole thing into memory.
+ *
+ * Anything it cannot work out returns undefined, which means "I do not know" and lets the upload
+ * through. The server checks again once Deepgram has answered, so a file that slips past here is
+ * still refused; it just costs one transcription to find out.
+ */
+export async function readDuration(file: File | Blob): Promise<number | undefined> {
+  if (typeof document === 'undefined' || typeof URL?.createObjectURL !== 'function') return undefined;
+  const address = URL.createObjectURL(file);
+  try {
+    return await new Promise<number | undefined>((resolve) => {
+      const media = document.createElement('video');
+      media.preload = 'metadata';
+      // A file the browser cannot read must not leave somebody staring at a spinner.
+      const giveUp = setTimeout(() => resolve(undefined), 10_000);
+      const done = (value: number | undefined) => {
+        clearTimeout(giveUp);
+        resolve(value);
+      };
+      media.onloadedmetadata = () =>
+        done(Number.isFinite(media.duration) && media.duration > 0 ? media.duration : undefined);
+      media.onerror = () => done(undefined);
+      media.src = address;
+    });
+  } finally {
+    URL.revokeObjectURL(address);
+  }
+}

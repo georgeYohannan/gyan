@@ -131,6 +131,24 @@ export default function PlanScreen() {
             </Body>
           </GlassPanel>
 
+          {/* Meeting bot hours. Shown even when the plan has none, because "none" is the thing
+              somebody on the Free plan needs to know before they go looking for the feature. The
+              hours include time a bot in a call right now might still use, which is why the
+              number can go down without a note finishing. */}
+          <GlassPanel testID="settings-plan-bot-hours">
+            <Heading level={3}>Meeting bot hours this month</Heading>
+            <Body>
+              {plan.botHoursPerMonth <= 0
+                ? 'Not included on this plan'
+                : `${hours(plan.botHoursUsed)} of ${hours(plan.botHoursPerMonth)}`}
+            </Body>
+            <Body small color="textSecondary">
+              {plan.botHoursPerMonth <= 0
+                ? 'Sending a bot to a Zoom, Google Meet or Microsoft Teams call needs a bigger plan. Uploading a recording works on every plan.'
+                : 'A bot uses an hour for every hour it is in a call. Counted for the whole account, and it starts again on the 1st.'}
+            </Body>
+          </GlassPanel>
+
           <GlassPanel>
             <Heading level={3}>Chat questions today</Heading>
             <Body>
@@ -220,4 +238,10 @@ export default function PlanScreen() {
       <View style={{ height: Spacing.six }} />
     </Screen>
   );
+}
+
+/** Hours, to one place, with no trailing ".0" to make a whole number look like a measurement. */
+function hours(value: number): string {
+  const one = Math.round(value * 10) / 10;
+  return Number.isInteger(one) ? String(one) : one.toFixed(1);
 }

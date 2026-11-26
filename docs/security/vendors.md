@@ -27,7 +27,7 @@ these pages change.
 | **Anthropic** | Transcripts, and the summaries and answers it writes | **Yes**, for the API | **No**, not by default |
 | **Hostinger** | Recap and invite emails, including the summary unless switched off | **Not found** | n/a |
 | **Resend** | Nothing any more. Left here because its DNS records still exist | n/a | n/a |
-| **Recall.ai** | Nothing yet. Not built, switch off | **Could not check** | Could not check |
+| **Recall.ai** | **The whole meeting**: everybody in the call, what they say, and the recording | **Could not check** | **Not found** |
 
 **Signed status is left blank on purpose.** That column is yours to fill in.
 
@@ -144,14 +144,50 @@ them is tidier — one fewer thing able to send email that looks like it came fr
 
 ---
 
-## 6. Recall.ai — not in use
+## 6. Recall.ai — sending the bot into the meeting
 
-The meeting bot is **not built**, and its switch stays off until a lawyer has reviewed the
-consent wording.
+**Checked on 2026-11-25.** This vendor is now built, behind a switch that is off for every
+account until you turn it on by hand.
 
-**Could not check anything.** Their security page returns an error. Before this is ever
-switched on, their BAA, retention and sub-processors all need checking — and this vendor would
-see **more** than any other: it sits inside a live meeting with everybody in it.
+**What it sees: more than anybody else on this page.** It is not given a file after the fact —
+**it sits inside a live meeting with everybody in it**, as a participant, for as long as the call
+lasts. It hears what a person in the room hears, including the parts before and after the bit
+anybody meant to record, and including people who never used Gyan and never agreed to anything.
+
+| | |
+|---|---|
+| **BAA for HIPAA** | **Could not check.** Their security page still returns an error. Nothing on their public pages mentions HIPAA or a BAA. As with Deepgram, that does not mean they do not offer one — it means you would have to ask. |
+| **GDPR agreement** | **Could not check.** No public data processing agreement was reachable. |
+| **Where data sits** | **Verified.** Four completely separate deployments: US West (`us-west-2`), US East (`us-east-1`), EU Frankfurt (`eu-central-1`) and Asia Tokyo (`ap-northeast-1`). **Gyan is on US East**, chosen on 2026-11-25. The region is fixed when the account is made: "Pay-as-you-go customers who want a different region must create a new account in that region." |
+| **Retention you control** | **Verified, and set.** `recording_config.retention` takes `{"type": "timed", "hours": N}`. Gyan sets **24 hours**, and deletes their copy itself within seconds of storing its own. Their own default if you say nothing is worse than it sounds: "After June 12, 2025: Recording media is retained indefinitely." |
+| **Trains on your data** | **Not found.** Nothing on their public pages says either way. Worth asking, because this is a vendor that hears whole meetings. |
+| **Sub-processors** | **Could not check.** No public list was reachable. |
+| **Agreement needed** | A data agreement, yes — and you would have to ask for it. A BAA if you ever sell to healthcare, and you would have to ask whether they do one at all. |
+| **Signed** | |
+
+### What Gyan does to keep it to a minimum
+
+- **Audio only.** No video is recorded (`video_mixed_mp4` is switched off) and **no transcript is
+  ever asked for** — Deepgram does that job, so the words are never made at Recall.
+- **Their copy is deleted as soon as Gyan has its own**, by calling their delete endpoint, with
+  the 24 hour retention as the backstop if that call fails.
+- **The meeting link is thrown away** from Gyan's own database the moment the bot starts
+  recording. A meeting link lets anybody join the call, and once the bot is in there is no reason
+  to keep one.
+- **Everybody in the call is told.** The bot joins under a name that says what it is and whose it
+  is ("gyan Notetaker (Sam Carter)"), and it posts a message in the meeting chat saying it is
+  recording — once when it joins, and again to each person who arrives afterwards.
+- **Nobody can send one without confirming** they have the right to record and will tell the
+  people in the call. That confirmation is stored against the meeting it was given for.
+
+### Three things still for you
+
+1. **Ask them for a BAA and a data processing agreement.** Neither is public. This is the vendor
+   with the broadest view of your customers' data, so it is the one worth the email.
+2. **Ask whether they train on recordings.** Their pages do not say.
+3. **Zoom needs a Zoom Marketplace app, submitted and approved by Zoom.** Until that is done,
+   Recall's own error text says bots "can only join meetings hosted in the workspace of the user
+   that created the credentials" — so Zoom works for you and for nobody else.
 
 ---
 
@@ -164,11 +200,13 @@ Being straight about the edges:
   returned nothing. Also whether a Team plan is covered by a BAA, as opposed to the API.
 - **Supabase:** how the data agreement is signed; how long backups are kept.
 - **Hostinger:** where mailbox contents sit specifically.
-- **Recall.ai:** everything.
+- **Recall.ai:** whether a BAA exists; whether they train on recordings; their data processing
+  agreement; their sub-processor list. Their security page still will not load.
 
 ## When to check this again
 
 - Before signing anything with a healthcare customer.
-- Before switching the meeting bot on.
+- ~~Before switching the meeting bot on.~~ Done on 2026-11-25, as far as their public pages
+  allow. The three questions above are still open and need an email, not a web page.
 - If a vendor is added, removed, or changes plan.
 - Otherwise every six months. These pages change, and nothing here warns you when they do.

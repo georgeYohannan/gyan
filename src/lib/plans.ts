@@ -24,6 +24,15 @@ export type PlanAndUsage = {
   seatsUsed: number;
   /** How long one note may be, in minutes. Empty when the plan does not limit it. */
   maxMeetingMinutes?: number;
+  /** Hours of meeting bot a month. 0 on the Free plan, which is what blocks a bot there. */
+  botHoursPerMonth: number;
+  /**
+   * Hours used this month, including time a bot that is in a call right now might still use.
+   *
+   * It comes from the same function the gate uses, so the meter on the screen is what really
+   * decides whether another bot may be sent. A bot that leaves early gives its unused time back.
+   */
+  botHoursUsed: number;
 };
 
 export const MESSAGES = {
@@ -44,6 +53,7 @@ const PLACEHOLDERS = [
   'chat_messages_per_day',
   'seats_included',
   'max_meeting_minutes',
+  'bot_hours_per_month',
 ] as const;
 
 type Raw = Record<string, unknown>;
@@ -106,6 +116,8 @@ export function readPlanAndUsage(value: unknown): PlanAndUsage {
     seatsIncluded: num(row.seats_included, 1),
     seatsUsed: num(row.seats_used, 1),
     maxMeetingMinutes: typeof minutes === 'number' && Number.isFinite(minutes) ? minutes : undefined,
+    botHoursPerMonth: num(row.bot_hours_per_month),
+    botHoursUsed: num(row.bot_hours_used),
   };
 }
 

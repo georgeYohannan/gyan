@@ -11,3 +11,15 @@ export async function extractAudio(
 ): Promise<Blob | undefined> {
   return undefined;
 }
+
+/**
+ * How long a recording is, in seconds, before it is uploaded.
+ *
+ * NOT BUILT ON PHONES, and that is the honest gap in enforcing the longest-meeting limit: there
+ * is no way to read a media file's length here without a native library and a development build.
+ * Returning undefined means "I do not know", and the caller then lets the upload through -- the
+ * server checks again after the transcript, which is the backstop that cannot be got round.
+ */
+export async function readDuration(_file: File | Blob): Promise<number | undefined> {
+  return undefined;
+}

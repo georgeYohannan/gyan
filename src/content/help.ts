@@ -267,7 +267,7 @@ export const HELP: Record<string, HelpEntry> = {
     title: 'New note',
     sentences: [
       'Pick how you want to add your conversation.',
-      'Upload and Paste text work now. Record and Meeting link are coming soon.',
+      'Upload and Paste text work now. Meeting link works once it has been switched on for your account. Record is still coming.',
       'Your files are private. Only people on your account can see them.',
     ],
     lists: [
@@ -296,12 +296,72 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/new-note-390.png'),
-        alt: 'The New note screen on a phone. Under the title, a heading asks How do you want to add it? with a line under it, then 4 choices: Record and Meeting link are dimmed with a Coming soon label, and Upload and Paste text are ready to tap. Below them: Meetings used this month, 2 of 5, a meter of five blocks with two filled, and the words Free plan.',
+        alt: 'The New note screen on a phone. Under the title, a heading asks How do you want to add it? with a line under it, then 4 choices: Record is dimmed with a Coming soon label, and Upload, Paste text and Meeting link are ready to tap. Below them: Meetings used this month, 2 of 5, a meter of five blocks with two filled, the second one burnt orange, and the words Free plan.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/new-note-1280.png'),
-        alt: 'The same New note screen on a wide web window, with the same 4 choices and the same meter.',
+        alt: 'The same New note screen on a wide web window, with the navigation as a sidebar on the left, the same 4 choices and the same meter.',
+      },
+    ],
+  },
+  meetingLink: {
+    id: 'meetingLink',
+    title: 'Meeting link',
+    sentences: [
+      'Paste the link to a Zoom, Google Meet or Microsoft Teams call and Gyan sends a notetaker to it.',
+      'Everybody in the call can see it by name, and it says in the meeting chat that it is recording.',
+      'Somebody already in the call has to let it in. Until they do, nothing is recorded.',
+      'When the call ends, Gyan writes the transcript and the summary just as it does for an upload.',
+    ],
+    lists: [
+      {
+        heading: 'What the status on the note means',
+        items: [
+          'Joining: Gyan is asking to be let into the call.',
+          'In waiting room: it is waiting for somebody to admit it. This is the one that needs you.',
+          'Recording: it is in the call. Stop recording makes it leave now.',
+          'Transcribing, then Summarizing: the call has ended and Gyan is writing the note.',
+          'Ready: the note is finished. Failed: something went wrong, and the note says what.',
+        ],
+      },
+      {
+        heading: 'Letting the bot in',
+        items: [
+          'Google Meet: somebody signed in to the host\u2019s Google Workspace has to admit it, so often only the host or a co-host sees the request.',
+          'Microsoft Teams: somebody has to admit it from the lobby. If the organiser has blocked outside people, Gyan cannot join at all.',
+          'Zoom: Gyan cannot join Zoom calls yet. That needs an app approved by Zoom first.',
+        ],
+      },
+      {
+        heading: 'If it did not work',
+        items: [
+          'Nobody let Gyan in: somebody in the call has to admit it from the waiting room.',
+          'That link did not work: paste the whole invitation link, not just part of it.',
+          'Out of hours: your plan includes a number of bot hours a month. Settings, then Plan and usage, shows how many are left.',
+        ],
+      },
+    ],
+    images: [
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/meeting-link-390.png'),
+        alt: 'The Meeting link screen on a phone, headed Meeting link over the line Gyan joins the call, records it, and writes the notes afterwards. Under a heading Which call, a box labelled Paste the link to the call holds a Google Meet address, and below it: Gyan joins your Google Meet call as gyan Notetaker (Sam Carter), then two quieter lines about somebody having to let Gyan in and the bot saying in the chat that it is recording. Under a heading Before Gyan joins are the three things being confirmed, a ticked green box beside I confirm all three, a wide blue Send the bot button, and a quiet line saying DRAFT wording, a lawyer has not checked these words yet. At the bottom, under What your plan allows: 6.8 of 10 hours left this month, and Up to 180 minutes in one call.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/meeting-link-1280.png'),
+        alt: 'The same Meeting link screen on a wide web window, with the navigation as a sidebar on the left. The same four groups in the same order, and the Send the bot button is only as wide as its words rather than stretching across the page.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-bot-waiting-390.png'),
+        alt: 'A note on a phone while its bot waits to be let in. The large title says Untitled note, with a blue In waiting room label under it. Below is a panel with a burnt orange line down its left edge, headed Let gyan Notetaker (Sam Carter) in, explaining that somebody already in the call has to let Gyan in and that in Google Meet that has to be somebody signed in to the host\u2019s Google Workspace. A quiet Stop recording button sits under it. Below the panel are the Summary, Transcript and Chat tabs, and a panel saying No summary yet, that Gyan is waiting to be let into the call, and that nothing is recorded until somebody admits it.',
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source: require('../../docs/help/images/note-bot-waiting-1280.png'),
+        alt: 'The same waiting note on a wide web window, with the navigation as a sidebar on the left and the same orange-edged panel asking you to let the bot in.',
       },
     ],
   },
@@ -754,6 +814,7 @@ export const HELP: Record<string, HelpEntry> = {
         heading: 'Two different counts',
         items: [
           'Meetings are counted for the whole account. Everybody on it shares them.',
+          'Meeting bot hours are counted for the whole account too, and start again on the 1st.',
           'Chat questions are counted for you alone, and start again every day.',
           'Pasted text never counts as a meeting, and still works when you are at the limit.',
           'A note that failed does not count either.',
@@ -764,7 +825,7 @@ export const HELP: Record<string, HelpEntry> = {
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         source: require('../../docs/help/images/settings-plan-390.png'),
-        alt: 'Plan and usage on a phone. One panel says Meetings used this month, 2 of 5, with a meter of five blocks and two filled, and the line 3 left. They start again on the 1st. Below it: Chat questions today 4 of 20, what the Free plan includes, and a greyed-out Upgrade — coming soon.',
+        alt: 'Plan and usage on a phone. One panel says Meetings used this month, 2 of 5, with a meter of five blocks and two filled, and the line 3 left. They start again on the 1st. Below it: Meeting bot hours this month, not included on this plan; Chat questions today 4 of 20; what the Free plan includes; and a greyed-out Upgrade — coming soon.',
       },
       {
         // eslint-disable-next-line @typescript-eslint/no-require-imports

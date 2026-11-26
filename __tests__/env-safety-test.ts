@@ -52,6 +52,44 @@ describe('secrets safety', () => {
     expect(fn).toContain("Deno.env.get('ANTHROPIC_API_KEY')");
   });
 
+  test('.env.example names the two meeting-bot secrets and has no values for them', () => {
+    const example = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
+    expect(example).toMatch(/^MEETING_BOT_API_KEY=$/m);
+    expect(example).toMatch(/^MEETING_BOT_WEBHOOK_SECRET=$/m);
+  });
+
+  test('the meeting-bot secrets never appear in app code, and the app never reads them', () => {
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+    for (const file of walk(path.join(root, 'src')).filter((f) => /\.(ts|tsx|js)$/.test(f))) {
+      const text = fs.readFileSync(file, 'utf8');
+      expect(text).not.toMatch(/MEETING_BOT_API_KEY|MEETING_BOT_WEBHOOK_SECRET/);
+      // Nor the service's own address, nor the shape of a webhook signing secret.
+      expect(text).not.toMatch(/recall\.ai|whsec_/i);
+    }
+  });
+
+  test('the two bot server functions read their secrets from server secrets', () => {
+    const bot = fs.readFileSync(path.join(root, 'supabase/functions/bot/index.ts'), 'utf8');
+    expect(bot).toContain("Deno.env.get('MEETING_BOT_API_KEY')");
+    const webhook = fs.readFileSync(path.join(root, 'supabase/functions/bot-webhook/index.ts'), 'utf8');
+    expect(webhook).toContain("Deno.env.get('MEETING_BOT_API_KEY')");
+    expect(webhook).toContain("Deno.env.get('MEETING_BOT_WEBHOOK_SECRET')");
+    // And neither has a key written into it.
+    for (const fn of [bot, webhook]) expect(fn).not.toMatch(/Token [A-Za-z0-9]{20,}/);
+  });
+
+  test('THE WEBHOOK SAYS NOTHING ABOUT WHY IT REFUSED, so nobody can work out how to forge one', () => {
+    const webhook = fs.readFileSync(path.join(root, 'supabase/functions/bot-webhook/index.ts'), 'utf8');
+    // One log line, with no detail in it at all.
+    expect(webhook).toContain("console.error('bot webhook rejected')");
+    // And it does nothing else: the verify comes before any database client is made.
+    const verifyAt = webhook.indexOf('verifyEvent');
+    const clientAt = webhook.indexOf('createClient(url, secretKey');
+    expect(verifyAt).toBeGreaterThan(0);
+    expect(verifyAt).toBeLessThan(clientAt);
+  });
+
   test('.env.example has no mailbox password value, and names the app address setting', () => {
     const example = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
     expect(example).toMatch(/^EXPO_SMTP_PASSWORD=$/m);
